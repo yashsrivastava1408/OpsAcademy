@@ -1,0 +1,21 @@
+{
+  "id": "git-basics",
+  "title": "Git & GitHub Workflow",
+  "description": "Master essential version control for software development and DevOps pipelines. Learn branching, merging, rebasing, and resolving conflicts.",
+  "difficulty": "beginner",
+  "duration": "40 min",
+  "category": "Version Control",
+  "prerequisites": ["linux-basics"],
+  "objectives": [
+    "Initialize repositories and make commits",
+    "Create and switch between branches",
+    "Understand merge vs rebase workflows",
+    "Resolve merge conflicts confidently",
+    "Understand Git tags and release tagging"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

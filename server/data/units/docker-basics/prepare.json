@@ -1,0 +1,52 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-d1",
+      "front": "What is the simplest way to explain a Docker Container vs Image?",
+      "back": "Image = The blueprint or recipe (read-only file).\nContainer = The actual house or dish (running instance).\n\nYou can build 100 identical containers from just 1 image!"
+    },
+    {
+      "id": "fc-d2",
+      "front": "Why are containers faster than Virtual Machines (VMs)?",
+      "back": "VMs pack a full operating system (Guest OS) for every app, taking gigabytes and minutes to boot.\n\nContainers share the main computer's OS kernel, taking only megabytes and starting in seconds."
+    },
+    {
+      "id": "fc-d3",
+      "front": "What is the difference between CMD and RUN in a Dockerfile?",
+      "back": "RUN = Executed while BUILDING the image (e.g. installing software like `npm install`).\n\nCMD = Executed when the container STARTS (e.g. `node server.js`)."
+    },
+    {
+      "id": "fc-d4",
+      "front": "What does port mapping `-p 8080:80` do in `docker run`?",
+      "back": "It connects host port 8080 to container port 80.\n\n`Host Port : Container Port`\n\nNow typing `http://localhost:8080` on your laptop forwards traffic into port 80 inside the container."
+    },
+    {
+      "id": "fc-d5",
+      "front": "What happens to data inside a container when the container is deleted?",
+      "back": "Any data stored inside the container's temporary layer is permanently lost!\n\nTo save data permanently, use Docker Volumes (`-v volume_name:/data`)."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-d1",
+      "question": "How would you explain Docker to someone who has never heard of it before?",
+      "difficulty": "beginner",
+      "modelAnswer": "I explain Docker using the 'Shipping Container' analogy. Before physical shipping containers existed, transporting different goods (food, cars, clothes) on ships was chaotic because items had different shapes and storage rules.\n\nShipping containers standardized transport: if it fits in the box, any ship or crane can move it.\n\nSimilarly, software used to fail with 'It works on my machine!' because of different OS versions or missing libraries. Docker puts your code and all its requirements into a standardized container box. If it runs on your laptop, it will run identically on AWS, Azure, or any server.",
+      "keyPoints": ["Shipping container analogy", "'Works on my machine' solution", "Standardized packaging for code + dependencies"]
+    },
+    {
+      "id": "iq-d2",
+      "question": "What is Docker Layer Caching and how do you optimize a Dockerfile with it?",
+      "difficulty": "intermediate",
+      "modelAnswer": "Docker builds images step-by-step, where each command in a Dockerfile creates a cached layer. If a step hasn't changed, Docker reuses the cached layer instead of rebuilding it.\n\nTo optimize:\n1. Place commands that change rarely (like installing system packages or npm dependencies) at the TOP of the Dockerfile.\n2. Place commands that change often (like copying your source code) near the BOTTOM.\n\nFor example, copy `package.json` and run `npm install` BEFORE copying your source code `COPY . .`. This way, changing a line of JS code won't force Docker to reinstall all npm packages from scratch!",
+      "keyPoints": ["Cached layers speed up builds", "Infrequently changing steps go first", "Copy package.json before full source code"]
+    },
+    {
+      "id": "iq-d3",
+      "question": "How do you inspect logs or troubleshoot a container that keeps crashing?",
+      "difficulty": "intermediate",
+      "modelAnswer": "1. Run `docker ps -a` to find the crashed container's ID and exit code.\n2. Run `docker logs <container_id>` to view stdout/stderr output right before it crashed.\n3. If it crashes immediately, run it interactively with an entrypoint override: `docker run -it --entrypoint /bin/sh <image_name>` so I can look around inside the file system.\n4. Check resource limits with `docker stats` or system logs to see if it was killed by an Out Of Memory (OOM) error.",
+      "keyPoints": ["docker ps -a to see exit status", "docker logs for error trace", "Override entrypoint to inspect container environment", "Check for OOM kills"]
+    }
+  ]
+}

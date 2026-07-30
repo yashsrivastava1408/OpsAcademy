@@ -1,0 +1,21 @@
+{
+  "id": "kubernetes-basics",
+  "title": "Kubernetes Orchestration",
+  "description": "Learn how Kubernetes manages containerized applications at scale. Master Pods, Deployments, Services, and essential kubectl CLI commands.",
+  "difficulty": "advanced",
+  "duration": "60 min",
+  "category": "Kubernetes",
+  "prerequisites": ["docker-basics"],
+  "objectives": [
+    "Understand Kubernetes architecture (Control Plane vs Worker Nodes)",
+    "Deploy and manage Pods",
+    "Create Deployments for self-healing and scaling",
+    "Expose applications using Kubernetes Services",
+    "Use essential kubectl diagnostic commands"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

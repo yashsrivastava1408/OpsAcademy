@@ -1,0 +1,21 @@
+{
+  "id": "docker-basics",
+  "title": "Docker Fundamentals",
+  "description": "Understand containerization from the ground up. Learn to build, run, and manage Docker containers — the foundation of modern DevOps infrastructure.",
+  "difficulty": "intermediate",
+  "duration": "60 min",
+  "category": "Containers",
+  "prerequisites": ["linux-basics"],
+  "objectives": [
+    "Explain containers vs VMs and why containers matter",
+    "Pull images and run containers with Docker CLI",
+    "Build custom images with Dockerfiles",
+    "Manage container networking and volumes",
+    "Use Docker Compose for multi-container apps"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

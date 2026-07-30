@@ -1,0 +1,74 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-1",
+      "front": "What does the command 'chmod 755' set?",
+      "back": "Owner: rwx (read/write/execute)\nGroup: r-x (read/execute)\nOthers: r-x (read/execute)\n\nNumeric: r=4, w=2, x=1. So 7=4+2+1, 5=4+0+1."
+    },
+    {
+      "id": "fc-2",
+      "front": "What is the difference between a hard link and a soft link?",
+      "back": "Hard link: Points directly to the inode (data). Deleting the original doesn't affect the link. Cannot cross filesystems.\n\nSoft link (symlink): Points to the file path. If the original is deleted, the symlink breaks. Can cross filesystems.\n\nCreate with: ln file hardlink | ln -s file softlink"
+    },
+    {
+      "id": "fc-3",
+      "front": "What does 'ps aux | grep nginx' do?",
+      "back": "ps aux: Lists ALL running processes with details (user, PID, CPU%, memory, command).\n\n| grep nginx: Pipes the output through grep to filter only lines containing 'nginx'.\n\nThis is the standard way to check if a specific service is running."
+    },
+    {
+      "id": "fc-4",
+      "front": "What is the difference between /tmp and /var/tmp?",
+      "back": "/tmp: Cleared on every reboot. Use for short-lived temporary files.\n\n/var/tmp: Persists across reboots. Use for temporary files that need to survive a restart.\n\nBoth are world-writable with the sticky bit set."
+    },
+    {
+      "id": "fc-5",
+      "front": "Explain the Linux boot process in order.",
+      "back": "1. BIOS/UEFI: Hardware initialization\n2. Bootloader (GRUB): Loads the kernel\n3. Kernel: Initializes hardware drivers, mounts root filesystem\n4. Init system (systemd): Starts services in dependency order\n5. Login: Presents login prompt or desktop"
+    },
+    {
+      "id": "fc-6",
+      "front": "What does the sticky bit do on a directory?",
+      "back": "When set on a directory (like /tmp), only the file owner, directory owner, or root can delete files in it — even if others have write permission.\n\nSet with: chmod +t directory\nVisible as 't' in permission string: drwxrwxrwt"
+    },
+    {
+      "id": "fc-7",
+      "front": "What is an inode in Linux?",
+      "back": "An inode is a data structure that stores metadata about a file: permissions, ownership, timestamps, size, and pointers to data blocks.\n\nEvery file has exactly one inode. The filename is just a pointer to the inode. This is why hard links work — multiple names can point to the same inode."
+    },
+    {
+      "id": "fc-8",
+      "front": "How do you find files larger than 100MB in Linux?",
+      "back": "find / -type f -size +100M\n\nBreakdown:\n/ — start from root\n-type f — files only\n-size +100M — larger than 100 megabytes\n\nAdd -exec ls -lh {} \\; to see sizes."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-1",
+      "question": "A production server is running out of disk space. Walk me through your debugging steps.",
+      "difficulty": "intermediate",
+      "modelAnswer": "1. Check overall disk usage: `df -h` to see which partitions are full.\n2. Find large directories: `du -sh /* | sort -rh | head -10` starting from root.\n3. Drill down into the largest directory recursively.\n4. Common culprits: log files (`/var/log`), old Docker images, temp files, core dumps.\n5. For logs: check if log rotation is configured (`logrotate`).\n6. For Docker: `docker system prune` to clean unused images/containers.\n7. Quick fix: find and delete old logs `find /var/log -name '*.gz' -mtime +30 -delete`.\n8. Long-term: set up log rotation, disk usage alerts, and periodic cleanup cron jobs.",
+      "keyPoints": ["df -h for overview", "du -sh for drilling down", "Check /var/log", "Log rotation", "Preventive monitoring"]
+    },
+    {
+      "id": "iq-2",
+      "question": "Explain the difference between kill, kill -9, and kill -15. When would you use each?",
+      "difficulty": "beginner",
+      "modelAnswer": "kill (default) and kill -15 are the same — they send SIGTERM, which asks the process to terminate gracefully. The process can catch this signal, save state, close connections, and clean up before exiting.\n\nkill -9 sends SIGKILL, which immediately terminates the process. The process cannot catch or ignore this signal. No cleanup happens.\n\nAlways try SIGTERM first. Wait a few seconds. Only use SIGKILL as a last resort if the process is unresponsive. In production, SIGKILL can cause data corruption, orphaned connections, and incomplete transactions.",
+      "keyPoints": ["SIGTERM is graceful", "SIGKILL is forced", "Always try SIGTERM first", "SIGKILL risks data corruption"]
+    },
+    {
+      "id": "iq-3",
+      "question": "What happens when you type 'ls' and press Enter?",
+      "difficulty": "advanced",
+      "modelAnswer": "1. The shell reads your input from stdin.\n2. It parses the command, checking for aliases, functions, builtins, then PATH.\n3. It finds /usr/bin/ls (or similar) in the PATH.\n4. The shell calls fork() to create a child process.\n5. The child process calls exec() to replace itself with the ls binary.\n6. ls makes system calls (opendir, readdir) to the kernel.\n7. The kernel reads directory entries from the filesystem (inode table).\n8. ls formats the output and writes it to stdout (file descriptor 1).\n9. The terminal emulator renders the text.\n10. The shell calls wait() for the child to finish, then shows the next prompt.",
+      "keyPoints": ["fork + exec", "PATH lookup", "System calls to kernel", "stdout file descriptor", "Parent waits for child"]
+    },
+    {
+      "id": "iq-4",
+      "question": "How would you check why a service failed to start?",
+      "difficulty": "intermediate",
+      "modelAnswer": "1. Check service status: `systemctl status servicename` — shows active/failed and recent logs.\n2. Read full logs: `journalctl -u servicename -n 50` for the last 50 log entries.\n3. Check the service configuration: `systemctl cat servicename` to see the unit file.\n4. Check ports: `ss -tlnp` or `netstat -tlnp` — maybe the port is already in use.\n5. Check permissions: does the service user have access to required files/directories?\n6. Check dependencies: `systemctl list-dependencies servicename`.\n7. Try starting manually: run the service binary directly to see immediate error output.\n8. Check system resources: `free -h` (memory), `df -h` (disk).",
+      "keyPoints": ["systemctl status", "journalctl for logs", "Port conflicts", "Permission issues", "Manual start for debugging"]
+    }
+  ]
+}

@@ -1,0 +1,152 @@
+{
+  "sections": [
+    {
+      "id": "what-are-containers",
+      "title": "What are Containers?",
+      "content": [
+        {
+          "type": "text",
+          "value": "A container is a lightweight, standalone, executable package that includes everything needed to run a piece of software: code, runtime, system tools, libraries, and settings. Containers isolate applications from each other and from the host system."
+        },
+        {
+          "type": "text",
+          "value": "Think of it like shipping containers in real life — a standardized box that can hold anything and be transported anywhere. Software containers work the same way: \"Build once, run anywhere.\""
+        },
+        {
+          "type": "diagram",
+          "title": "Containers vs Virtual Machines",
+          "value": "Virtual Machine:                    Container:\n┌──────────────────┐              ┌──────────────────┐\n│   App A  │ App B │              │   App A  │ App B │\n├──────────┼───────┤              ├──────────┼───────┤\n│  Libs A  │ Libs B│              │  Libs A  │ Libs B│\n├──────────┼───────┤              ├──────────┴───────┤\n│ Guest OS │Guest OS│              │  Container Engine │\n├──────────┴───────┤              │    (Docker)       │\n│   Hypervisor     │              ├──────────────────┤\n├──────────────────┤              │    Host OS        │\n│    Host OS       │              ├──────────────────┤\n├──────────────────┤              │    Hardware       │\n│    Hardware      │              └──────────────────┘\n└──────────────────┘\n\nVMs: Each app gets a full OS (GBs, minutes to start)\nContainers: Share host kernel (MBs, seconds to start)"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Key interview fact: Containers share the host OS kernel while VMs each run their own kernel. This makes containers 10-100x lighter and faster to start than VMs."
+        }
+      ],
+      "quiz": {
+        "question": "What is the main architectural difference between containers and VMs?",
+        "options": [
+          "Containers are more secure than VMs",
+          "Containers share the host kernel; VMs run their own kernel",
+          "VMs are faster than containers",
+          "Containers need a hypervisor"
+        ],
+        "correctIndex": 1,
+        "explanation": "Containers share the host OS kernel and only package the application layer. VMs virtualize the hardware and run a complete guest OS, making them heavier."
+      }
+    },
+    {
+      "id": "docker-architecture",
+      "title": "Docker Architecture",
+      "content": [
+        {
+          "type": "text",
+          "value": "Docker uses a client-server architecture with three main components:"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Docker Components",
+          "value": "Docker Client (CLI)  ──HTTP API──▶  Docker Daemon (dockerd)\n                                        │\n                                   Manages:\n                                   ├── Images (blueprints)\n                                   ├── Containers (running instances)\n                                   ├── Networks (communication)\n                                   └── Volumes (persistent storage)"
+        },
+        {
+          "type": "text",
+          "value": "**Image** — A read-only template containing your application code, runtime, libraries, and configuration. Think of it as a class in OOP.\n\n**Container** — A running instance of an image. Think of it as an object created from the class. You can have many containers from one image.\n\n**Registry** — A storage service for Docker images. Docker Hub is the default public registry."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Essential Docker Commands",
+          "value": "docker pull nginx              # Download an image from Docker Hub\ndocker images                  # List all local images\ndocker run nginx               # Create and start a container\ndocker run -d -p 80:80 nginx   # Run detached, map port 80\ndocker ps                      # List running containers\ndocker ps -a                   # List ALL containers (including stopped)\ndocker stop <container_id>     # Stop a running container\ndocker rm <container_id>       # Remove a stopped container\ndocker logs <container_id>     # View container logs\ndocker exec -it <id> /bin/sh   # Open a shell inside a container"
+        }
+      ],
+      "quiz": {
+        "question": "What is the relationship between a Docker image and a container?",
+        "options": [
+          "They are the same thing",
+          "An image is a running instance of a container",
+          "A container is a running instance of an image",
+          "Images run on containers"
+        ],
+        "correctIndex": 2,
+        "explanation": "An image is a static blueprint (like a class). A container is a running instance created from that image (like an object). You can create many containers from one image."
+      }
+    },
+    {
+      "id": "dockerfile",
+      "title": "Building Images with Dockerfile",
+      "content": [
+        {
+          "type": "text",
+          "value": "A Dockerfile is a text file with instructions to build a Docker image. Each instruction creates a layer in the image, and Docker caches these layers for faster rebuilds."
+        },
+        {
+          "type": "code",
+          "language": "dockerfile",
+          "title": "Example Dockerfile",
+          "value": "# Start from a base image\nFROM node:18-alpine\n\n# Set working directory inside the container\nWORKDIR /app\n\n# Copy dependency files first (for caching)\nCOPY package*.json ./\n\n# Install dependencies\nRUN npm install --production\n\n# Copy application code\nCOPY . .\n\n# Expose port\nEXPOSE 3000\n\n# Define the command to run\nCMD [\"node\", \"server.js\"]"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview tip: Copying package.json before the rest of the code is a Dockerfile best practice. If your code changes but dependencies don't, Docker reuses the cached npm install layer — saving minutes on each build."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Build and Run",
+          "value": "docker build -t myapp:v1 .              # Build image, tag as myapp:v1\ndocker run -d -p 3000:3000 myapp:v1     # Run the container"
+        }
+      ],
+      "quiz": {
+        "question": "Why should you COPY package.json before COPY . . in a Dockerfile?",
+        "options": [
+          "It doesn't matter — the order is irrelevant",
+          "To leverage Docker's layer caching — dependencies are reinstalled only when package.json changes",
+          "Because package.json must be read first",
+          "To prevent security vulnerabilities"
+        ],
+        "correctIndex": 1,
+        "explanation": "Docker caches each layer. If package.json hasn't changed, the npm install layer is reused from cache. If you copy everything first, any code change invalidates the cache and forces a full reinstall."
+      }
+    },
+    {
+      "id": "networking-volumes",
+      "title": "Networking and Volumes",
+      "content": [
+        {
+          "type": "text",
+          "value": "By default, containers are isolated from each other. Docker provides networking to let containers communicate, and volumes to persist data beyond the container lifecycle."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Docker Networking",
+          "value": "docker network ls                          # List networks\ndocker network create mynet                # Create a custom network\ndocker run -d --name db --network mynet postgres    # Run on custom network\ndocker run -d --name app --network mynet myapp      # Same network = can communicate\n\n# 'app' can now reach 'db' by container name:\n# postgres://db:5432/mydb"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "On a custom Docker network, containers can reach each other using container names as hostnames. This is how microservices communicate in Docker Compose."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Docker Volumes",
+          "value": "docker volume create mydata                          # Create a named volume\ndocker run -v mydata:/data postgres                  # Mount volume at /data\ndocker run -v $(pwd)/config:/app/config myapp        # Bind mount: host dir → container\n\n# Volumes persist data even after the container is deleted"
+        }
+      ],
+      "quiz": {
+        "question": "How can two Docker containers on the same custom network communicate?",
+        "options": [
+          "They cannot — containers are always isolated",
+          "By using the host's IP address",
+          "By using container names as hostnames",
+          "Only through shared volumes"
+        ],
+        "correctIndex": 2,
+        "explanation": "On a user-defined Docker network, containers can resolve each other by name. 'docker run --name db --network mynet postgres' can be reached at hostname 'db' by other containers on 'mynet'."
+      }
+    }
+  ]
+}

@@ -10,7 +10,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
-**Learn DevOps by doing, not watching.** OpsAcademy is an interactive, browser-based learning platform where users execute real Linux commands in a sandboxed terminal — guided by a multi-agent AI mentor that provides contextual hints without spoiling the answer.
+**Learn DevOps by doing, not watching.** OpsAcademy is an interactive, browser-based learning platform where students master cloud engineering through a 3-mode learning system (Learn, Practice, Prepare) featuring live sandboxed terminals and AI-powered mentoring.
 
 [Live Demo](#) | [Architecture](#architecture) | [Quick Start](#quick-start) | [Tech Stack](#tech-stack)
 
@@ -22,11 +22,13 @@
 
 | Feature | Description |
 |---|---|
+| **3-Mode Learning System** | Learn (theory & concept quizzes), Practice (live terminal lab), and Prepare (flashcards & placement Q&A) for every topic |
 | **Live Terminal** | Real Linux shell in the browser via `xterm.js` + WebSocket streaming with <50ms latency |
 | **AI Mentor** | Multi-agent RAG system (LangGraph + Qdrant) that reads container state and provides hints — never direct answers |
 | **Sandbox Security** | Isolated containers with cgroup memory/CPU limits, read-only rootfs, and network sub-bridging |
-| **Auto-Grading** | Automated verification engine that inspects sandbox state against lab objectives |
+| **Auto-Grading Verification** | Automated verification engine executing shell test commands inside active sandboxes |
 | **Dual-Mode Engine** | Pluggable sandbox backend: `node-pty` for cloud deployment, `dockerode` for production Docker isolation |
+| **Auto-Reaper Cleanup** | Background process that automatically cleans up stale sandbox sessions older than 30 minutes |
 | **Anti-Abuse Detection** | Isolation Forest ML model + regex pipeline to block fork bombs, crypto miners, and host-escape exploits |
 
 ---
@@ -41,6 +43,7 @@ graph TB
         UI[React + Vite]
         XT[xterm.js Terminal]
         MC[AI Mentor Chat]
+        MODES[Learn / Practice / Prepare Views]
     end
 
     subgraph Gateway["API Gateway - Node.js / Express"]
@@ -48,6 +51,7 @@ graph TB
         ROUTER[Route Handler]
         WS[WebSocket Server]
         SM[Sandbox Manager]
+        REAPER[Auto-Reaper Service]
     end
 
     subgraph Sandbox["Sandbox Engine - Dual Mode"]
@@ -64,8 +68,8 @@ graph TB
     end
 
     subgraph Storage["Data Layer"]
-        MONGO[(MongoDB Atlas)]
-        LABS[(Labs JSON)]
+        MONGO[(MongoDB Atlas / JWT Store)]
+        UNITS[(Learning Units JSON)]
     end
 
     Client -->|HTTPS + WSS| Gateway
@@ -75,7 +79,8 @@ graph TB
     ROUTER -->|REST API| AIHub
     AG2 --> VDB
     AUTH --> MONGO
-    ROUTER --> LABS
+    ROUTER --> UNITS
+    REAPER -.->|Cleans Stale Sessions| SM
 
     style Client fill:#0d1117,stroke:#00d4ff,color:#e2e8f0
     style Gateway fill:#0d1117,stroke:#7c3aed,color:#e2e8f0
@@ -153,10 +158,10 @@ graph TB
 |---|---|
 | **React 19** + **Vite** | SPA framework with HMR |
 | **xterm.js** | Terminal emulator with WebSocket I/O |
-| **React Router v7** | Client-side routing |
+| **React Router v7** | Client-side routing for 3-mode learning views |
 | **Axios** | HTTP client with auth interceptors |
 | **Lucide React** | Icon library |
-| **CSS3** | Custom design system — glassmorphism, gradients, micro-animations |
+| **CSS3** | Custom design system — glassmorphism, gradients, micro-animations, 3D card flips |
 
 ### Backend (API Gateway)
 | Technology | Purpose |
@@ -231,7 +236,7 @@ cd client && npm run dev
 
 ### 4. Open in Browser
 
-Navigate to `http://localhost:5173` > Click **Start Learning** > Open a lab > Start typing commands.
+Navigate to `http://localhost:5173` > Click **Start Learning** > Choose a Learning Unit > Choose Learn, Practice, or Prepare mode.
 
 ---
 
@@ -242,12 +247,16 @@ opsacademy/
 |-- client/                          # React frontend (Vite)
 |   |-- src/
 |   |   |-- components/
-|   |   |   |-- Navbar/              # Glassmorphism navigation bar
-|   |   |   +-- Terminal/            # xterm.js WebSocket terminal
+|   |   |   |-- Navbar/              # Navigation bar with mode status
+|   |   |   |-- Terminal/            # xterm.js WebSocket terminal
+|   |   |   |-- Quiz/                # Multiple-choice concept check component
+|   |   |   +-- Flashcard/           # Interactive 3D flip card component
 |   |   |-- pages/
 |   |   |   |-- LandingPage.jsx      # Hero + features + architecture
-|   |   |   |-- DashboardPage.jsx    # Lab catalog with search/filter
-|   |   |   +-- LabPage.jsx          # Split-pane: instructions | terminal
+|   |   |   |-- DashboardPage.jsx    # Unit catalog with 3-mode buttons
+|   |   |   |-- LearnPage.jsx        # Mode 1: Theory reader + quizzes
+|   |   |   |-- LabPage.jsx          # Mode 2: Live terminal lab + verification
+|   |   |   +-- PreparePage.jsx      # Mode 3: Flashcards + placement Q&A
 |   |   |-- services/
 |   |   |   +-- api.js               # Axios client + WS URL helper
 |   |   |-- App.jsx                  # Router setup
@@ -258,15 +267,24 @@ opsacademy/
 |-- server/                          # Node.js API Gateway
 |   |-- config/
 |   |   +-- index.js                 # Centralized config (env vars)
+|   |-- data/
+|   |   +-- units/                   # Learning Units dataset
+|   |       |-- linux-basics/        # (unit.json, learn.json, practice.json, prepare.json)
+|   |       +-- docker-basics/       # (unit.json, learn.json, practice.json, prepare.json)
 |   |-- middleware/
+|   |   |-- auth.js                  # JWT authorization middleware
 |   |   +-- errorHandler.js          # Global JSON error handler
 |   |-- routes/
-|   |   +-- sandboxRoutes.js         # Sandbox lifecycle REST API
+|   |   |-- sandboxRoutes.js         # Sandbox lifecycle REST API
+|   |   |-- unitRoutes.js            # Learning units & mode content API
+|   |   |-- labRoutes.js             # Sandbox test verification API
+|   |   +-- authRoutes.js            # Register, login, profile API
 |   |-- services/
 |   |   |-- ptyService.js            # PTY sandbox engine (node-pty)
 |   |   |-- dockerService.js         # Docker sandbox engine (dockerode)
 |   |   |-- sandboxManager.js        # Pluggable facade (mode switching)
-|   |   +-- terminalService.js       # WebSocket terminal stream handler
+|   |   |-- terminalService.js       # WebSocket terminal stream handler
+|   |   +-- reaperService.js         # Auto-cleanup for stale sandboxes
 |   |-- server.js                    # Express + WS bootstrap
 |   |-- .env.example                 # Environment template
 |   +-- package.json
@@ -291,6 +309,23 @@ opsacademy/
 | `GET` | `/api/sandbox/:sessionId/status` | Get sandbox info |
 | `GET` | `/api/sandbox` | List all active sandboxes |
 | `GET` | `/api/health` | Health check + sandbox mode |
+
+### Learning Units & Labs
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/units` | List all learning units metadata |
+| `GET` | `/api/units/:unitId` | Get metadata for a specific unit |
+| `GET` | `/api/units/:unitId/:mode` | Get content for mode (`learn`, `practice`, `prepare`) |
+| `POST` | `/api/labs/:unitId/verify` | Run verification checks inside active sandbox |
+
+### Authentication
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/auth/register` | Register a new user |
+| `POST` | `/api/auth/login` | Authenticate user and receive JWT |
+| `GET` | `/api/auth/me` | Fetch authenticated user profile |
 
 ### WebSocket
 
@@ -365,15 +400,19 @@ graph LR
 - [x] **Phase 1** — Terminal streaming core (WebSocket + xterm.js + PTY/Docker)
 - [x] **Phase 1** — React frontend (Landing, Dashboard, Lab pages)
 - [x] **Phase 1** — Dual-mode sandbox engine
-- [ ] **Phase 2** — Lab system with auto-verification
-- [ ] **Phase 2** — JWT authentication (register/login)
-- [ ] **Phase 2** — Auto-reaper service
-- [ ] **Phase 3** — Python AI Agent Hub (Flask + LangGraph)
-- [ ] **Phase 3** — RAG with Qdrant vector DB
-- [ ] **Phase 3** — Anti-abuse ML detection
-- [ ] **Phase 4** — Docker Compose orchestration
-- [ ] **Phase 4** — Kubernetes manifests
-- [ ] **Phase 4** — Deploy to Vercel + Render
+- [x] **Phase 2** — 3-Mode Learning System (Learn, Practice, Prepare)
+- [x] **Phase 2** — Automated lab verification engine
+- [x] **Phase 2** — JWT authentication API & bcrypt hashing
+- [x] **Phase 2** — Auto-reaper background cleanup service
+- [ ] **Phase 3** — Student Placement Toolkit (Readiness score & progress engine)
+- [ ] **Phase 3** — Course content expansion (Git & Kubernetes units)
+- [ ] **Phase 3** — Terminal helper drawer & click-to-insert command panel
+- [ ] **Phase 3** — Shareable completion certificate generator
+- [ ] **Phase 4** — Python AI Agent Hub (Flask + LangGraph multi-agent graph)
+- [ ] **Phase 4** — RAG with Qdrant vector DB
+- [ ] **Phase 4** — Anti-abuse ML detection (Isolation Forest)
+- [ ] **Phase 5** — Docker Compose & Kubernetes production manifests
+- [ ] **Phase 5** — Production deployment to Vercel + Render
 
 ---
 
@@ -384,6 +423,7 @@ graph LR
 | **Terminal Latency** | <50ms keystroke-to-render via WebSocket binary frames |
 | **Sandbox Isolation** | cgroup memory caps + read-only rootfs + network sub-bridging |
 | **Pluggable Architecture** | Strategy pattern — swap sandbox engines via env var |
+| **3-Mode Learning Engine** | Structured Learn theory, Practice terminal lab, Prepare interview Q&A |
 | **Multi-Agent AI** | LangGraph pipeline: Abuse Scanner > Lab Assessor > Doc Retriever > Mentor |
 | **RAG Pipeline** | Sentence-transformer embeddings > Qdrant similarity search > LLM synthesis |
 | **Anomaly Detection** | Isolation Forest on command telemetry for unsupervised abuse detection |

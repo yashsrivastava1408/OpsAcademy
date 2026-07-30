@@ -1,0 +1,28 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-k1",
+      "front": "What is a Pod in Kubernetes?",
+      "back": "The smallest deployable unit in Kubernetes. A Pod contains one or more containers that share network IP, storage, and namespaces."
+    },
+    {
+      "id": "fc-k2",
+      "front": "What is the difference between a Deployment and a StatefulSet?",
+      "back": "Deployment: Used for stateless apps (web servers). Pods can be destroyed/replaced in any order without losing state.\n\nStatefulSet: Used for stateful apps (databases like Postgres/MongoDB). Pods have fixed sticky identities and persistent storage."
+    },
+    {
+      "id": "fc-k3",
+      "front": "How do you troubleshoot a Pod stuck in CrashLoopBackOff?",
+      "back": "1. `kubectl get pods` to verify status.\n2. `kubectl describe pod <name>` to check system events.\n3. `kubectl logs <name>` to inspect application error traces.\n4. `kubectl logs <name> --previous` to see logs from the previously crashed container."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-k1",
+      "question": "What is a Kubernetes Service and why is it needed?",
+      "difficulty": "intermediate",
+      "modelAnswer": "Pods in Kubernetes are ephemeral — they get created and destroyed with changing IP addresses. If your app tried to talk to a Pod directly by IP, it would break whenever the Pod restarted.\n\nA Kubernetes Service provides a stable, fixed virtual IP address and DNS name in front of a group of Pods. It automatically load-balances incoming traffic across all healthy matching Pods.",
+      "keyPoints": ["Pods have dynamic ephemeral IPs", "Services provide fixed virtual IP & DNS", "Load-balances traffic across Pods"]
+    }
+  ]
+}

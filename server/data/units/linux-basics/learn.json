@@ -1,0 +1,191 @@
+{
+  "sections": [
+    {
+      "id": "what-is-linux",
+      "title": "What is Linux?",
+      "content": [
+        {
+          "type": "text",
+          "value": "Linux is an open-source operating system kernel created by Linus Torvalds in 1991. Unlike Windows or macOS, Linux is free, highly customizable, and powers the vast majority of the world's servers, cloud infrastructure, and DevOps tooling."
+        },
+        {
+          "type": "text",
+          "value": "When people say \"Linux\", they usually mean a **Linux distribution** (distro) — a complete OS built on the Linux kernel. Popular distros include Ubuntu, CentOS, Alpine, and Debian. In DevOps, you'll encounter Alpine (lightweight containers) and Ubuntu (general-purpose servers) most often."
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Over 96% of the world's top 1 million servers run Linux. Every major cloud provider (AWS, GCP, Azure) defaults to Linux instances. Knowing Linux is non-negotiable for DevOps."
+        },
+        {
+          "type": "diagram",
+          "title": "Linux Architecture",
+          "value": "Hardware → Kernel → System Libraries → Shell → Applications\n\nThe kernel manages hardware resources. The shell (bash/zsh) is your interface to interact with the kernel via commands."
+        }
+      ],
+      "quiz": {
+        "question": "What percentage of top servers run Linux?",
+        "options": ["About 50%", "About 75%", "Over 96%", "100%"],
+        "correctIndex": 2,
+        "explanation": "Over 96% of the world's top 1 million servers run Linux, making it the dominant server operating system."
+      }
+    },
+    {
+      "id": "filesystem-navigation",
+      "title": "Filesystem Navigation",
+      "content": [
+        {
+          "type": "text",
+          "value": "Linux organizes everything as files in a tree structure starting from the root directory `/`. Unlike Windows drive letters (C:, D:), Linux has a single unified tree."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Key Directories",
+          "value": "/          Root of the filesystem\n/home      User home directories\n/etc       Configuration files\n/var       Variable data (logs, databases)\n/tmp       Temporary files (cleared on reboot)\n/usr       User programs and utilities\n/bin       Essential command binaries\n/opt       Optional/third-party software"
+        },
+        {
+          "type": "text",
+          "value": "You navigate using these essential commands:"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Navigation Commands",
+          "value": "pwd                    # Print Working Directory — where am I?\nls                     # List files in current directory\nls -la                 # List ALL files (including hidden) with details\ncd /home/student       # Change Directory to an absolute path\ncd ..                  # Go up one level\ncd ~                   # Go to your home directory\ncd -                   # Go back to previous directory"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Use Tab for auto-completion. Type 'cd /ho' then press Tab — it completes to 'cd /home/'. This saves massive time."
+        }
+      ],
+      "quiz": {
+        "question": "What does the command 'cd ..' do?",
+        "options": ["Goes to root directory", "Goes up one directory level", "Goes to home directory", "Lists parent directory"],
+        "correctIndex": 1,
+        "explanation": "'cd ..' moves you one level up in the directory tree. '..' always refers to the parent directory."
+      }
+    },
+    {
+      "id": "file-operations",
+      "title": "File and Directory Operations",
+      "content": [
+        {
+          "type": "text",
+          "value": "Creating, copying, moving, and deleting files are the bread and butter of Linux administration. Here are the core commands:"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Creating Files and Directories",
+          "value": "touch file.txt              # Create an empty file\nmkdir mydir                 # Create a directory\nmkdir -p a/b/c              # Create nested directories in one shot\necho 'Hello' > file.txt     # Write text to a file (overwrites)\necho 'World' >> file.txt    # Append text to a file"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Copying, Moving, and Deleting",
+          "value": "cp file.txt backup.txt      # Copy a file\ncp -r dir1 dir2             # Copy a directory recursively\nmv old.txt new.txt          # Rename a file\nmv file.txt /tmp/           # Move a file to another location\nrm file.txt                 # Delete a file\nrm -r mydir                 # Delete a directory and its contents\nrm -rf mydir                # Force delete without prompts"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "rm -rf is extremely dangerous — it deletes everything without asking. In interviews, always mention that you would use 'rm -i' (interactive) or double-check paths before running destructive commands. This shows production awareness."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Reading Files",
+          "value": "cat file.txt                # Print entire file content\nhead -n 5 file.txt          # Print first 5 lines\ntail -n 5 file.txt          # Print last 5 lines\ntail -f /var/log/syslog     # Follow a log file in real-time\nless file.txt               # Paginated file viewer (q to quit)\nwc -l file.txt              # Count lines in a file"
+        }
+      ],
+      "quiz": {
+        "question": "What is the difference between '>' and '>>' in bash?",
+        "options": [
+          "No difference, both write to files",
+          "'>' overwrites the file, '>>' appends to it",
+          "'>' appends to the file, '>>' overwrites it",
+          "'>' is for files, '>>' is for directories"
+        ],
+        "correctIndex": 1,
+        "explanation": "'>' (redirect) overwrites the entire file with new content. '>>' (append) adds new content to the end of the file without removing existing content."
+      }
+    },
+    {
+      "id": "permissions",
+      "title": "File Permissions and Ownership",
+      "content": [
+        {
+          "type": "text",
+          "value": "Linux uses a permission system to control who can read, write, or execute files. Every file has three permission groups: **owner** (u), **group** (g), and **others** (o)."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Reading Permission Strings",
+          "value": "-rwxr-xr--  1  student  devops  4096  Jan 1 12:00  script.sh\n │││ ││││││\n │││ │││└┘└── Others: r-- (read only)\n │││ └┘└──── Group:  r-x (read + execute)\n └┘└────── Owner:  rwx (read + write + execute)\n └──────── File type: - (file) or d (directory)"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Changing Permissions",
+          "value": "chmod +x script.sh          # Add execute permission for all\nchmod 755 script.sh         # Owner: rwx, Group: r-x, Others: r-x\nchmod 644 config.txt        # Owner: rw-, Group: r--, Others: r--\nchown student:devops file   # Change owner and group"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "The numeric system: r=4, w=2, x=1. Add them up per group. So 755 means owner=7(rwx), group=5(r-x), others=5(r-x). This is asked in almost every DevOps interview."
+        }
+      ],
+      "quiz": {
+        "question": "What does chmod 644 mean?",
+        "options": [
+          "Everyone can read and write",
+          "Owner can read/write, group and others can read only",
+          "Owner can read/write/execute, others have no access",
+          "Only the owner can access the file"
+        ],
+        "correctIndex": 1,
+        "explanation": "644 = Owner: 6 (rw-), Group: 4 (r--), Others: 4 (r--). The owner can read and write, everyone else can only read."
+      }
+    },
+    {
+      "id": "processes",
+      "title": "Process Management",
+      "content": [
+        {
+          "type": "text",
+          "value": "Every running program in Linux is a **process** with a unique Process ID (PID). Understanding processes is essential for debugging servers, managing resources, and troubleshooting in production."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Viewing Processes",
+          "value": "ps aux                      # List all running processes\nps aux | grep nginx         # Find a specific process\ntop                         # Real-time process monitor\nhtop                        # Better interactive process monitor"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Managing Processes",
+          "value": "kill 1234                   # Send SIGTERM to PID 1234 (graceful)\nkill -9 1234                # Send SIGKILL (force kill — last resort)\nkillall nginx               # Kill all processes named 'nginx'\nnohup ./server.sh &         # Run in background, survives logout\njobs                        # List background jobs\nfg %1                       # Bring job 1 to foreground"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview tip: Always explain that you'd try 'kill' (SIGTERM) before 'kill -9' (SIGKILL). SIGTERM lets the process clean up gracefully. SIGKILL is a last resort. This shows production maturity."
+        }
+      ],
+      "quiz": {
+        "question": "What is the difference between kill and kill -9?",
+        "options": [
+          "kill is faster than kill -9",
+          "kill sends SIGTERM (graceful), kill -9 sends SIGKILL (force)",
+          "kill works on files, kill -9 works on processes",
+          "No difference"
+        ],
+        "correctIndex": 1,
+        "explanation": "'kill' sends SIGTERM which asks the process to shut down gracefully (save state, close connections). 'kill -9' sends SIGKILL which immediately terminates the process with no cleanup."
+      }
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "sections": [
+    {
+      "id": "what-is-kubernetes",
+      "title": "What is Kubernetes?",
+      "content": [
+        {
+          "type": "text",
+          "value": "Docker lets you run containers on a single computer. But what happens when you have 500 containers running across 50 servers in the cloud?"
+        },
+        {
+          "type": "text",
+          "value": "That's where **Kubernetes** (also called K8s) comes in. Kubernetes is like the **Captain of a ship** filled with containers. If a container crashes, Kubernetes restarts it. If traffic spikes, Kubernetes scales up extra containers. If a server dies, Kubernetes moves the containers to a healthy server."
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "K8s abbreviation: 'K' followed by 8 letters, ending in 's' = K-eight-s."
+        },
+        {
+          "type": "diagram",
+          "title": "Kubernetes Architecture Overview",
+          "value": "Control Plane (Brain)            Worker Nodes (Muscles)\n├── API Server (receives commands)├── Node 1: [Pod A] [Pod B]\n├── etcd (database of cluster)   ├── Node 2: [Pod C] [Pod D]\n└── Scheduler (places pods)      └── Kubelet (node manager agent)"
+        }
+      ],
+      "quiz": {
+        "question": "What is the main purpose of Kubernetes?",
+        "options": [
+          "To edit code in the browser",
+          "To automate deployment, scaling, and management of containerized applications",
+          "To replace Git repositories",
+          "To install operating systems on laptops"
+        ],
+        "correctIndex": 1,
+        "explanation": "Kubernetes is an orchestration platform designed to automate container management across multiple servers."
+      }
+    },
+    {
+      "id": "pods-deployments-services",
+      "title": "Pods, Deployments, and Services",
+      "content": [
+        {
+          "type": "text",
+          "value": "The 3 core concepts every candidate must know for placement interviews:"
+        },
+        {
+          "type": "text",
+          "value": "1. **Pod**: The smallest building block in K8s. A Pod wraps one or more Docker containers that share the same network address.\n\n2. **Deployment**: Manages Pods for you. If a Pod crashes, the Deployment immediately creates a replacement (self-healing).\n\n3. **Service**: An internal load balancer that gives your Pods a stable IP and port so other services or users can talk to them."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Essential kubectl Commands",
+          "value": "kubectl get pods                    # List all running pods\nkubectl get deployments             # List deployments\nkubectl get services                # List network services\nkubectl describe pod <pod_name>     # Get detailed diagnostic info\nkubectl logs <pod_name>             # Read logs from a pod\nkubectl scale deployment myapp --replicas=5  # Scale up to 5 pods instantly!"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Top Interview Question: 'How do you check why a Pod is crashing?' Answer: Use `kubectl get pods` to check status, then `kubectl describe pod <name>` to see events, and `kubectl logs <name>` to read error traces."
+        }
+      ],
+      "quiz": {
+        "question": "What happens if a Pod managed by a Deployment crashes?",
+        "options": [
+          "The entire Kubernetes cluster stops",
+          "The Deployment automatically creates a new Pod to replace it (self-healing)",
+          "You must manually restart the server",
+          "Nothing happens"
+        ],
+        "correctIndex": 1,
+        "explanation": "Deployments maintain a desired replica count. If a Pod dies, K8s self-heals by launching a new Pod automatically."
+      }
+    }
+  ]
+}

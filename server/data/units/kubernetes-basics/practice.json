@@ -1,0 +1,31 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Check kubectl CLI Setup",
+      "description": "Check if the kubectl Kubernetes command-line tool is installed in your sandbox.",
+      "tasks": [
+        "Run `kubectl version --client` to verify kubectl is ready"
+      ],
+      "verification": {
+        "command": "kubectl version --client",
+        "expectedOutput": "Client Version",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Create a Pod Manifest File",
+      "description": "Write a Kubernetes YAML manifest to define an Nginx pod.",
+      "tasks": [
+        "Create folder: `mkdir -p /home/student/k8s`",
+        "Create file `/home/student/k8s/pod.yaml` with apiVersion: v1, kind: Pod, and image: nginx"
+      ],
+      "verification": {
+        "command": "grep -q 'kind: Pod' /home/student/k8s/pod.yaml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

@@ -38,12 +38,19 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+const unitRoutes = require('./routes/unitRoutes');
+const labRoutes = require('./routes/labRoutes');
+const authRoutes = require('./routes/authRoutes');
+const { startReaper } = require('./services/reaperService');
+
 // ── API Routes ───────────────────────────────────────────────
 app.use('/api/sandbox', sandboxRoutes);
+app.use('/api/units', unitRoutes);
+app.use('/api/labs', labRoutes);
+app.use('/api/auth', authRoutes);
 
-// Phase 2: Lab routes will be added here
-// app.use('/api/labs', labRoutes);
-// app.use('/api/auth', authRoutes);
+// Start background auto-reaper for stale sandboxes
+startReaper();
 
 // ── Error Handler ────────────────────────────────────────────
 app.use(errorHandler);

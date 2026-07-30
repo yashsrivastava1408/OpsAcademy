@@ -1,0 +1,28 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-g1",
+      "front": "What is the difference between git merge and git rebase?",
+      "back": "git merge: Combines histories and creates a new 'merge commit'. Preserves original commit order.\n\ngit rebase: Re-applies your commits on top of another branch for a clean, straight-line history."
+    },
+    {
+      "id": "fc-g2",
+      "front": "What is the staging area (index) in Git?",
+      "back": "The middle layer between your working directory files and the committed history.\n\nRunning `git add` moves changes to the staging area before `git commit` permanently saves them."
+    },
+    {
+      "id": "fc-g3",
+      "front": "How do you undo the last commit without losing file changes?",
+      "back": "git reset --soft HEAD~1\n\nThis removes the commit snapshot but keeps your code changes staged in your working directory!"
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-g1",
+      "question": "How do you resolve a Git merge conflict during a pull request?",
+      "difficulty": "intermediate",
+      "modelAnswer": "1. Run `git status` to see which files are conflicting.\n2. Open the conflicting files and look for the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`).\n3. Talk to the teammate if needed, decide which code to keep, and delete the conflict markers.\n4. Save the file, run `git add <file>` to mark conflict as resolved.\n5. Run `git commit` to complete the merge.",
+      "keyPoints": ["Find conflict markers", "Decide correct code to keep", "git add to resolve", "git commit to finalize"]
+    }
+  ]
+}

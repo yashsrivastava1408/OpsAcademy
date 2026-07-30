@@ -1,0 +1,51 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Initialize Git Repository",
+      "description": "Create a new project folder and turn it into a Git repository.",
+      "tasks": [
+        "Create folder: `mkdir /home/student/git-demo && cd /home/student/git-demo`",
+        "Initialize git: `git init`",
+        "Configure git user: `git config user.name 'Student' && git config user.email 'student@opsacademy.com'`"
+      ],
+      "verification": {
+        "command": "test -d /home/student/git-demo/.git && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Make Your First Commit",
+      "description": "Create a file, stage it, and record a commit snapshot.",
+      "tasks": [
+        "Create file: `echo 'Hello Git' > README.md`",
+        "Stage file: `git add README.md`",
+        "Commit: `git commit -m 'Initial commit'`"
+      ],
+      "verification": {
+        "command": "cd /home/student/git-demo && git log --oneline | grep -q 'Initial commit' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "Create and Merge a Branch",
+      "description": "Create a feature branch, make a change, and merge it back to main.",
+      "tasks": [
+        "Create branch: `git checkout -b feature-auth`",
+        "Create file: `echo 'auth code' > auth.js`",
+        "Stage and commit: `git add auth.js && git commit -m 'Add auth'`",
+        "Switch back to main: `git checkout main`",
+        "Merge branch: `git merge feature-auth`"
+      ],
+      "verification": {
+        "command": "cd /home/student/git-demo && test -f auth.js && git log --oneline | grep -q 'Add auth' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

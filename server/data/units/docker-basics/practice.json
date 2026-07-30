@@ -1,0 +1,63 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Check Docker Setup",
+      "description": "First, let's make sure Docker is ready to use in your environment.",
+      "tasks": [
+        "Run `docker --version` to see if Docker is installed",
+        "Run `docker info` to check Docker status"
+      ],
+      "verification": {
+        "command": "docker --version",
+        "expectedOutput": "Docker version",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Pull and Run Your First Container",
+      "description": "Download a pre-made lightweight Alpine Linux image and run a quick command inside it.",
+      "tasks": [
+        "Download Alpine image: `docker pull alpine:latest`",
+        "Run a container that prints a greeting: `docker run alpine echo 'Hello from Docker!'`",
+        "List all containers (even stopped ones): `docker ps -a`"
+      ],
+      "verification": {
+        "command": "docker ps -a | grep alpine && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "Run a Background Web Server",
+      "description": "Launch an Nginx web server container running in the background (detached mode) and map port 8080 on your host to port 80 in the container.",
+      "tasks": [
+        "Run Nginx in detached mode: `docker run -d --name my-webserver -p 8080:80 nginx`",
+        "Check running containers with `docker ps`",
+        "Test the web server response: `curl localhost:8080`"
+      ],
+      "verification": {
+        "command": "docker ps | grep my-webserver && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Inspect and Clean Up",
+      "description": "View logs from your web server and safely stop and remove the container.",
+      "tasks": [
+        "Check container logs: `docker logs my-webserver`",
+        "Stop the container: `docker stop my-webserver`",
+        "Remove the stopped container: `docker rm my-webserver`"
+      ],
+      "verification": {
+        "command": "docker ps -a | grep my-webserver && echo FAIL || echo PASS",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

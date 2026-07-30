@@ -1,0 +1,72 @@
+{
+  "sections": [
+    {
+      "id": "what-is-git",
+      "title": "What is Git?",
+      "content": [
+        {
+          "type": "text",
+          "value": "Think of Git as a supercharged 'Time Machine' for your code. Every time you make a checkpoint (called a **commit**), Git saves a snapshot of your entire project."
+        },
+        {
+          "type": "text",
+          "value": "If you break something, you can easily travel back to any previous snapshot. It also lets multiple software engineers work on the exact same project simultaneously without overwriting each other's work."
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Git vs GitHub: Git is the command-line tool running on your computer. GitHub is a cloud website (like Google Drive for code) that hosts Git repositories."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "First Time Setup",
+          "value": "git config --global user.name \"Your Name\"\ngit config --global user.email \"your.email@example.com\"\ngit init                     # Turn current folder into a Git repository\ngit status                   # Check what files have changed"
+        }
+      ],
+      "quiz": {
+        "question": "What is the primary difference between Git and GitHub?",
+        "options": [
+          "They are the exact same product",
+          "Git is the local version control tool; GitHub is a cloud hosting service for Git repos",
+          "Git is for Python; GitHub is for JavaScript",
+          "GitHub runs on your laptop; Git is a website"
+        ],
+        "correctIndex": 1,
+        "explanation": "Git is the underlying tool that tracks file changes locally. GitHub is a cloud platform for storing and sharing Git repositories online."
+      }
+    },
+    {
+      "id": "branching-merging",
+      "title": "Branching and Merging",
+      "content": [
+        {
+          "type": "text",
+          "value": "A **branch** is like a parallel universe for your project. The main production code lives on the `main` branch. When building a new feature, you create a feature branch so you don't break working code."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Branching Commands",
+          "value": "git branch feature-login        # Create a new branch\ngit checkout feature-login      # Switch to feature-login branch\ngit checkout -b feature-login   # Shortcut: create AND switch in one step\ngit checkout main               # Switch back to main branch\ngit merge feature-login         # Combine feature-login code INTO main"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Merge vs Rebase (Top Interview Question!): Merge preserves full history and creates a 'merge commit'. Rebase moves your feature branch commits onto the tip of main for a clean linear history."
+        }
+      ],
+      "quiz": {
+        "question": "Why do developers create feature branches instead of committing directly to main?",
+        "options": [
+          "To make the code run faster",
+          "To keep working production code safe while developing new features separately",
+          "Because Git requires at least 5 branches",
+          "To save storage space"
+        ],
+        "correctIndex": 1,
+        "explanation": "Feature branches isolate experimental or incomplete work from the stable main codebase until the feature is tested and ready to merge."
+      }
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Explore the filesystem",
+      "description": "Get familiar with your sandbox environment. Find out where you are, and explore the directory structure.",
+      "tasks": [
+        "Run `pwd` to see your current directory",
+        "Run `ls -la` to see all files (including hidden ones)",
+        "Navigate to `/` and list the top-level directories"
+      ],
+      "verification": {
+        "command": "pwd",
+        "expectedOutput": "/home/student",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Create a project structure",
+      "description": "Build a web project directory structure from scratch using mkdir and touch.",
+      "tasks": [
+        "Create a directory called `webapp` in your home directory",
+        "Inside `webapp`, create subdirectories: `src`, `public`, and `config`",
+        "Create files: `src/index.js`, `public/index.html`, `config/app.conf`"
+      ],
+      "verification": {
+        "command": "test -d /home/student/webapp/src && test -d /home/student/webapp/public && test -d /home/student/webapp/config && test -f /home/student/webapp/src/index.js && test -f /home/student/webapp/public/index.html && test -f /home/student/webapp/config/app.conf && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "exact"
+      }
+    },
+    {
+      "step": 3,
+      "title": "Write and read file content",
+      "description": "Use echo and cat to write content to files and read them back.",
+      "tasks": [
+        "Write a valid HTML page into `public/index.html` with an `<h1>` tag",
+        "Write `console.log('OpsAcademy');` into `src/index.js`",
+        "Use `cat` to verify both files have content"
+      ],
+      "verification": {
+        "command": "grep -q '<h1>' /home/student/webapp/public/index.html && grep -q 'console.log' /home/student/webapp/src/index.js && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "exact"
+      }
+    },
+    {
+      "step": 4,
+      "title": "File permissions challenge",
+      "description": "Make your JavaScript file executable and restrict config file access.",
+      "tasks": [
+        "Make `src/index.js` executable (chmod +x)",
+        "Set `config/app.conf` to read-only for everyone (chmod 444)",
+        "Verify permissions with `ls -la`"
+      ],
+      "verification": {
+        "command": "test -x /home/student/webapp/src/index.js && stat -c '%a' /home/student/webapp/config/app.conf 2>/dev/null | grep -q '444' && echo PASS || (stat -f '%Lp' /home/student/webapp/config/app.conf 2>/dev/null | grep -q '444' && test -x /home/student/webapp/src/index.js && echo PASS || echo FAIL)",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "Process investigation",
+      "description": "Explore running processes in your sandbox environment.",
+      "tasks": [
+        "List all running processes with `ps aux`",
+        "Find the PID of your shell process",
+        "Start a background process with `sleep 300 &`, then find it with `ps` and kill it"
+      ],
+      "verification": {
+        "command": "ps aux | grep -v grep | grep -c '' | awk '{if ($1 > 0) print \"PASS\"; else print \"FAIL\"}'",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

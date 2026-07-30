@@ -1,0 +1,21 @@
+{
+  "id": "linux-basics",
+  "title": "Linux Fundamentals",
+  "description": "Master the essential Linux commands every DevOps engineer must know. Navigate the filesystem, manage files, understand permissions, and work with processes.",
+  "difficulty": "beginner",
+  "duration": "45 min",
+  "category": "Linux",
+  "prerequisites": [],
+  "objectives": [
+    "Navigate the Linux filesystem confidently",
+    "Create, move, copy, and delete files and directories",
+    "Understand and modify file permissions",
+    "Work with text processing commands",
+    "Manage running processes"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}
