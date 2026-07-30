@@ -45,16 +45,22 @@ export const sandboxApi = {
     api.get('/sandbox'),
 };
 
-// ── Lab API (Phase 2) ────────────────────────────────────────
-export const labApi = {
+// ── Unit API (Learn, Practice, Prepare) ──────────────────────
+export const unitApi = {
   list: () =>
-    api.get('/labs'),
+    api.get('/units'),
 
-  get: (labId) =>
-    api.get(`/labs/${labId}`),
+  getMeta: (unitId) =>
+    api.get(`/units/${unitId}`),
 
-  verify: (labId, sessionId) =>
-    api.post(`/labs/${labId}/verify`, { sessionId }),
+  getMode: (unitId, mode) =>
+    api.get(`/units/${unitId}/${mode}`),
+};
+
+// ── Lab API ──────────────────────────────────────────────
+export const labApi = {
+  verify: (unitId, sessionId, stepNumber) =>
+    api.post(`/labs/${unitId}/verify`, { sessionId, stepNumber }),
 };
 
 // ── Health Check ─────────────────────────────────────────────

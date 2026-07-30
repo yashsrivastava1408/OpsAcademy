@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Clock,
@@ -7,156 +7,24 @@ import {
   XCircle,
   Play,
   Square,
-  RotateCcw,
   ChevronDown,
   ChevronUp,
   Loader,
+  BookOpen,
+  Award,
 } from 'lucide-react';
 import Terminal from '../components/Terminal/Terminal';
-import { sandboxApi } from '../services/api';
+import { sandboxApi, unitApi, labApi } from '../services/api';
+import { markUnitCompleted } from '../services/progressService';
 import './LabPage.css';
 
-// Lab data (same as dashboard, will be API-driven in Phase 2)
-const LABS_DATA = {
-  'lab-1': {
-    id: 'lab-1',
-    title: 'Create Your First Directory',
-    difficulty: 'beginner',
-    duration: '10 min',
-    category: 'Linux Basics',
-    instructions: [
-      {
-        step: 1,
-        title: 'Create the project directory',
-        content: 'Use the `mkdir` command to create a directory called `app` inside `/home/student`.',
-        hint: 'The command is: `mkdir /home/student/app`',
-        command: 'mkdir /home/student/app',
-      },
-      {
-        step: 2,
-        title: 'Create an HTML file',
-        content: 'Use `echo` or a text editor to create a file called `index.html` inside the `app` directory with some HTML content.',
-        hint: 'Try: `echo \'<h1>Hello World</h1>\' > /home/student/app/index.html`',
-        command: 'echo \'<h1>Hello World</h1>\' > /home/student/app/index.html',
-      },
-      {
-        step: 3,
-        title: 'Verify your work',
-        content: 'Use `ls` to list the contents of the `app` directory, and `cat` to display the content of your HTML file.',
-        hint: 'Commands: `ls /home/student/app` and `cat /home/student/app/index.html`',
-        command: 'cat /home/student/app/index.html',
-      },
-      {
-        step: 4,
-        title: 'Create a nested structure',
-        content: 'Create a `css` and `js` subdirectory inside `app` using `mkdir -p`.',
-        hint: 'Try: `mkdir -p /home/student/app/{css,js}`',
-        command: 'mkdir -p /home/student/app/css /home/student/app/js',
-      },
-    ],
-  },
-  'lab-2': {
-    id: 'lab-2',
-    title: 'Nginx Web Server Setup',
-    difficulty: 'intermediate',
-    duration: '20 min',
-    category: 'Web Servers',
-    instructions: [
-      {
-        step: 1,
-        title: 'Check if Nginx is installed',
-        content: 'Run `which nginx` or `nginx -v` to check if Nginx is available in the sandbox.',
-        hint: 'Command: `nginx -v`',
-      },
-      {
-        step: 2,
-        title: 'Create a static HTML page',
-        content: 'Create an `index.html` file in `/home/student/www/` with a proper HTML structure.',
-        hint: 'mkdir -p /home/student/www && echo content > /home/student/www/index.html',
-      },
-      {
-        step: 3,
-        title: 'Configure Nginx',
-        content: 'Create or modify the Nginx config to serve your static files from `/home/student/www/`.',
-        hint: 'Edit /etc/nginx/nginx.conf or create a custom config file',
-      },
-      {
-        step: 4,
-        title: 'Test the configuration',
-        content: 'Run `nginx -t` to test your configuration for syntax errors.',
-        hint: 'Command: `nginx -t`',
-      },
-    ],
-  },
-  'lab-3': {
-    id: 'lab-3',
-    title: 'Shell Scripting Fundamentals',
-    difficulty: 'beginner',
-    duration: '15 min',
-    category: 'Scripting',
-    instructions: [
-      {
-        step: 1,
-        title: 'Create your first script',
-        content: 'Create a file called `hello.sh` that prints "Hello, DevOps!" to the terminal.',
-        hint: 'echo \'#!/bin/bash\\necho "Hello, DevOps!"\' > hello.sh',
-      },
-      {
-        step: 2,
-        title: 'Make it executable',
-        content: 'Use `chmod` to make your script executable, then run it.',
-        hint: 'chmod +x hello.sh && ./hello.sh',
-      },
-      {
-        step: 3,
-        title: 'Add variables',
-        content: 'Modify your script to accept a name as an argument and greet that person.',
-        hint: 'Use $1 to access the first argument',
-      },
-    ],
-  },
-  'lab-4': {
-    id: 'lab-4',
-    title: 'Docker Container Basics',
-    difficulty: 'intermediate',
-    duration: '25 min',
-    category: 'Containers',
-    instructions: [
-      { step: 1, title: 'Check Docker version', content: 'Verify Docker is available by running `docker --version`.', hint: 'docker --version' },
-      { step: 2, title: 'Pull an image', content: 'Pull the `alpine:latest` image from Docker Hub.', hint: 'docker pull alpine:latest' },
-      { step: 3, title: 'Run a container', content: 'Run an Alpine container that prints "Hello from Docker!"', hint: 'docker run alpine echo "Hello from Docker!"' },
-    ],
-  },
-  'lab-5': {
-    id: 'lab-5',
-    title: 'Environment Variables & Config',
-    difficulty: 'beginner',
-    duration: '12 min',
-    category: 'Configuration',
-    instructions: [
-      { step: 1, title: 'View current variables', content: 'Use `env` or `printenv` to see all environment variables.', hint: 'env | head -20' },
-      { step: 2, title: 'Set a variable', content: 'Set a variable called `APP_ENV` to `production`.', hint: 'export APP_ENV=production' },
-      { step: 3, title: 'Create a .env file', content: 'Create a `.env` file with key-value pairs for your app config.', hint: 'echo "DB_HOST=localhost" > .env' },
-    ],
-  },
-  'lab-6': {
-    id: 'lab-6',
-    title: 'Build a CI/CD Pipeline',
-    difficulty: 'advanced',
-    duration: '30 min',
-    category: 'CI/CD',
-    instructions: [
-      { step: 1, title: 'Create a test script', content: 'Write a `test.sh` script that checks if your app files exist and returns proper exit codes.', hint: '#!/bin/bash\ntest -f app/index.html && echo "PASS" || echo "FAIL"' },
-      { step: 2, title: 'Create a build script', content: 'Write a `build.sh` that compiles or processes your application.', hint: 'Create a script that copies files to a dist/ directory' },
-      { step: 3, title: 'Create a deploy script', content: 'Write a `deploy.sh` that moves built files to a serving directory.', hint: 'cp -r dist/* /var/www/html/' },
-    ],
-  },
-};
-
 export default function LabPage() {
-  const { labId } = useParams();
+  const { unitId } = useParams();
   const navigate = useNavigate();
-  const lab = LABS_DATA[labId];
+
+  const [meta, setMeta] = useState(null);
+  const [practiceData, setPracticeData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const [sessionId, setSessionId] = useState(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -164,6 +32,28 @@ export default function LabPage() {
   const [showHint, setShowHint] = useState({});
   const [elapsedTime, setElapsedTime] = useState(0);
   const [verifyResult, setVerifyResult] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      try {
+        const [metaRes, practiceRes] = await Promise.all([
+          unitApi.getMeta(unitId),
+          unitApi.getMode(unitId, 'practice'),
+        ]);
+
+        setMeta(metaRes.data.data);
+        setPracticeData(practiceRes.data.data);
+      } catch (err) {
+        console.error('Failed to load lab data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, [unitId]);
 
   // Timer
   useEffect(() => {
@@ -183,7 +73,7 @@ export default function LabPage() {
   const startLab = async () => {
     setIsStarting(true);
     try {
-      const res = await sandboxApi.start('student', labId);
+      const res = await sandboxApi.start('student', unitId);
       setSessionId(res.data.data.sessionId);
       setElapsedTime(0);
     } catch (err) {
@@ -206,6 +96,29 @@ export default function LabPage() {
     }
   };
 
+  const runVerification = async () => {
+    if (!sessionId) return;
+    setIsVerifying(true);
+    setVerifyResult({ status: 'checking' });
+
+    try {
+      const res = await labApi.verify(unitId, sessionId);
+      const data = res.data;
+
+      if (data.allPassed) {
+        markUnitCompleted(unitId);
+        setVerifyResult({ status: 'pass', details: data.results });
+      } else {
+        setVerifyResult({ status: 'fail', details: data.results });
+      }
+    } catch (err) {
+      console.error('Verification error:', err);
+      setVerifyResult({ status: 'fail', details: [{ error: err.message }] });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const toggleStep = (step) => {
     setExpandedSteps((prev) => ({ ...prev, [step]: !prev[step] }));
   };
@@ -214,17 +127,28 @@ export default function LabPage() {
     setShowHint((prev) => ({ ...prev, [step]: !prev[step] }));
   };
 
-  if (!lab) {
+  if (loading) {
+    return (
+      <div className="lab-not-found">
+        <Loader size={36} className="spin" />
+        <p>Loading lab instructions...</p>
+      </div>
+    );
+  }
+
+  if (!meta || !practiceData) {
     return (
       <div className="lab-not-found">
         <h2>Lab not found</h2>
-        <p>The lab "{labId}" doesn't exist.</p>
+        <p>The practice lab for "{unitId}" doesn't exist.</p>
         <button className="btn btn-primary" onClick={() => navigate('/dashboard')}>
           Back to Dashboard
         </button>
       </div>
     );
   }
+
+  const steps = practiceData.steps || [];
 
   return (
     <div className="lab-page">
@@ -236,30 +160,35 @@ export default function LabPage() {
             Back
           </button>
           <div className="lab-header-info">
-            <h1 className="lab-title">{lab.title}</h1>
+            <h1 className="lab-title">{meta.title}</h1>
             <div className="lab-meta">
-              <span className={`badge badge-${lab.difficulty}`}>{lab.difficulty}</span>
+              <span className={`badge badge-${meta.difficulty}`}>{meta.difficulty}</span>
               <span className="lab-meta-item">
                 <Clock size={12} />
-                {lab.duration}
+                {meta.duration}
               </span>
-              <span className="lab-meta-item">{lab.category}</span>
+              <span className="lab-meta-item">{meta.category}</span>
             </div>
           </div>
         </div>
+
         <div className="lab-header-right">
+          <Link to={`/unit/${unitId}/learn`} className="btn btn-ghost btn-sm">
+            <BookOpen size={14} /> Learn Theory
+          </Link>
+          <Link to={`/unit/${unitId}/prepare`} className="btn btn-ghost btn-sm">
+            <Award size={14} /> Prepare Q&A
+          </Link>
+
           {sessionId && (
             <span className="lab-timer">
               <Clock size={14} />
               {formatTime(elapsedTime)}
             </span>
           )}
+
           {!sessionId ? (
-            <button
-              className="btn btn-primary"
-              onClick={startLab}
-              disabled={isStarting}
-            >
+            <button className="btn btn-primary" onClick={startLab} disabled={isStarting}>
               {isStarting ? (
                 <>
                   <Loader size={16} className="spin" />
@@ -278,7 +207,7 @@ export default function LabPage() {
                 <Square size={14} />
                 Stop
               </button>
-              <button className="btn btn-success btn-sm" onClick={() => setVerifyResult({ status: 'checking' })}>
+              <button className="btn btn-success btn-sm" onClick={runVerification} disabled={isVerifying}>
                 <CheckCircle2 size={14} />
                 Verify
               </button>
@@ -292,47 +221,54 @@ export default function LabPage() {
         {/* Instructions Panel */}
         <div className="lab-instructions">
           <div className="instructions-header">
-            <h2>Instructions</h2>
-            <span className="instructions-count">
-              {lab.instructions.length} steps
-            </span>
+            <h2>Practice Instructions</h2>
+            <span className="instructions-count">{steps.length} steps</span>
           </div>
 
           <div className="instructions-list">
-            {lab.instructions.map((instruction) => (
+            {steps.map((stepObj) => (
               <div
-                key={instruction.step}
-                className={`instruction-item ${expandedSteps[instruction.step] !== false ? 'expanded' : ''}`}
+                key={stepObj.step}
+                className={`instruction-item ${
+                  expandedSteps[stepObj.step] !== false ? 'expanded' : ''
+                }`}
               >
                 <button
                   className="instruction-header-btn"
-                  onClick={() => toggleStep(instruction.step)}
+                  onClick={() => toggleStep(stepObj.step)}
                 >
-                  <div className="instruction-step-badge">
-                    {instruction.step}
-                  </div>
-                  <span className="instruction-title">{instruction.title}</span>
-                  {expandedSteps[instruction.step] === false ? (
+                  <div className="instruction-step-badge">{stepObj.step}</div>
+                  <span className="instruction-title">{stepObj.title}</span>
+                  {expandedSteps[stepObj.step] === false ? (
                     <ChevronDown size={16} />
                   ) : (
                     <ChevronUp size={16} />
                   )}
                 </button>
 
-                {expandedSteps[instruction.step] !== false && (
+                {expandedSteps[stepObj.step] !== false && (
                   <div className="instruction-content">
-                    <p>{instruction.content}</p>
-                    {instruction.hint && (
+                    <p>{stepObj.description}</p>
+
+                    {stepObj.tasks && (
+                      <ul className="tasks-bullet-list">
+                        {stepObj.tasks.map((task, i) => (
+                          <li key={i}>{task}</li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {stepObj.hint && (
                       <div className="instruction-hint-area">
                         <button
                           className="btn btn-ghost btn-sm hint-toggle"
-                          onClick={() => toggleHint(instruction.step)}
+                          onClick={() => toggleHint(stepObj.step)}
                         >
-                          {showHint[instruction.step] ? 'Hide Hint' : 'Show Hint'}
+                          {showHint[stepObj.step] ? 'Hide Hint' : 'Show Hint'}
                         </button>
-                        {showHint[instruction.step] && (
+                        {showHint[stepObj.step] && (
                           <div className="hint-box">
-                            <code>{instruction.hint}</code>
+                            <code>{stepObj.hint}</code>
                           </div>
                         )}
                       </div>
@@ -368,7 +304,7 @@ export default function LabPage() {
                   <CheckCircle2 size={32} />
                 </div>
                 <h3>All checks passed! 🎉</h3>
-                <p>Congratulations! You've completed this lab.</p>
+                <p>Great job! You completed all task verifications for this lab.</p>
               </>
             ) : (
               <>
@@ -376,7 +312,18 @@ export default function LabPage() {
                   <XCircle size={32} />
                 </div>
                 <h3>Some checks failed</h3>
-                <p>Review the instructions and try again.</p>
+                <p>Check the instructions, make sure your files/commands match, and try again.</p>
+
+                {verifyResult.details && (
+                  <div className="verify-details-list">
+                    {verifyResult.details.map((res, i) => (
+                      <div key={i} className={`verify-detail-item ${res.passed ? 'pass' : 'fail'}`}>
+                        <span>{res.title || `Step ${res.step}`}</span>
+                        <span>{res.passed ? '✓ Passed' : '✗ Failed'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             )}
             <button className="btn btn-secondary" onClick={() => setVerifyResult(null)}>

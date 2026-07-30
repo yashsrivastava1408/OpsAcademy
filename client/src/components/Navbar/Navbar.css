@@ -96,17 +96,15 @@
   border: 1px solid var(--border-subtle);
 }
 
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent-green);
-  animation: glowPulse 2s ease-in-out infinite;
+.score-badge {
+  background: var(--accent-cyan-dim);
+  border-color: rgba(0, 212, 255, 0.2);
+  color: var(--accent-cyan);
+  font-weight: 600;
 }
 
-.status-dot.offline {
-  background: var(--text-muted);
-  animation: none;
+.score-icon {
+  color: var(--accent-cyan);
 }
 
 @media (max-width: 768px) {

@@ -209,20 +209,67 @@
   padding-left: 20px;
 }
 
-.lab-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 20px;
+.unit-modes-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  padding: 12px;
   border-top: 1px solid var(--border-subtle);
+  background: rgba(10, 14, 26, 0.4);
   margin-top: auto;
 }
 
-.lab-category {
-  font-size: 0.72rem;
+.mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.mode-btn.mode-learn {
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+}
+.mode-btn.mode-learn:hover {
+  background: rgba(0, 212, 255, 0.25);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
+}
+
+.mode-btn.mode-practice {
+  background: var(--accent-green-dim);
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+.mode-btn.mode-practice:hover {
+  background: rgba(16, 185, 129, 0.25);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+}
+
+.mode-btn.mode-prepare {
+  background: var(--accent-orange-dim);
+  color: var(--accent-orange);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+.mode-btn.mode-prepare:hover {
+  background: rgba(245, 158, 11, 0.25);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.2);
+}
+
+.dashboard-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  gap: 12px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 /* ── Empty State ──────────────────────────────────────────── */

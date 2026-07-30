@@ -206,6 +206,50 @@
   color: var(--accent-cyan);
 }
 
+.tasks-bullet-list {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.tasks-bullet-list li::marker {
+  color: var(--accent-cyan);
+}
+
+.verify-details-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  text-align: left;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.verify-detail-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  background: var(--bg-tertiary);
+}
+
+.verify-detail-item.pass {
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.verify-detail-item.fail {
+  color: var(--accent-red);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
 .instruction-hint-area {
   margin-top: 4px;
 }
