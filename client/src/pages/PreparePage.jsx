@@ -6,9 +6,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronUp,
-  HelpCircle,
   Loader,
-  RotateCw,
   Sparkles,
   Terminal,
 } from 'lucide-react';

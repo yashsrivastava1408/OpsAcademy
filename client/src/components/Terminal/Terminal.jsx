@@ -171,7 +171,7 @@ export default function Terminal({ sessionId, onDisconnect }) {
         </div>
         <div className="terminal-header-right">
           <div className={`terminal-status ${status}`}>
-            <span className="terminal-status-dot"></span>
+            {statusIcon[status]}
             {status === 'connected' ? 'Live' : status === 'connecting' ? 'Connecting...' : 'Offline'}
           </div>
         </div>

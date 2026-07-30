@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Award, CheckCircle2, Download, Share2, X, ShieldCheck } from 'lucide-react';
+import { Download, Share2, X, ShieldCheck } from 'lucide-react';
 import './CertificateModal.css';
 
 export default function CertificateModal({ studentName = 'Student', score = 100, onClose }) {

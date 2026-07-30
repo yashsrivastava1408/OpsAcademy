@@ -3,12 +3,9 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
   BookOpen,
-  CheckCircle,
-  Code,
   Info,
   AlertTriangle,
   Lightbulb,
-  Play,
   Terminal,
   Loader,
   ChevronRight,

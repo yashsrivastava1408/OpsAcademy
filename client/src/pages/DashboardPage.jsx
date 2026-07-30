@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   Search,
   Clock,
   CheckCircle2,
-  ChevronRight,
   Terminal,
   Filter,
   BarChart3,
@@ -19,7 +18,6 @@ import './DashboardPage.css';
 const CATEGORIES = ['All', 'Linux', 'Containers', 'Web Servers', 'Scripting', 'CI/CD'];
 
 export default function DashboardPage() {
-  const navigate = useNavigate();
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
