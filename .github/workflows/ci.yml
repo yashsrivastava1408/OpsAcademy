@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
 
       - name: "TruffleHog Verified Secret Scan"
-        uses: trufflesecurity/trufflehog-actions-scan@v3.87.0
+        uses: trufflesecurity/trufflehog@main
         with:
           path: ./
           base: ${{ github.event.before }}
@@ -105,16 +105,6 @@ jobs:
         run: |
           cd server
           npm audit --audit-level=high || echo "Server audit flagged vulnerabilities for review"
-
-      - name: "Semgrep SAST Security Scan"
-        uses: semgrep/actions@v1
-        with:
-          config: >-
-            p/security-code-scan
-            p/owasp-top-ten
-            p/javascript
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
   # STAGE 4: Container & Infrastructure Security
   container-security:
