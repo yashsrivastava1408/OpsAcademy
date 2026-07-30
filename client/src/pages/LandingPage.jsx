@@ -1,0 +1,256 @@
+import { Link } from 'react-router-dom';
+import {
+  Terminal,
+  Shield,
+  Brain,
+  Cpu,
+  ChevronRight,
+  Zap,
+  GitBranch,
+  Layers,
+  ArrowRight,
+} from 'lucide-react';
+import './LandingPage.css';
+
+const FEATURES = [
+  {
+    icon: <Terminal size={24} />,
+    title: 'Live Terminal',
+    description: 'Real Linux shell in your browser. Execute commands, write scripts, and build infrastructure — no local setup needed.',
+    color: 'cyan',
+  },
+  {
+    icon: <Brain size={24} />,
+    title: 'AI Mentor',
+    description: 'Stuck? Get contextual hints from an AI that reads your container state and searches technical docs — without spoiling the answer.',
+    color: 'purple',
+  },
+  {
+    icon: <Shield size={24} />,
+    title: 'Sandbox Security',
+    description: 'Every lab runs in an isolated container with memory caps, CPU limits, and read-only rootfs. Your host is fully protected.',
+    color: 'green',
+  },
+  {
+    icon: <Zap size={24} />,
+    title: 'Auto-Grading',
+    description: 'Hit "Verify" and our system inspects your container state against lab objectives. Instant pass/fail with detailed feedback.',
+    color: 'orange',
+  },
+];
+
+const TECH_STACK = [
+  { name: 'React', icon: '⚛️' },
+  { name: 'Node.js', icon: '🟢' },
+  { name: 'Docker', icon: '🐳' },
+  { name: 'Python', icon: '🐍' },
+  { name: 'LangGraph', icon: '🧠' },
+  { name: 'WebSocket', icon: '🔌' },
+  { name: 'Qdrant', icon: '🔍' },
+  { name: 'Kubernetes', icon: '☸️' },
+];
+
+const TERMINAL_LINES = [
+  { prompt: true, text: 'mkdir -p /home/student/app' },
+  { prompt: false, text: '' },
+  { prompt: true, text: 'echo \'<h1>Hello DevOps!</h1>\' > /home/student/app/index.html' },
+  { prompt: false, text: '' },
+  { prompt: true, text: 'nginx -t' },
+  { prompt: false, text: 'nginx: the configuration file /etc/nginx/nginx.conf syntax is ok' },
+  { prompt: false, text: 'nginx: configuration file /etc/nginx/nginx.conf test is successful' },
+  { prompt: true, text: 'curl localhost:80' },
+  { prompt: false, text: '<h1>Hello DevOps!</h1>', highlight: true },
+  { prompt: true, text: '█', cursor: true },
+];
+
+export default function LandingPage() {
+  return (
+    <div className="landing">
+      {/* ── Hero Section ───────────────────────────────────── */}
+      <section className="hero">
+        <div className="hero-bg-orbs">
+          <div className="orb orb-1"></div>
+          <div className="orb orb-2"></div>
+          <div className="orb orb-3"></div>
+        </div>
+
+        <div className="container hero-content">
+          <div className="hero-text">
+            <div className="hero-badge animate-fade-in">
+              <Cpu size={14} />
+              AI-Powered DevOps Learning
+            </div>
+            <h1 className="hero-title animate-fade-in-up">
+              Learn DevOps by <span className="gradient-text">Doing</span>,
+              <br />
+              Not Watching
+            </h1>
+            <p className="hero-subtitle animate-fade-in-up" style={{ animationDelay: '100ms' }}>
+              Interactive, browser-based labs with a live Linux terminal.
+              An AI mentor guides you without giving away the answer.
+              Master Docker, Kubernetes, CI/CD, and cloud engineering — hands-on.
+            </p>
+            <div className="hero-actions animate-fade-in-up" style={{ animationDelay: '200ms' }}>
+              <Link to="/dashboard" className="btn btn-primary btn-lg">
+                Start Learning
+                <ArrowRight size={18} />
+              </Link>
+              <a href="#features" className="btn btn-secondary btn-lg">
+                See Features
+                <ChevronRight size={18} />
+              </a>
+            </div>
+            <div className="hero-stats animate-fade-in-up" style={{ animationDelay: '300ms' }}>
+              <div className="hero-stat">
+                <span className="hero-stat-value">6+</span>
+                <span className="hero-stat-label">Hands-on Labs</span>
+              </div>
+              <div className="hero-stat-divider"></div>
+              <div className="hero-stat">
+                <span className="hero-stat-value">&lt;50ms</span>
+                <span className="hero-stat-label">Terminal Latency</span>
+              </div>
+              <div className="hero-stat-divider"></div>
+              <div className="hero-stat">
+                <span className="hero-stat-value">100%</span>
+                <span className="hero-stat-label">Sandboxed</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="hero-terminal animate-fade-in-up" style={{ animationDelay: '200ms' }}>
+            <div className="mock-terminal">
+              <div className="mock-terminal-header">
+                <div className="terminal-dots">
+                  <span className="terminal-dot red"></span>
+                  <span className="terminal-dot yellow"></span>
+                  <span className="terminal-dot green"></span>
+                </div>
+                <span className="mock-terminal-title">student@opsacademy ~/lab-1</span>
+              </div>
+              <div className="mock-terminal-body">
+                {TERMINAL_LINES.map((line, i) => (
+                  <div key={i} className={`mock-line ${line.highlight ? 'highlight' : ''} ${line.cursor ? 'cursor-line' : ''}`}>
+                    {line.prompt && <span className="mock-prompt">$ </span>}
+                    <span className={line.cursor ? 'blink-cursor' : ''}>{line.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Features Section ───────────────────────────────── */}
+      <section className="features" id="features">
+        <div className="container">
+          <div className="section-header">
+            <h2 className="section-title">
+              Everything You Need to <span className="gradient-text">Master DevOps</span>
+            </h2>
+            <p className="section-subtitle">
+              A complete learning platform with real infrastructure, AI tutoring, and automated assessment.
+            </p>
+          </div>
+
+          <div className="features-grid stagger-children">
+            {FEATURES.map((feature, i) => (
+              <div key={i} className="feature-card glass-card animate-fade-in-up">
+                <div className={`feature-icon icon-${feature.color}`}>
+                  {feature.icon}
+                </div>
+                <h3 className="feature-title">{feature.title}</h3>
+                <p className="feature-desc">{feature.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Architecture Section ───────────────────────────── */}
+      <section className="architecture">
+        <div className="container">
+          <div className="section-header">
+            <h2 className="section-title">
+              Built with <span className="gradient-text">Modern Stack</span>
+            </h2>
+            <p className="section-subtitle">
+              Production-grade microservices architecture with pluggable sandbox engine.
+            </p>
+          </div>
+
+          <div className="tech-stack-grid">
+            {TECH_STACK.map((tech, i) => (
+              <div key={i} className="tech-badge glass-card">
+                <span className="tech-icon">{tech.icon}</span>
+                <span className="tech-name">{tech.name}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="arch-diagram glass-card">
+            <div className="arch-layer">
+              <div className="arch-box arch-client">
+                <Layers size={18} />
+                <span>React + xterm.js</span>
+                <small>Browser Client</small>
+              </div>
+            </div>
+            <div className="arch-arrow">↓ WebSocket + REST</div>
+            <div className="arch-layer arch-layer-split">
+              <div className="arch-box arch-gateway">
+                <GitBranch size={18} />
+                <span>Node.js Gateway</span>
+                <small>Express + WS</small>
+              </div>
+              <div className="arch-box arch-ai">
+                <Brain size={18} />
+                <span>AI Agent Hub</span>
+                <small>Flask + LangGraph</small>
+              </div>
+            </div>
+            <div className="arch-arrow">↓ Docker Socket / PTY</div>
+            <div className="arch-layer">
+              <div className="arch-box arch-sandbox">
+                <Shield size={18} />
+                <span>Sandboxed Containers</span>
+                <small>Alpine Linux + cgroups</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA Section ────────────────────────────────────── */}
+      <section className="cta">
+        <div className="container">
+          <div className="cta-card glass-card">
+            <h2 className="cta-title">
+              Ready to <span className="gradient-text">Build Real Infrastructure</span>?
+            </h2>
+            <p className="cta-subtitle">
+              Stop watching tutorials. Start typing commands.
+            </p>
+            <Link to="/dashboard" className="btn btn-primary btn-lg">
+              Open Lab Dashboard
+              <ArrowRight size={18} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ─────────────────────────────────────────── */}
+      <footer className="footer">
+        <div className="container footer-inner">
+          <div className="footer-brand">
+            <Terminal size={16} />
+            <span>OpsAcademy</span>
+          </div>
+          <p className="footer-text">
+            Built with ❤️ for DevOps learners. Powered by AI.
+          </p>
+        </div>
+      </footer>
+    </div>
+  );
+}

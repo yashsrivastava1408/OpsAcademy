@@ -1,0 +1,340 @@
+/* ═══════════════════════════════════════════════════════════════
+   Lab Page Styles — Split Pane Layout
+   ═══════════════════════════════════════════════════════════════ */
+
+.lab-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 64px);
+  overflow: hidden;
+}
+
+/* ── Header ───────────────────────────────────────────────── */
+.lab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.lab-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.lab-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lab-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  line-height: 1.2;
+}
+
+.lab-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lab-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.lab-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lab-timer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-cyan-dim);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Workspace Split Pane ─────────────────────────────────── */
+.lab-workspace {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Instructions Panel ───────────────────────────────────── */
+.lab-instructions {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.instructions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.instructions-header h2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+
+.instructions-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 2px 10px;
+  border-radius: 20px;
+  background: var(--bg-tertiary);
+}
+
+.instructions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.instruction-item {
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+.instruction-item:hover {
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.instruction-item.expanded {
+  border-color: var(--border-accent);
+  background: rgba(0, 212, 255, 0.02);
+}
+
+.instruction-header-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.instruction-header-btn svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.instruction-step-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+.instruction-title {
+  flex: 1;
+}
+
+.instruction-content {
+  padding: 0 14px 14px;
+  padding-left: 50px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.instruction-content p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.instruction-content code {
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: var(--accent-cyan);
+}
+
+.instruction-hint-area {
+  margin-top: 4px;
+}
+
+.hint-toggle {
+  font-size: 0.75rem !important;
+  color: var(--accent-purple) !important;
+}
+
+.hint-box {
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent-purple);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.hint-box code {
+  font-size: 0.78rem;
+  color: var(--accent-green);
+  background: none;
+  padding: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Terminal Panel ───────────────────────────────────────── */
+.lab-terminal {
+  display: flex;
+  padding: 12px;
+  min-height: 0;
+}
+
+.lab-terminal .terminal-container {
+  flex: 1;
+}
+
+/* ── Verify Overlay ───────────────────────────────────────── */
+.verify-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.verify-card {
+  text-align: center;
+  padding: 48px 40px;
+  max-width: 400px;
+  width: 90%;
+}
+
+.verify-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.verify-icon.checking {
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+}
+.verify-icon.pass {
+  background: var(--accent-green-dim);
+  color: var(--accent-green);
+}
+.verify-icon.fail {
+  background: var(--accent-red-dim);
+  color: var(--accent-red);
+}
+
+.verify-card h3 {
+  font-size: 1.2rem;
+  color: var(--text-bright);
+  margin-bottom: 8px;
+}
+
+.verify-card p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+/* ── Lab Not Found ────────────────────────────────────────── */
+.lab-not-found {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 64px);
+  gap: 12px;
+  color: var(--text-secondary);
+}
+
+.lab-not-found h2 {
+  color: var(--text-bright);
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .lab-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+
+  .lab-instructions {
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}
+
+@media (max-width: 768px) {
+  .lab-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .lab-header-right {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
