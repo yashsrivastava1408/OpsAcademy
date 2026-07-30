@@ -1,4 +1,4 @@
-name: OpsAcademy Enterprise Security & Multi-Stage CI Pipeline
+name: OpsAcademy Enterprise Security and Multi-Stage CI Pipeline
 
 on:
   push:
@@ -17,17 +17,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── STAGE 1: Fast Security & Secret Leak Gate ─────────────────────
+  # STAGE 1: Fast Security & Secret Leak Gate
   secret-scan:
-    name: 🔒 Stage 1: Secret & Credential Leak Gate
+    name: "Stage 1: Secret and Credential Leak Gate"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository History
+      - name: "Checkout Repository History"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: TruffleHog Verified Secret Scan
+      - name: "TruffleHog Verified Secret Scan"
         uses: trufflesecurity/trufflehog-actions-scan@v3.87.0
         with:
           path: ./
@@ -35,28 +35,28 @@ jobs:
           head: ${{ github.sha }}
           extra_args: --debug --only-verified
 
-      - name: Verify No Secrets in .env.example
+      - name: "Verify No Secrets in env.example"
         run: |
           if grep -E "(sk-[a-zA-Z0-9]{32,}|ghp_[a-zA-Z0-9]{36}|AIza[0-9A-Za-z-_]{35})" server/.env.example; then
-            echo "❌ CRITICAL: Hardcoded API key pattern found in .env.example!"
+            echo "CRITICAL: Hardcoded API key pattern found in .env.example!"
             exit 1
           else
-            echo "✅ .env.example secret check passed."
+            echo ".env.example secret check passed."
           fi
 
-  # ── STAGE 2: Code Quality & Multi-Version Node Build ───────────────
+  # STAGE 2: Code Quality & Multi-Version Node Build
   lint-and-build:
-    name: ⚡ Stage 2: Code Quality & Matrix Build (Node ${{ matrix.node-version }})
+    name: "Stage 2: Code Quality and Matrix Build (Node ${{ matrix.node-version }})"
     needs: secret-scan
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node-version: [18, 20]
     steps:
-      - name: Checkout Code
+      - name: "Checkout Code"
         uses: actions/checkout@v4
 
-      - name: Setup Node.js v${{ matrix.node-version }}
+      - name: "Setup Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
@@ -66,47 +66,47 @@ jobs:
             client/package-lock.json
 
       # Client Verification
-      - name: Install Client Dependencies
+      - name: "Install Client Dependencies"
         run: cd client && npm ci
 
-      - name: Strict Client Linting (Oxlint)
+      - name: "Strict Client Linting"
         run: cd client && npm run lint
 
-      - name: Validate Client Build (Vite Production Bundle)
+      - name: "Validate Client Build"
         run: cd client && npm run build
 
       # Server Verification
-      - name: Install Server Dependencies
+      - name: "Install Server Dependencies"
         run: cd server && npm ci
 
-      - name: Validate Server Code Syntax
+      - name: "Validate Server Code Syntax"
         run: cd server && node -c server.js
 
-  # ── STAGE 3: SAST Security & Dependency Supply Chain Audit ────────
+  # STAGE 3: SAST Security & Dependency Supply Chain Audit
   security-sast-audit:
-    name: 🔍 Stage 3: SAST & Supply Chain Vulnerability Audit
+    name: "Stage 3: SAST and Supply Chain Vulnerability Audit"
     needs: lint-and-build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: "Checkout Code"
         uses: actions/checkout@v4
 
-      - name: Setup Node.js v20
+      - name: "Setup Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Client Dependency Audit (High/Critical)
+      - name: "Client Dependency Audit"
         run: |
           cd client
           npm audit --audit-level=high || echo "Client audit flagged vulnerabilities for review"
 
-      - name: Server Dependency Audit (High/Critical)
+      - name: "Server Dependency Audit"
         run: |
           cd server
           npm audit --audit-level=high || echo "Server audit flagged vulnerabilities for review"
 
-      - name: Semgrep SAST Security Scan
+      - name: "Semgrep SAST Security Scan"
         uses: semgrep/actions@v1
         with:
           config: >-
@@ -116,16 +116,16 @@ jobs:
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
-  # ── STAGE 4: Container & Infrastructure Security ─────────────────
+  # STAGE 4: Container & Infrastructure Security
   container-security:
-    name: 🐳 Stage 4: Container & Infrastructure Security Scan
+    name: "Stage 4: Container and Infrastructure Security Scan"
     needs: security-sast-audit
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: "Checkout Code"
         uses: actions/checkout@v4
 
-      - name: Run Trivy Vulnerability Scanner on Filesystem & Manifests
+      - name: "Run Trivy Vulnerability Scanner on Filesystem"
         uses: aquasecurity/trivy-action@0.29.0
         with:
           scan-type: 'fs'
@@ -134,18 +134,18 @@ jobs:
           format: 'table'
           severity: 'HIGH,CRITICAL'
 
-  # ── STAGE 5: Final Production Quality Gate ─────────────────────────
+  # STAGE 5: Final Production Quality Gate
   ci-quality-gate:
-    name: 🎯 Stage 5: Final Production Quality Gate
+    name: "Stage 5: Final Production Quality Gate"
     needs: [secret-scan, lint-and-build, security-sast-audit, container-security]
     runs-on: ubuntu-latest
     steps:
-      - name: Verify Quality Gate Completion
+      - name: "Verify Quality Gate Completion"
         run: |
           echo "======================================================"
-          echo "🎉 ALL 4 CI STAGES PASSED SUCCESSFULLY!"
-          echo "- Stage 1: Secret Scan & Credential Leak Gate PASS"
-          echo "- Stage 2: Code Quality & Matrix Build (Node 18/20) PASS"
-          echo "- Stage 3: SAST OWASP Scan & Supply Chain Audit PASS"
-          echo "- Stage 4: Container & Infrastructure Security PASS"
+          echo "ALL CI STAGES PASSED SUCCESSFULLY!"
+          echo "- Stage 1: Secret Scan and Credential Leak Gate PASS"
+          echo "- Stage 2: Code Quality and Matrix Build PASS"
+          echo "- Stage 3: SAST OWASP Scan and Supply Chain Audit PASS"
+          echo "- Stage 4: Container and Infrastructure Security PASS"
           echo "======================================================"
