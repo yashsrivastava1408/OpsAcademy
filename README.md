@@ -22,7 +22,9 @@
 
 | Feature | Description |
 |---|---|
-| **3-Mode Learning System** | Learn (theory & concept quizzes), Practice (live terminal lab), and Prepare (flashcards & placement Q&A) for every topic |
+| **8 A-to-Z DevOps Courses** | Comprehensive curriculum covering Linux, Git, Docker, Kubernetes, Networking, CI/CD, AWS Cloud, and Monitoring |
+| **3-Mode Learning System** | Learn (theory & concept quizzes), Practice (live terminal lab), and Prepare (flashcards & placement Q&A) for every unit |
+| **Mermaid.js Diagram Engine** | Client-side interactive vector diagrams (flowcharts, sequence diagrams, architecture maps) with dark-theme styling |
 | **Live Terminal** | Real Linux shell in the browser via `xterm.js` + WebSocket streaming with <50ms latency |
 | **AI Mentor** | Multi-agent RAG system (LangGraph + Qdrant) that reads container state and provides hints — never direct answers |
 | **Sandbox Security** | Isolated containers with cgroup memory/CPU limits, read-only rootfs, and network sub-bridging |
@@ -30,6 +32,7 @@
 | **Dual-Mode Engine** | Pluggable sandbox backend: `node-pty` for cloud deployment, `dockerode` for production Docker isolation |
 | **Auto-Reaper Cleanup** | Background process that automatically cleans up stale sandbox sessions older than 30 minutes |
 | **Anti-Abuse Detection** | Isolation Forest ML model + regex pipeline to block fork bombs, crypto miners, and host-escape exploits |
+| **College Placement Readiness** | Structured 3-mode curriculum designed for campus bootcamps, TPO reporting, and technical interview prep |
 
 ---
 
@@ -268,9 +271,15 @@ opsacademy/
 |   |-- config/
 |   |   +-- index.js                 # Centralized config (env vars)
 |   |-- data/
-|   |   +-- units/                   # Learning Units dataset
-|   |       |-- linux-basics/        # (unit.json, learn.json, practice.json, prepare.json)
-|   |       +-- docker-basics/       # (unit.json, learn.json, practice.json, prepare.json)
+|   |   +-- units/                   # 8 Complete Learning Units
+|   |       |-- linux-basics/        # Linux Fundamentals (8 sections)
+|   |       |-- git-basics/          # Git & GitHub Workflow (7 sections)
+|   |       |-- docker-basics/       # Docker Fundamentals (8 sections)
+|   |       |-- kubernetes-basics/   # Kubernetes Orchestration (8 sections)
+|   |       |-- networking-fundamentals/ # Networking (6 sections)
+|   |       |-- cicd-pipelines/      # CI/CD Pipelines (6 sections)
+|   |       |-- aws-cloud-essentials/ # Cloud Computing / AWS (6 sections)
+|   |       +-- monitoring-observability/ # Monitoring & Observability (5 sections)
 |   |-- middleware/
 |   |   |-- auth.js                  # JWT authorization middleware
 |   |   +-- errorHandler.js          # Global JSON error handler
