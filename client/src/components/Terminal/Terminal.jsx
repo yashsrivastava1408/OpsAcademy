@@ -46,7 +46,10 @@ export default function Terminal({ sessionId, onDisconnect }) {
     };
 
     ws.onerror = (err) => {
-      console.error('[Terminal] WebSocket error:', err);
+      // Suppress unmount errors during React StrictMode dev re-renders
+      if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+        console.warn('[Terminal] WebSocket notice:', err);
+      }
       setStatus('disconnected');
     };
   }, [sessionId, onDisconnect]);
@@ -144,7 +147,19 @@ export default function Terminal({ sessionId, onDisconnect }) {
 
     return () => {
       if (wsRef.current) {
-        wsRef.current.close();
+        const ws = wsRef.current;
+        ws.onopen = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.onmessage = null;
+        if (ws.readyState === WebSocket.CONNECTING) {
+          ws.onopen = () => {
+            try { ws.close(); } catch { /* ignore */ }
+          };
+        } else if (ws.readyState === WebSocket.OPEN) {
+          try { ws.close(); } catch { /* ignore */ }
+        }
+        wsRef.current = null;
       }
     };
   }, [sessionId, connectWebSocket]);
