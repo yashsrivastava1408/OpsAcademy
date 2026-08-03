@@ -13,17 +13,32 @@
     {
       "id": "fc-d3",
       "front": "What is the difference between CMD and RUN in a Dockerfile?",
-      "back": "RUN = Executed while BUILDING the image (e.g. installing software like `npm install`).\n\nCMD = Executed when the container STARTS (e.g. `node server.js`)."
+      "back": "RUN = Executed while BUILDING the image (e.g. installing software like `npm install`).\n\nCMD = Executed when the container STARTS (e.g. `node server.js`).\n\nENTRYPOINT = Like CMD but cannot be overridden by command-line arguments (use for the main executable)."
     },
     {
       "id": "fc-d4",
-      "front": "What does port mapping `-p 8080:80` do in `docker run`?",
-      "back": "It connects host port 8080 to container port 80.\n\n`Host Port : Container Port`\n\nNow typing `http://localhost:8080` on your laptop forwards traffic into port 80 inside the container."
+      "front": "What does port mapping '-p 8080:80' do in 'docker run'?",
+      "back": "It connects host port 8080 to container port 80.\n\nHost Port : Container Port\n\nNow typing http://localhost:8080 on your laptop forwards traffic into port 80 inside the container."
     },
     {
       "id": "fc-d5",
       "front": "What happens to data inside a container when the container is deleted?",
-      "back": "Any data stored inside the container's temporary layer is permanently lost!\n\nTo save data permanently, use Docker Volumes (`-v volume_name:/data`)."
+      "back": "Any data stored inside the container's writable layer is permanently lost!\n\nTo save data permanently, use Docker Volumes (-v volume_name:/data) or bind mounts."
+    },
+    {
+      "id": "fc-d6",
+      "front": "What is a multi-stage Docker build?",
+      "back": "A Dockerfile with multiple FROM stages. Stage 1 compiles/builds the app (heavy — includes compilers, dev tools). Stage 2 copies only the built output into a minimal runtime image.\n\nResult: 1.2 GB build stage → 85 MB production image.\n\nKey syntax: COPY --from=builder /app/dist ./dist"
+    },
+    {
+      "id": "fc-d7",
+      "front": "What does exit code 137 mean?",
+      "back": "137 = 128 + 9 (signal 9 = SIGKILL).\n\nThe container was forcefully killed — usually by the Linux OOM (Out of Memory) killer when the container exceeds its memory limit.\n\nFix: Increase memory limit with --memory flag or optimize the application's memory usage."
+    },
+    {
+      "id": "fc-d8",
+      "front": "Why should you never run containers as root?",
+      "back": "If an attacker exploits a vulnerability and escapes the container, they'd have ROOT ACCESS to the entire host machine!\n\nAlways add a non-root user in your Dockerfile:\nRUN adduser -S appuser\nUSER appuser"
     }
   ],
   "interviewQuestions": [
@@ -45,8 +60,15 @@
       "id": "iq-d3",
       "question": "How do you inspect logs or troubleshoot a container that keeps crashing?",
       "difficulty": "intermediate",
-      "modelAnswer": "1. Run `docker ps -a` to find the crashed container's ID and exit code.\n2. Run `docker logs <container_id>` to view stdout/stderr output right before it crashed.\n3. If it crashes immediately, run it interactively with an entrypoint override: `docker run -it --entrypoint /bin/sh <image_name>` so I can look around inside the file system.\n4. Check resource limits with `docker stats` or system logs to see if it was killed by an Out Of Memory (OOM) error.",
+      "modelAnswer": "1. Run `docker ps -a` to find the crashed container's ID and exit code.\n2. Run `docker logs <container_id>` to view stdout/stderr output right before it crashed.\n3. If it crashes immediately, run it interactively with an entrypoint override: `docker run -it --entrypoint /bin/sh <image_name>` so I can look around inside the file system.\n4. Check resource limits with `docker stats` or system logs to see if it was killed by an Out Of Memory (OOM) error.\n5. Use `docker inspect <container_id>` to check environment variables, network config, and mounted volumes.",
       "keyPoints": ["docker ps -a to see exit status", "docker logs for error trace", "Override entrypoint to inspect container environment", "Check for OOM kills"]
+    },
+    {
+      "id": "iq-d4",
+      "question": "Explain Docker Compose and when you would use it over plain Docker commands.",
+      "difficulty": "intermediate",
+      "modelAnswer": "Docker Compose is a tool for defining and running multi-container applications with a single YAML file. Instead of running 5 separate 'docker run' commands with all their flags, you define everything in docker-compose.yml and run 'docker compose up'.\n\nI would use Docker Compose when:\n- The application has multiple services (API + database + cache + proxy)\n- Services need to communicate on the same network\n- I need persistent volumes for data\n- I want reproducible development environments for the team\n\nCompose handles networking, volumes, environment variables, service dependencies, and health checks — all in one declarative file that serves as living documentation of your architecture.",
+      "keyPoints": ["Declarative YAML for multi-container apps", "Single command to orchestrate everything", "Built-in networking between services", "Reproducible environments", "Living architecture documentation"]
     }
   ]
 }

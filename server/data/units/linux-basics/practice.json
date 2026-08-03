@@ -2,12 +2,12 @@
   "steps": [
     {
       "step": 1,
-      "title": "Explore the filesystem",
+      "title": "Explore the Filesystem",
       "description": "Get familiar with your sandbox environment. Find out where you are, and explore the directory structure.",
       "tasks": [
         "Run `pwd` to see your current directory",
         "Run `ls -la` to see all files (including hidden ones)",
-        "Navigate to `/` and list the top-level directories"
+        "Navigate to `/` and list the top-level directories with `ls /`"
       ],
       "verification": {
         "command": "pwd",
@@ -17,8 +17,8 @@
     },
     {
       "step": 2,
-      "title": "Create a project structure",
-      "description": "Build a web project directory structure from scratch using mkdir and touch.",
+      "title": "Create a Project Structure",
+      "description": "Build a real web project directory structure from scratch using mkdir and touch.",
       "tasks": [
         "Create a directory called `webapp` in your home directory",
         "Inside `webapp`, create subdirectories: `src`, `public`, and `config`",
@@ -32,7 +32,7 @@
     },
     {
       "step": 3,
-      "title": "Write and read file content",
+      "title": "Write and Read File Content",
       "description": "Use echo and cat to write content to files and read them back.",
       "tasks": [
         "Write a valid HTML page into `public/index.html` with an `<h1>` tag",
@@ -47,11 +47,11 @@
     },
     {
       "step": 4,
-      "title": "File permissions challenge",
+      "title": "File Permissions Challenge",
       "description": "Make your JavaScript file executable and restrict config file access.",
       "tasks": [
-        "Make `src/index.js` executable (chmod +x)",
-        "Set `config/app.conf` to read-only for everyone (chmod 444)",
+        "Make `src/index.js` executable with `chmod +x src/index.js`",
+        "Set `config/app.conf` to read-only for everyone with `chmod 444 config/app.conf`",
         "Verify permissions with `ls -la`"
       ],
       "verification": {
@@ -62,15 +62,45 @@
     },
     {
       "step": 5,
-      "title": "Process investigation",
+      "title": "Pipes & Text Processing",
+      "description": "Practice using pipes to chain commands together and process text data.",
+      "tasks": [
+        "Create a sample log: `for i in $(seq 1 50); do echo \"Line $i: $([ $((i % 3)) -eq 0 ] && echo ERROR || echo INFO) message\" >> /home/student/app.log; done`",
+        "Use pipes to count how many lines contain 'ERROR': `grep ERROR app.log | wc -l`",
+        "Extract and sort unique log levels: `awk '{print $3}' app.log | sort | uniq -c`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/app.log && grep -c ERROR /home/student/app.log | awk '{if ($1 > 0) print \"PASS\"; else print \"FAIL\"}'",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 6,
+      "title": "Process Investigation",
       "description": "Explore running processes in your sandbox environment.",
       "tasks": [
         "List all running processes with `ps aux`",
-        "Find the PID of your shell process",
-        "Start a background process with `sleep 300 &`, then find it with `ps` and kill it"
+        "Start a background process: `sleep 300 &`",
+        "Find it with `ps aux | grep sleep` and kill it with `kill <PID>`"
       ],
       "verification": {
         "command": "ps aux | grep -v grep | grep -c '' | awk '{if ($1 > 0) print \"PASS\"; else print \"FAIL\"}'",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 7,
+      "title": "Cron Job Setup",
+      "description": "Create a cron job that writes a timestamp to a file every minute.",
+      "tasks": [
+        "Create a script: `echo '#!/bin/bash' > /home/student/heartbeat.sh && echo 'date >> /home/student/heartbeat.log' >> /home/student/heartbeat.sh`",
+        "Make it executable: `chmod +x /home/student/heartbeat.sh`",
+        "Test it works: `./heartbeat.sh && cat heartbeat.log`"
+      ],
+      "verification": {
+        "command": "test -x /home/student/heartbeat.sh && test -f /home/student/heartbeat.log && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

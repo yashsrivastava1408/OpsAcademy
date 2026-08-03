@@ -1,74 +1,69 @@
 {
   "flashcards": [
     {
-      "id": "fc-1",
-      "front": "What does the command 'chmod 755' set?",
-      "back": "Owner: rwx (read/write/execute)\nGroup: r-x (read/execute)\nOthers: r-x (read/execute)\n\nNumeric: r=4, w=2, x=1. So 7=4+2+1, 5=4+0+1."
+      "id": "fc-l1",
+      "front": "What is the difference between a Linux kernel and a Linux distribution?",
+      "back": "The **kernel** is the core software that manages hardware (CPU, RAM, disk).\n\nA **distribution** (distro) bundles the kernel with system libraries, a package manager, and applications to create a complete OS.\n\nExamples: Ubuntu, CentOS, Alpine, Debian."
     },
     {
-      "id": "fc-2",
-      "front": "What is the difference between a hard link and a soft link?",
-      "back": "Hard link: Points directly to the inode (data). Deleting the original doesn't affect the link. Cannot cross filesystems.\n\nSoft link (symlink): Points to the file path. If the original is deleted, the symlink breaks. Can cross filesystems.\n\nCreate with: ln file hardlink | ln -s file softlink"
+      "id": "fc-l2",
+      "front": "What does 'chmod 755' mean in plain English?",
+      "back": "Owner can do everything (read + write + execute = 7).\nGroup members can read and execute but not write (5).\nEveryone else can also read and execute but not write (5).\n\nThis is the standard permission for executable scripts and programs."
     },
     {
-      "id": "fc-3",
-      "front": "What does 'ps aux | grep nginx' do?",
-      "back": "ps aux: Lists ALL running processes with details (user, PID, CPU%, memory, command).\n\n| grep nginx: Pipes the output through grep to filter only lines containing 'nginx'.\n\nThis is the standard way to check if a specific service is running."
+      "id": "fc-l3",
+      "front": "What is the difference between a hard link and a symbolic (soft) link?",
+      "back": "**Hard link**: A second name pointing to the same data on disk. Deleting the original file doesn't affect the hard link — the data still exists.\n\n**Symbolic link (symlink)**: A shortcut that points to the file's path. If the original is deleted, the symlink becomes a broken pointer.\n\nCreate with: `ln file hardlink` vs `ln -s file symlink`"
     },
     {
-      "id": "fc-4",
-      "front": "What is the difference between /tmp and /var/tmp?",
-      "back": "/tmp: Cleared on every reboot. Use for short-lived temporary files.\n\n/var/tmp: Persists across reboots. Use for temporary files that need to survive a restart.\n\nBoth are world-writable with the sticky bit set."
+      "id": "fc-l4",
+      "front": "What does the pipe symbol (|) do in Linux?",
+      "back": "The pipe takes the standard output (stdout) of the command on the LEFT and sends it as standard input (stdin) to the command on the RIGHT.\n\nExample: `cat log.txt | grep ERROR | wc -l`\nReads file → filters for ERROR lines → counts them."
     },
     {
-      "id": "fc-5",
-      "front": "Explain the Linux boot process in order.",
-      "back": "1. BIOS/UEFI: Hardware initialization\n2. Bootloader (GRUB): Loads the kernel\n3. Kernel: Initializes hardware drivers, mounts root filesystem\n4. Init system (systemd): Starts services in dependency order\n5. Login: Presents login prompt or desktop"
+      "id": "fc-l5",
+      "front": "What is the difference between SIGTERM and SIGKILL?",
+      "back": "**SIGTERM (signal 15)**: Asks the process to shut down gracefully. The process CAN catch this signal and clean up (save files, close connections).\n\n**SIGKILL (signal 9)**: Forces immediate termination. The process CANNOT catch or ignore this signal. Data may be lost.\n\nAlways try SIGTERM first. Use SIGKILL as a last resort."
     },
     {
-      "id": "fc-6",
-      "front": "What does the sticky bit do on a directory?",
-      "back": "When set on a directory (like /tmp), only the file owner, directory owner, or root can delete files in it — even if others have write permission.\n\nSet with: chmod +t directory\nVisible as 't' in permission string: drwxrwxrwt"
+      "id": "fc-l6",
+      "front": "Explain the cron expression: 0 2 * * 1-5",
+      "back": "Minute: 0 (at the start of the hour)\nHour: 2 (at 2 AM)\nDay of Month: * (every day)\nMonth: * (every month)\nDay of Week: 1-5 (Monday through Friday)\n\nTranslation: 'Run at 2:00 AM every weekday (Mon-Fri).'\nPerfect for nightly database backups!"
     },
     {
-      "id": "fc-7",
-      "front": "What is an inode in Linux?",
-      "back": "An inode is a data structure that stores metadata about a file: permissions, ownership, timestamps, size, and pointers to data blocks.\n\nEvery file has exactly one inode. The filename is just a pointer to the inode. This is why hard links work — multiple names can point to the same inode."
-    },
-    {
-      "id": "fc-8",
-      "front": "How do you find files larger than 100MB in Linux?",
-      "back": "find / -type f -size +100M\n\nBreakdown:\n/ — start from root\n-type f — files only\n-size +100M — larger than 100 megabytes\n\nAdd -exec ls -lh {} \\; to see sizes."
+      "id": "fc-l7",
+      "front": "How do you find the 10 largest files in /var/log?",
+      "back": "du -ah /var/log | sort -rh | head -10\n\n• du -ah: List all files with human-readable sizes\n• sort -rh: Sort reverse by human-readable numbers (largest first)\n• head -10: Show only the top 10\n\nThis is a classic DevOps one-liner for troubleshooting full disks!"
     }
   ],
   "interviewQuestions": [
     {
-      "id": "iq-1",
-      "question": "A production server is running out of disk space. Walk me through your debugging steps.",
+      "id": "iq-l1",
+      "question": "A production server's disk is 95% full. Walk me through how you would diagnose and fix it.",
       "difficulty": "intermediate",
-      "modelAnswer": "1. Check overall disk usage: `df -h` to see which partitions are full.\n2. Find large directories: `du -sh /* | sort -rh | head -10` starting from root.\n3. Drill down into the largest directory recursively.\n4. Common culprits: log files (`/var/log`), old Docker images, temp files, core dumps.\n5. For logs: check if log rotation is configured (`logrotate`).\n6. For Docker: `docker system prune` to clean unused images/containers.\n7. Quick fix: find and delete old logs `find /var/log -name '*.gz' -mtime +30 -delete`.\n8. Long-term: set up log rotation, disk usage alerts, and periodic cleanup cron jobs.",
-      "keyPoints": ["df -h for overview", "du -sh for drilling down", "Check /var/log", "Log rotation", "Preventive monitoring"]
+      "modelAnswer": "1. Check overall disk usage: `df -h` to see which partition is full.\n2. Find the largest directories: `du -sh /* | sort -rh | head -10` to identify which top-level directory is consuming space.\n3. Drill deeper: `du -sh /var/log/* | sort -rh | head -10` — often /var/log is the culprit.\n4. Check for large individual files: `find /var -size +100M -type f` to find files over 100MB.\n5. Clean up: Rotate logs with `logrotate`, remove old archives, clear /tmp, truncate massive logs with `cat /dev/null > huge.log`.\n6. Prevention: Set up log rotation in /etc/logrotate.d/ and disk usage alerts with monitoring tools.",
+      "keyPoints": ["df -h for partition overview", "du -sh for directory sizes", "find -size for large files", "logrotate for prevention", "Don't just delete — investigate root cause"]
     },
     {
-      "id": "iq-2",
-      "question": "Explain the difference between kill, kill -9, and kill -15. When would you use each?",
+      "id": "iq-l2",
+      "question": "Explain file permissions in Linux. How would you set up a shared project directory for a team?",
+      "difficulty": "intermediate",
+      "modelAnswer": "Linux permissions have three tiers: Owner (u), Group (g), Others (o), each with Read (4), Write (2), Execute (1) bits.\n\nFor a shared team project:\n1. Create a group: `sudo groupadd devteam`\n2. Add team members: `sudo usermod -aG devteam alice bob charlie`\n3. Create the directory: `sudo mkdir /opt/project`\n4. Set ownership: `sudo chown root:devteam /opt/project`\n5. Set permissions: `sudo chmod 2775 /opt/project`\n   - 2 = setgid bit (new files inherit the group)\n   - 775 = owner rwx, group rwx, others r-x\n6. This ensures all team members can read/write, and new files automatically belong to the devteam group.",
+      "keyPoints": ["rwx numeric system (4+2+1)", "setgid bit for shared directories", "Groups for team access control", "chown and chmod in combination"]
+    },
+    {
+      "id": "iq-l3",
+      "question": "What are Linux pipes and how do they work internally?",
       "difficulty": "beginner",
-      "modelAnswer": "kill (default) and kill -15 are the same — they send SIGTERM, which asks the process to terminate gracefully. The process can catch this signal, save state, close connections, and clean up before exiting.\n\nkill -9 sends SIGKILL, which immediately terminates the process. The process cannot catch or ignore this signal. No cleanup happens.\n\nAlways try SIGTERM first. Wait a few seconds. Only use SIGKILL as a last resort if the process is unresponsive. In production, SIGKILL can cause data corruption, orphaned connections, and incomplete transactions.",
-      "keyPoints": ["SIGTERM is graceful", "SIGKILL is forced", "Always try SIGTERM first", "SIGKILL risks data corruption"]
+      "modelAnswer": "Pipes (|) connect the standard output (stdout) of one command to the standard input (stdin) of another, forming a data processing pipeline.\n\nInternally, the kernel creates a buffer in memory. The left command writes data into this buffer, and the right command reads from it. If the buffer fills up, the writer pauses until the reader catches up (backpressure).\n\nExample: `cat access.log | grep 404 | awk '{print $7}' | sort | uniq -c | sort -rn | head -10`\n\nThis finds the top 10 URLs returning 404 errors — a powerful one-liner that replaces writing a custom script.",
+      "keyPoints": ["stdout to stdin connection", "Kernel buffer with backpressure", "Chain unlimited commands", "Replaces need for custom scripts"]
     },
     {
-      "id": "iq-3",
-      "question": "What happens when you type 'ls' and press Enter?",
+      "id": "iq-l4",
+      "question": "How would you schedule a task to run every day at midnight and ensure it still runs if the server was off at that time?",
       "difficulty": "advanced",
-      "modelAnswer": "1. The shell reads your input from stdin.\n2. It parses the command, checking for aliases, functions, builtins, then PATH.\n3. It finds /usr/bin/ls (or similar) in the PATH.\n4. The shell calls fork() to create a child process.\n5. The child process calls exec() to replace itself with the ls binary.\n6. ls makes system calls (opendir, readdir) to the kernel.\n7. The kernel reads directory entries from the filesystem (inode table).\n8. ls formats the output and writes it to stdout (file descriptor 1).\n9. The terminal emulator renders the text.\n10. The shell calls wait() for the child to finish, then shows the next prompt.",
-      "keyPoints": ["fork + exec", "PATH lookup", "System calls to kernel", "stdout file descriptor", "Parent waits for child"]
-    },
-    {
-      "id": "iq-4",
-      "question": "How would you check why a service failed to start?",
-      "difficulty": "intermediate",
-      "modelAnswer": "1. Check service status: `systemctl status servicename` — shows active/failed and recent logs.\n2. Read full logs: `journalctl -u servicename -n 50` for the last 50 log entries.\n3. Check the service configuration: `systemctl cat servicename` to see the unit file.\n4. Check ports: `ss -tlnp` or `netstat -tlnp` — maybe the port is already in use.\n5. Check permissions: does the service user have access to required files/directories?\n6. Check dependencies: `systemctl list-dependencies servicename`.\n7. Try starting manually: run the service binary directly to see immediate error output.\n8. Check system resources: `free -h` (memory), `df -h` (disk).",
-      "keyPoints": ["systemctl status", "journalctl for logs", "Port conflicts", "Permission issues", "Manual start for debugging"]
+      "modelAnswer": "For regular scheduling, I'd use cron: `crontab -e` and add `0 0 * * * /scripts/task.sh`.\n\nHowever, standard cron does NOT run missed jobs if the server was powered off at midnight. For that, I'd use **anacron** which tracks job execution dates and runs missed jobs when the system comes back online.\n\nAlternatively, in modern systems, I'd use **systemd timers** which support both calendar-based scheduling and persistent timers that catch up on missed runs.\n\nFor critical production jobs, I'd also add error handling in the script (set -e), logging (redirect to a log file), and alerting (send notification on failure).",
+      "keyPoints": ["cron for standard scheduling", "anacron for missed job recovery", "systemd timers as modern alternative", "Error handling and alerting for production"]
     }
   ]
 }

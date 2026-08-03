@@ -7,7 +7,7 @@ const axios = require('axios');
 const config = require('../config');
 
 const router = express.Router();
-const AI_HUB_URL = config.aiHubUrl || 'http://localhost:5000';
+const AI_HUB_URL = config.aiHubUrl || 'http://localhost:5005';
 
 /**
  * POST /api/agent/hint

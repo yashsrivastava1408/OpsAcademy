@@ -6,21 +6,21 @@
       "content": [
         {
           "type": "text",
-          "value": "Docker lets you run containers on a single computer. But what happens when you have 500 containers running across 50 servers in the cloud?"
+          "value": "Docker lets you run containers on a single computer. But what happens when you have 500 containers running across 50 servers in the cloud? That's where **Kubernetes** (also called K8s) comes in."
         },
         {
           "type": "text",
-          "value": "That's where **Kubernetes** (also called K8s) comes in. Kubernetes is like the **Captain of a ship** filled with containers. If a container crashes, Kubernetes restarts it. If traffic spikes, Kubernetes scales up extra containers. If a server dies, Kubernetes moves the containers to a healthy server."
+          "value": "Kubernetes is like the **Captain of a ship** filled with containers. If a container crashes, Kubernetes restarts it. If traffic spikes, Kubernetes scales up extra containers. If a server dies, Kubernetes moves the containers to a healthy server."
+        },
+        {
+          "type": "mermaid",
+          "title": "Kubernetes Architecture Overview",
+          "value": "graph TB\n    subgraph CP [\"Control Plane (Brain)\"]\n        API[\"🔌 API Server\"]\n        ETCD[\"💾 etcd (Database)\"]\n        SCHED[\"📋 Scheduler\"]\n        CM[\"🔄 Controller Manager\"]\n    end\n    subgraph W1 [\"Worker Node 1\"]\n        KL1[\"Kubelet\"]\n        P1A[\"Pod A\"]\n        P1B[\"Pod B\"]\n    end\n    subgraph W2 [\"Worker Node 2\"]\n        KL2[\"Kubelet\"]\n        P2A[\"Pod C\"]\n        P2B[\"Pod D\"]\n    end\n    API --> KL1\n    API --> KL2\n    SCHED --> API\n    CM --> API\n    ETCD <--> API\n    style CP fill:#0f1923,stroke:#00d4ff33,color:#e2e8f0\n    style W1 fill:#0f1923,stroke:#10b98133,color:#e2e8f0\n    style W2 fill:#0f1923,stroke:#10b98133,color:#e2e8f0"
         },
         {
           "type": "callout",
           "style": "info",
-          "value": "K8s abbreviation: 'K' followed by 8 letters, ending in 's' = K-eight-s."
-        },
-        {
-          "type": "diagram",
-          "title": "Kubernetes Architecture Overview",
-          "value": "Control Plane (Brain)            Worker Nodes (Muscles)\n├── API Server (receives commands)├── Node 1: [Pod A] [Pod B]\n├── etcd (database of cluster)   ├── Node 2: [Pod C] [Pod D]\n└── Scheduler (places pods)      └── Kubelet (node manager agent)"
+          "value": "K8s abbreviation: 'K' followed by 8 letters ('ubernete'), ending in 's' = K-eight-s. Google created it internally (called 'Borg'), then open-sourced it in 2014."
         }
       ],
       "quiz": {
@@ -36,39 +36,299 @@
       }
     },
     {
-      "id": "pods-deployments-services",
-      "title": "Pods, Deployments, and Services",
+      "id": "pods",
+      "title": "Pods — The Smallest Unit",
       "content": [
         {
           "type": "text",
-          "value": "The 3 core concepts every candidate must know for placement interviews:"
+          "value": "A **Pod** is the smallest deployable unit in Kubernetes. It wraps one or more containers that share the same network namespace (same IP address and ports) and storage volumes. Think of a Pod as a tiny apartment — the containers inside share the same address and mailbox."
         },
         {
-          "type": "text",
-          "value": "1. **Pod**: The smallest building block in K8s. A Pod wraps one or more Docker containers that share the same network address.\n\n2. **Deployment**: Manages Pods for you. If a Pod crashes, the Deployment immediately creates a replacement (self-healing).\n\n3. **Service**: An internal load balancer that gives your Pods a stable IP and port so other services or users can talk to them."
+          "type": "mermaid",
+          "title": "Pod Internals",
+          "value": "graph TB\n    subgraph POD [\"Pod (shared network + storage)\"]\n        C1[\"📦 App Container\\nnginx:alpine\"]\n        C2[\"📊 Sidecar Container\\nlog-collector\"]\n        VOL[(\"📁 Shared Volume\")]\n    end\n    C1 --> VOL\n    C2 --> VOL\n    NET[\"🌐 Pod IP: 10.1.0.5\"] --> POD\n    style POD fill:#0f1923,stroke:#00d4ff33,color:#e2e8f0\n    style C1 fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style C2 fill:#1a2332,stroke:#f59e0b,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Pod Manifest (pod.yaml)",
+          "value": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: my-app\n  labels:\n    app: web\nspec:\n  containers:\n    - name: nginx\n      image: nginx:alpine\n      ports:\n        - containerPort: 80\n      resources:\n        requests:\n          memory: \"64Mi\"\n          cpu: \"250m\"\n        limits:\n          memory: \"128Mi\"\n          cpu: \"500m\""
         },
         {
           "type": "code",
           "language": "bash",
-          "title": "Essential kubectl Commands",
-          "value": "kubectl get pods                    # List all running pods\nkubectl get deployments             # List deployments\nkubectl get services                # List network services\nkubectl describe pod <pod_name>     # Get detailed diagnostic info\nkubectl logs <pod_name>             # Read logs from a pod\nkubectl scale deployment myapp --replicas=5  # Scale up to 5 pods instantly!"
+          "title": "Pod Commands",
+          "value": "kubectl apply -f pod.yaml       # Create a pod from YAML\nkubectl get pods                # List all pods\nkubectl describe pod my-app     # Detailed info and events\nkubectl logs my-app             # View container logs\nkubectl exec -it my-app -- sh   # Shell into the pod\nkubectl delete pod my-app       # Delete the pod"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "In practice, you rarely create Pods directly. Instead, you create Deployments that manage Pods for you. Deployments add self-healing, scaling, and rolling updates."
+        }
+      ],
+      "quiz": {
+        "question": "What do containers inside the same Pod share?",
+        "options": [
+          "Nothing — they are fully isolated",
+          "The same network namespace (IP address) and storage volumes",
+          "The same CPU core",
+          "The same Docker image"
+        ],
+        "correctIndex": 1,
+        "explanation": "Containers in the same Pod share the same network namespace (same IP, can use localhost) and can mount shared volumes. This is useful for sidecar patterns like log collectors."
+      }
+    },
+    {
+      "id": "deployments",
+      "title": "Deployments — Self-Healing & Scaling",
+      "content": [
+        {
+          "type": "text",
+          "value": "A **Deployment** is the most common way to run applications in Kubernetes. It manages a set of identical Pods (called replicas) and provides self-healing: if a Pod crashes, the Deployment automatically creates a replacement. If you need more capacity, just increase the replica count."
+        },
+        {
+          "type": "mermaid",
+          "title": "Deployment Self-Healing",
+          "value": "sequenceDiagram\n    participant D as Deployment<br/>replicas: 3\n    participant RS as ReplicaSet\n    participant P1 as Pod 1 ✅\n    participant P2 as Pod 2 ✅\n    participant P3 as Pod 3 💀\n    D->>RS: Ensure 3 replicas running\n    RS->>P1: Running\n    RS->>P2: Running\n    RS->>P3: Crashed!\n    RS->>RS: Detected: only 2/3 running\n    RS->>P3: Auto-create replacement Pod\n    Note over RS,P3: Self-healing complete<br/>3/3 Pods healthy"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Deployment Manifest",
+          "value": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web-app\nspec:\n  replicas: 3                    # Run 3 identical pods\n  selector:\n    matchLabels:\n      app: web\n  template:                      # Pod template\n    metadata:\n      labels:\n        app: web\n    spec:\n      containers:\n        - name: nginx\n          image: nginx:1.25\n          ports:\n            - containerPort: 80\n          resources:\n            requests:\n              cpu: \"100m\"\n              memory: \"64Mi\"\n            limits:\n              cpu: \"200m\"\n              memory: \"128Mi\""
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Deployment Commands",
+          "value": "kubectl apply -f deployment.yaml         # Create/update deployment\nkubectl get deployments                  # List deployments\nkubectl scale deployment web-app --replicas=5  # Scale to 5 pods\nkubectl rollout status deployment web-app  # Watch rollout progress\nkubectl rollout undo deployment web-app    # Rollback to previous version"
         },
         {
           "type": "callout",
           "style": "tip",
-          "value": "Top Interview Question: 'How do you check why a Pod is crashing?' Answer: Use `kubectl get pods` to check status, then `kubectl describe pod <name>` to see events, and `kubectl logs <name>` to read error traces."
+          "value": "Interview question: 'How does Kubernetes achieve self-healing?' Answer: The Deployment controller continuously compares the desired state (3 replicas) with the actual state. If a Pod dies, the controller creates a new one to match the desired state. This is called the 'reconciliation loop'."
         }
       ],
       "quiz": {
         "question": "What happens if a Pod managed by a Deployment crashes?",
         "options": [
           "The entire Kubernetes cluster stops",
-          "The Deployment automatically creates a new Pod to replace it (self-healing)",
+          "The Deployment automatically creates a new Pod to replace it",
           "You must manually restart the server",
           "Nothing happens"
         ],
         "correctIndex": 1,
         "explanation": "Deployments maintain a desired replica count. If a Pod dies, K8s self-heals by launching a new Pod automatically."
+      }
+    },
+    {
+      "id": "services",
+      "title": "Services — Networking & Load Balancing",
+      "content": [
+        {
+          "type": "text",
+          "value": "Pods are ephemeral — they can be created, destroyed, and replaced at any time. Their IP addresses change with every restart. A **Service** gives your Pods a stable network address and acts as an internal load balancer, distributing traffic across all healthy Pods."
+        },
+        {
+          "type": "mermaid",
+          "title": "Service Types",
+          "value": "graph LR\n    subgraph CIP [\"ClusterIP (Internal)\"]\n        SVC1[\"Service\\n10.96.0.1:80\"] --> P1A[\"Pod 1\"]\n        SVC1 --> P1B[\"Pod 2\"]\n        SVC1 --> P1C[\"Pod 3\"]\n    end\n    subgraph NP [\"NodePort (External via node)\"]\n        SVC2[\"Service\\nNode:30080\"] --> P2A[\"Pod 1\"]\n        SVC2 --> P2B[\"Pod 2\"]\n    end\n    subgraph LB [\"LoadBalancer (Cloud)\"]\n        SVC3[\"Cloud LB\\nPublic IP\"] --> P3A[\"Pod 1\"]\n        SVC3 --> P3B[\"Pod 2\"]\n    end\n    style CIP fill:#0f1923,stroke:#00d4ff33,color:#e2e8f0\n    style NP fill:#0f1923,stroke:#f59e0b33,color:#e2e8f0\n    style LB fill:#0f1923,stroke:#10b98133,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Service Manifest",
+          "value": "apiVersion: v1\nkind: Service\nmetadata:\n  name: web-service\nspec:\n  type: ClusterIP              # Internal only (default)\n  selector:\n    app: web                   # Route to Pods with label app=web\n  ports:\n    - port: 80                 # Service port\n      targetPort: 80           # Container port\n      protocol: TCP"
+        },
+        {
+          "type": "text",
+          "value": "**ClusterIP** (default) — Internal only. Other pods reach it by name: `http://web-service:80`\n\n**NodePort** — Exposes on every node's IP at a high port (30000-32767). Good for development.\n\n**LoadBalancer** — Creates a cloud load balancer with a public IP. Used in AWS/GCP/Azure production."
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview tip: 'How do pods discover each other?' Answer: Through DNS. K8s runs an internal DNS server (CoreDNS). If you create a Service called 'database', any pod can reach it at 'http://database' or 'database.namespace.svc.cluster.local'."
+        }
+      ],
+      "quiz": {
+        "question": "Why do we need Services in Kubernetes?",
+        "options": [
+          "Because Pods can't communicate at all",
+          "To give Pods a stable network address since Pod IPs change on restart",
+          "To install packages in Pods",
+          "Because containers don't have ports"
+        ],
+        "correctIndex": 1,
+        "explanation": "Pods are ephemeral and get new IPs when replaced. Services provide a stable DNS name and IP, plus load balance traffic across all matching Pods."
+      }
+    },
+    {
+      "id": "configmaps-secrets",
+      "title": "ConfigMaps and Secrets",
+      "content": [
+        {
+          "type": "text",
+          "value": "Configuration should never be hardcoded inside your Docker image. **ConfigMaps** store non-sensitive configuration (database URLs, feature flags), and **Secrets** store sensitive data (passwords, API keys, TLS certificates). Both are injected into Pods at runtime."
+        },
+        {
+          "type": "mermaid",
+          "title": "ConfigMap & Secret Injection",
+          "value": "graph LR\n    CM[\"📋 ConfigMap\\nDATABASE_HOST=db\\nLOG_LEVEL=info\"] -->|env vars or volume| POD[\"📦 Pod\"]\n    SEC[\"🔐 Secret\\nDB_PASSWORD=abc123\\nAPI_KEY=xyz789\"] -->|env vars or volume| POD\n    style CM fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style SEC fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style POD fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "ConfigMap and Secret YAML",
+          "value": "# ConfigMap\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-config\ndata:\n  DATABASE_HOST: \"postgres-service\"\n  LOG_LEVEL: \"info\"\n  MAX_CONNECTIONS: \"100\"\n---\n# Secret (values are base64 encoded)\napiVersion: v1\nkind: Secret\nmetadata:\n  name: app-secrets\ntype: Opaque\ndata:\n  DB_PASSWORD: cGFzc3dvcmQxMjM=   # echo -n 'password123' | base64\n  API_KEY: bXlzZWNyZXRrZXk=       # echo -n 'mysecretkey' | base64"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Using ConfigMap and Secret in a Pod",
+          "value": "spec:\n  containers:\n    - name: app\n      image: myapp:v1\n      envFrom:                    # Load ALL keys as env vars\n        - configMapRef:\n            name: app-config\n        - secretRef:\n            name: app-secrets\n      # Or mount as files:\n      volumeMounts:\n        - name: config-volume\n          mountPath: /etc/config\n  volumes:\n    - name: config-volume\n      configMap:\n        name: app-config"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Secrets are base64-encoded, NOT encrypted. Anyone with access to the cluster can decode them. For production, use a Secrets Manager like HashiCorp Vault, AWS Secrets Manager, or enable Kubernetes Secrets encryption at rest."
+        }
+      ],
+      "quiz": {
+        "question": "What is the difference between ConfigMaps and Secrets?",
+        "options": [
+          "There is no difference",
+          "ConfigMaps store non-sensitive config; Secrets store sensitive data like passwords",
+          "ConfigMaps are for production; Secrets are for development",
+          "ConfigMaps are YAML; Secrets are JSON"
+        ],
+        "correctIndex": 1,
+        "explanation": "ConfigMaps hold non-sensitive configuration (feature flags, URLs). Secrets hold sensitive data (passwords, API keys) and are base64-encoded with restricted access."
+      }
+    },
+    {
+      "id": "ingress",
+      "title": "Ingress — HTTP Routing & TLS",
+      "content": [
+        {
+          "type": "text",
+          "value": "An **Ingress** is a K8s resource that manages external HTTP/HTTPS access to your services. Think of it as a smart reverse proxy — it routes traffic based on hostnames and URL paths to different backend services."
+        },
+        {
+          "type": "mermaid",
+          "title": "Ingress Routing Example",
+          "value": "graph LR\n    USER[\"🌐 User Request\"] --> ING[\"Ingress Controller\\n(nginx / traefik)\"]\n    ING -->|\"api.myapp.com/users\"| SVC1[\"Users Service\"]\n    ING -->|\"api.myapp.com/orders\"| SVC2[\"Orders Service\"]\n    ING -->|\"myapp.com/*\"| SVC3[\"Frontend Service\"]\n    SVC1 --> P1[\"Pod\"] & P2[\"Pod\"]\n    SVC2 --> P3[\"Pod\"]\n    SVC3 --> P4[\"Pod\"] & P5[\"Pod\"]\n    style ING fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style SVC1 fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style SVC2 fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style SVC3 fill:#1a2332,stroke:#8b5cf6,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Ingress Manifest with TLS",
+          "value": "apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: app-ingress\n  annotations:\n    nginx.ingress.kubernetes.io/ssl-redirect: \"true\"\nspec:\n  tls:\n    - hosts:\n        - myapp.com\n      secretName: tls-secret\n  rules:\n    - host: myapp.com\n      http:\n        paths:\n          - path: /api\n            pathType: Prefix\n            backend:\n              service:\n                name: api-service\n                port:\n                  number: 80\n          - path: /\n            pathType: Prefix\n            backend:\n              service:\n                name: frontend-service\n                port:\n                  number: 80"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "An Ingress resource alone does nothing — you need an Ingress Controller (like nginx-ingress or traefik) running in your cluster to actually implement the routing rules."
+        }
+      ],
+      "quiz": {
+        "question": "What is the purpose of a Kubernetes Ingress?",
+        "options": [
+          "To store configuration data",
+          "To route external HTTP/HTTPS traffic to internal services based on hostnames and paths",
+          "To manage container images",
+          "To schedule pods on nodes"
+        ],
+        "correctIndex": 1,
+        "explanation": "Ingress manages external HTTP/HTTPS access to services, providing host-based and path-based routing, TLS termination, and load balancing."
+      }
+    },
+    {
+      "id": "namespaces-helm",
+      "title": "Namespaces and Helm Charts",
+      "content": [
+        {
+          "type": "text",
+          "value": "**Namespaces** divide a single cluster into virtual mini-clusters. Think of them as separate floors in an office building — each team gets their own floor with isolated resources. Common namespaces: `default`, `kube-system`, `production`, `staging`."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Namespace Commands",
+          "value": "kubectl get namespaces                   # List all namespaces\nkubectl create namespace staging         # Create a namespace\nkubectl get pods -n staging              # List pods in a specific namespace\nkubectl get pods --all-namespaces        # List pods across ALL namespaces\nkubectl config set-context --current --namespace=staging  # Set default namespace"
+        },
+        {
+          "type": "text",
+          "value": "**Helm** is the package manager for Kubernetes — like apt for Ubuntu or npm for Node.js. A **Helm Chart** is a package of pre-configured Kubernetes YAML manifests. Instead of writing 10+ YAML files manually, you install a chart with one command."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Helm Commands",
+          "value": "# Install a chart from a repository\nhelm repo add bitnami https://charts.bitnami.com/bitnami\nhelm install my-db bitnami/postgresql    # Install PostgreSQL with one command!\n\n# Customize with values\nhelm install my-db bitnami/postgresql \\\n  --set auth.postgresPassword=mypass \\\n  --set primary.persistence.size=10Gi\n\n# Manage releases\nhelm list                                # List installed charts\nhelm upgrade my-db bitnami/postgresql    # Upgrade to new version\nhelm rollback my-db 1                    # Rollback to revision 1\nhelm uninstall my-db                     # Remove everything"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview: 'Why use Helm?' Answer: It templatizes Kubernetes manifests, manages versions and rollbacks, handles complex dependency chains, and lets you install battle-tested community charts instead of reinventing the wheel."
+        }
+      ],
+      "quiz": {
+        "question": "What is Helm in the Kubernetes ecosystem?",
+        "options": [
+          "A container runtime",
+          "A package manager for Kubernetes that simplifies deploying complex applications",
+          "A monitoring tool",
+          "A replacement for Docker"
+        ],
+        "correctIndex": 1,
+        "explanation": "Helm is the package manager for K8s. Charts are pre-configured packages of K8s YAML manifests. 'helm install my-db bitnami/postgresql' deploys an entire database setup with one command."
+      }
+    },
+    {
+      "id": "rolling-updates-probes",
+      "title": "Rolling Updates and Health Probes",
+      "content": [
+        {
+          "type": "text",
+          "value": "**Rolling Updates** let you deploy new versions with zero downtime. Kubernetes gradually replaces old Pods with new ones — like changing tires on a car while it's still driving (but safely)."
+        },
+        {
+          "type": "mermaid",
+          "title": "Rolling Update Sequence",
+          "value": "sequenceDiagram\n    participant D as Deployment\n    participant Old as Old Pods (v1)\n    participant New as New Pods (v2)\n    D->>New: Create 1 new Pod (v2)\n    New->>D: Health check passed ✅\n    D->>Old: Terminate 1 old Pod (v1)\n    D->>New: Create 2nd new Pod (v2)\n    New->>D: Health check passed ✅\n    D->>Old: Terminate 2nd old Pod (v1)\n    D->>New: Create 3rd new Pod (v2)\n    New->>D: Health check passed ✅\n    D->>Old: Terminate last old Pod (v1)\n    Note over D,New: Rolling update complete!<br/>Zero downtime achieved."
+        },
+        {
+          "type": "text",
+          "value": "**Health Probes** tell Kubernetes how to check if your application is healthy:\n\n- **Liveness Probe** — 'Is the app alive?' If it fails, K8s restarts the container.\n- **Readiness Probe** — 'Is the app ready to receive traffic?' If it fails, K8s removes it from the Service load balancer.\n- **Startup Probe** — 'Has the app finished starting up?' Gives slow-starting apps extra time."
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Health Probes Configuration",
+          "value": "spec:\n  containers:\n    - name: app\n      image: myapp:v2\n      ports:\n        - containerPort: 3000\n      livenessProbe:\n        httpGet:\n          path: /health\n          port: 3000\n        initialDelaySeconds: 10\n        periodSeconds: 15\n        failureThreshold: 3\n      readinessProbe:\n        httpGet:\n          path: /ready\n          port: 3000\n        initialDelaySeconds: 5\n        periodSeconds: 5\n      startupProbe:\n        httpGet:\n          path: /health\n          port: 3000\n        failureThreshold: 30\n        periodSeconds: 10"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Rolling Update Commands",
+          "value": "# Update image version (triggers rolling update)\nkubectl set image deployment/web-app nginx=nginx:1.26\n\n# Watch rollout progress\nkubectl rollout status deployment/web-app\n\n# Rollback if something goes wrong\nkubectl rollout undo deployment/web-app\n\n# View rollout history\nkubectl rollout history deployment/web-app"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview question: 'How do you achieve zero-downtime deployments in Kubernetes?' Answer: Use Rolling Updates (default strategy) with properly configured Readiness Probes. K8s only sends traffic to new pods after the readiness probe passes, ensuring users never hit an unready pod."
+        }
+      ],
+      "quiz": {
+        "question": "What happens if a Pod's liveness probe fails repeatedly?",
+        "options": [
+          "Nothing — it's just informational",
+          "Kubernetes restarts the container automatically",
+          "The Pod gets more CPU",
+          "An alert is sent to the admin"
+        ],
+        "correctIndex": 1,
+        "explanation": "If the liveness probe fails more than the failureThreshold, Kubernetes kills the container and restarts it. This provides automatic recovery from application deadlocks or hangs."
       }
     }
   ]

@@ -1,0 +1,193 @@
+{
+  "sections": [
+    {
+      "id": "three-pillars",
+      "title": "The 3 Pillars of Observability",
+      "content": [
+        {
+          "type": "text",
+          "value": "**Observability** is the ability to understand the internal state of a system based on the data it emits externally. While traditional monitoring asks 'Is the server up?', observability asks 'WHY is the response slow for user 123 in region EU-west?'"
+        },
+        {
+          "type": "mermaid",
+          "title": "The Three Pillars of Observability",
+          "value": "graph TB\n    OBS[\"👁️ Observability Engine\"]\n    OBS --> LOGS[\"📜 Logs\\nTimestamped event records\\n'What happened and when?'\"]\n    OBS --> METRICS[\"📊 Metrics\\nAggregatable numerical data\\n'How much or how fast?'\"]\n    OBS --> TRACES[\"🔍 Traces\\nEnd-to-end request journeys\\n'Where did time get spent?'\"]\n    style OBS fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style LOGS fill:#162231,stroke:#10b981,color:#e2e8f0\n    style METRICS fill:#162231,stroke:#f59e0b,color:#e2e8f0\n    style TRACES fill:#162231,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**Logs** — Discrete, timestamped text events emitted when things happen. Great for deep debugging. Example: `2026-08-04 01:25:00 [ERROR] Failed to connect to MySQL database at db.prod:5432`.\n\n**Metrics** — Numeric values measured over intervals (CPU %, HTTP request count, latency). Cheap to store, easy to chart. Example: `http_requests_total{status=\"500\"} 142`.\n\n**Traces** — Tracks a single user request as it flows across multiple microservices. Identifies bottlenecks. Example: `API Gateway (10ms) → Auth (15ms) → DB Query (450ms)`."
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Golden Signals of Monitoring (Google SRE Book): Latency, Traffic, Errors, and Saturation. If you monitor these 4 signals, you can detect almost any production issue."
+        }
+      ],
+      "quiz": {
+        "question": "What is the primary purpose of Distributed Tracing?",
+        "options": [
+          "To store log files on disk",
+          "To track a single user request as it traverses multiple microservices to find performance bottlenecks",
+          "To count the number of servers running",
+          "To restart crashed containers"
+        ],
+        "correctIndex": 1,
+        "explanation": "Distributed Tracing records the path and timing of a request across all microservices (spans) from entry to completion, allowing engineers to pin down exact bottlenecks."
+      }
+    },
+    {
+      "id": "prometheus-metrics",
+      "title": "Prometheus — Time-Series Metrics & PromQL",
+      "content": [
+        {
+          "type": "text",
+          "value": "**Prometheus** is the industry-standard open-source monitoring and alerting toolkit built for cloud-native architectures. Prometheus uses a **pull-based architecture**: it periodically scrapes HTTP `/metrics` endpoints published by your microservices."
+        },
+        {
+          "type": "mermaid",
+          "title": "Prometheus Pull Architecture",
+          "value": "graph LR\n    PROM[\"🔥 Prometheus Server\\n(TSDB Storage)\"] -->|Scrape /metrics| APP1[\"🌐 Web Server 1\"]\n    PROM -->|Scrape /metrics| APP2[\"🌐 Web Server 2\"]\n    PROM -->|Scrape /metrics| NODE[\"🖥️ Node Exporter\"]\n    PROM --> ALERT[\"🚨 Alertmanager\"]\n    GRAF[\"📊 Grafana\"] -->|PromQL| PROM\n    style PROM fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style GRAF fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style ALERT fill:#1a2332,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Prometheus Metric Types",
+          "value": "1. Counter   — Cumulative metric that only increases (e.g. total_http_requests)\n2. Gauge     — Value that goes up and down (e.g. current_memory_usage, cpu_temp)\n3. Histogram — Samples observations into buckets (e.g. request_duration_seconds)\n4. Summary   — Similar to histogram, calculates configurable quantiles over a sliding window"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Essential PromQL Queries",
+          "value": "# Calculate HTTP request rate over 5 minutes\nrate(http_requests_total[5m])\n\n# Calculate error percentage across services\nsum(rate(http_requests_total{status=~\"5..\"}[5m])) \n  / \nsum(rate(http_requests_total[5m])) * 100\n\n# 95th percentile latency over 5m window\nhistogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "PromQL Tip: `rate()` calculates per-second average rate of increase for Counter metrics over a given time window. Always use `rate()` on counters, never raw values."
+        }
+      ],
+      "quiz": {
+        "question": "How does Prometheus collect metrics from applications?",
+        "options": [
+          "Applications push metrics via UDP to Prometheus",
+          "Prometheus periodically scrapes (pulls) metrics from HTTP /metrics endpoints",
+          "Metrics are read from log files on disk",
+          "Prometheus injects agents into kernel memory"
+        ],
+        "correctIndex": 1,
+        "explanation": "Prometheus uses a pull model: it periodically sends HTTP GET requests to configured endpoints (e.g., http://app:3000/metrics) and ingests the time-series data into its TSDB."
+      }
+    },
+    {
+      "id": "grafana-dashboards",
+      "title": "Grafana — Visualizing System Health",
+      "content": [
+        {
+          "type": "text",
+          "value": "**Grafana** is an open-source data visualization and analytics platform. While Prometheus stores raw time-series metrics, Grafana connects to Prometheus (and Postgres, Elasticsearch, CloudWatch) to render beautiful, real-time dashboards."
+        },
+        {
+          "type": "mermaid",
+          "title": "Grafana Unified Observability Dashboard",
+          "value": "graph TD\n    GRAF[\"📊 Grafana Dashboard\"]\n    GRAF --> PANEL1[\"📈 Request Rate (RPS)\"]\n    GRAF --> PANEL2[\"⏱️ 99th Latency (ms)\"]\n    GRAF --> PANEL3[\"⚠️ Error Rate (%)\"]\n    GRAF --> PANEL4[\"💻 CPU / RAM Saturation\"]\n    PANEL1 & PANEL2 & PANEL3 & PANEL4 --> TSDB[\"Prometheus Data Source\"]\n    style GRAF fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style TSDB fill:#162231,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "json",
+          "title": "Dashboard Design Best Practices",
+          "value": "1. Top Row: High-level business & user metrics (Active users, Total Sales/sec)\n2. Middle Row: Four Golden Signals (Latency, Traffic, Errors, Saturation)\n3. Bottom Row: System infrastructure metrics (Disk IOPS, Network bytes, CPU load)\n4. Use consistent color schemes: Green (Healthy), Yellow (Warning), Red (Critical)"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Pro Tip: Community Grafana Dashboards (like Dashboard #315 for Kubernetes cluster monitoring or #1860 for Node Exporter) can be imported instantly using their ID number."
+        }
+      ],
+      "quiz": {
+        "question": "What is Grafana's main role in an observability stack?",
+        "options": [
+          "Storing metric data on disk",
+          "Connecting to data sources like Prometheus and rendering visual, interactive dashboards",
+          "Compiling source code",
+          "Managing SSL certificates"
+        ],
+        "correctIndex": 1,
+        "explanation": "Grafana is the visualization layer. It queries data sources (Prometheus, Loki, Tempo) and renders charts, heatmaps, and alert panels."
+      }
+    },
+    {
+      "id": "sli-slo-sla",
+      "title": "SLIs, SLOs, and SLAs — Service Reliability",
+      "content": [
+        {
+          "type": "text",
+          "value": "Reliability isn't binary — system performance is measured using three core reliability frameworks: **SLI**, **SLO**, and **SLA**."
+        },
+        {
+          "type": "mermaid",
+          "title": "Reliability Framework Hierarchy",
+          "value": "graph TB\n    SLI[\"📏 SLI (Indicator)\\nActual metric measurement\\n'Our latency is 120ms'\"] --> SLO[\"🎯 SLO (Objective)\\nTarget internal goal set by team\\n'99.9% of requests < 200ms'\"]\n    SLO --> SLA[\"📜 SLA (Agreement)\\nLegal business contract with clients\\n'If uptime < 99%, we refund 10%'\"]\n    style SLI fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style SLO fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style SLA fill:#1a2332,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Uptime Nines & Error Budgets",
+          "value": "Availability    Downtime per Year    Downtime per Month\n─────────────────────────────────────────────────────────\n99% ('2 nines') 3.65 days           7.3 hours\n99.9% ('3 nines')8.76 hours          43.8 minutes\n99.99% ('4 nines')52.6 minutes       4.38 minutes\n99.999% ('5 nines')5.26 minutes      26.3 seconds"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Error Budget Concept: 100% uptime is impossible and prohibitively expensive. An Error Budget (100% - SLO) is the allowable amount of downtime. Teams use their Error Budget to ship new features quickly; if the budget is exhausted, feature deployments freeze!"
+        }
+      ],
+      "quiz": {
+        "question": "What is the difference between an SLO and an SLA?",
+        "options": [
+          "They are the exact same term",
+          "SLO is an internal target goal; SLA is a legal contract with financial penalties for breach",
+          "SLO is measured in gigabytes; SLA is measured in seconds",
+          "SLA is only for hardware"
+        ],
+        "correctIndex": 1,
+        "explanation": "SLO (Service Level Objective) is an aggressive internal target set by engineering. SLA (Service Level Agreement) is a legal contract with external customers that includes penalties or refunds if violated."
+      }
+    },
+    {
+      "id": "alerting-incident-mgmt",
+      "title": "Alerting & Incident Management",
+      "content": [
+        {
+          "type": "text",
+          "value": "Alerts should notify engineers **only when actionable human intervention is required**. Poorly configured alerts cause 'alert fatigue' where on-call engineers ignore notifications because 90% of them are false alarms."
+        },
+        {
+          "type": "mermaid",
+          "title": "Incident Escalation Pipeline",
+          "value": "sequenceDiagram\n    participant P as Prometheus Alertmanager\n    participant PD as PagerDuty / Opsgenie\n    participant ON as On-Call Engineer\n    participant S as Secondary On-Call\n    P->>PD: High CPU & 5xx Spikes (Critical)\n    PD->>ON: Page via Phone Call / SMS\n    Note over ON: Engineer acknowledges within 5m\n    ON->>ON: Diagnose & Fix via Playbook\n    alt No Response in 10m\n        PD->>S: Escalate to Secondary Engineer\n    end"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Prometheus Alerting Rule",
+          "value": "groups:\n  - name: production_alerts\n    rules:\n      - alert: HighErrorRate\n        expr: sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100 > 5\n        for: 2m\n        labels:\n          severity: critical\n        annotations:\n          summary: \"High HTTP 5xx error rate on {{ $labels.instance }}\"\n          description: \"Error rate is above 5% for more than 2 minutes.\""
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "On-Call Golden Rule: Never alert on a symptom without a runbook! Every critical alert should link directly to a Runbook document containing step-by-step instructions on how to troubleshoot and mitigate the issue."
+        }
+      ],
+      "quiz": {
+        "question": "What is 'alert fatigue' and how do you prevent it?",
+        "options": [
+          "Tiredness from writing code; solved by taking breaks",
+          "Desensitization caused by receiving too many non-actionable alerts; solved by only alerting on actionable incidents with clear runbooks",
+          "Server slowdowns caused by alerts; solved by turning off monitoring",
+          "Network congestion from alerts"
+        ],
+        "correctIndex": 1,
+        "explanation": "Alert fatigue happens when engineers are spammed with noisy, non-actionable alerts. Preventing it requires tuning alert thresholds, using 'for' duration windows, and reserving urgent pages for real outages."
+      }
+    }
+  ]
+}

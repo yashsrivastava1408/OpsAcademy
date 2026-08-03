@@ -1,0 +1,228 @@
+{
+  "sections": [
+    {
+      "id": "cloud-computing-basics",
+      "title": "What is Cloud Computing?",
+      "content": [
+        {
+          "type": "text",
+          "value": "Cloud computing is renting computers, storage, and services from a provider (like AWS, Google Cloud, Azure) over the internet instead of buying and maintaining your own physical hardware. Think of it like electricity — you don't build a power plant, you just plug in and pay for what you use."
+        },
+        {
+          "type": "mermaid",
+          "title": "Cloud Service Models",
+          "value": "graph TB\n    subgraph SAAS [\"SaaS (Software as a Service)\"]\n        S1[\"Gmail, Slack, Salesforce\"]\n        S2[\"You manage: Nothing\"]\n    end\n    subgraph PAAS [\"PaaS (Platform as a Service)\"]\n        P1[\"Heroku, AWS Elastic Beanstalk\"]\n        P2[\"You manage: App + Data\"]\n    end\n    subgraph IAAS [\"IaaS (Infrastructure as a Service)\"]\n        I1[\"AWS EC2, Google Compute Engine\"]\n        I2[\"You manage: App + Data + OS + Runtime\"]\n    end\n    style SAAS fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style PAAS fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style IAAS fill:#1a2332,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**IaaS** (Infrastructure) — You rent virtual machines and manage everything yourself. Maximum control. Example: AWS EC2.\n\n**PaaS** (Platform) — You deploy your code, the platform handles the rest (OS, scaling, patches). Example: Heroku, AWS Elastic Beanstalk.\n\n**SaaS** (Software) — You use finished software. No management needed. Example: Gmail, Slack."
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "AWS has 200+ services across 30+ global regions. You don't need to know all of them — focus on the top 10 that appear in 90% of interviews: EC2, S3, IAM, VPC, RDS, Lambda, CloudWatch, ELB, Route 53, ECS/EKS."
+        }
+      ],
+      "quiz": {
+        "question": "What type of cloud service is AWS EC2?",
+        "options": ["SaaS", "PaaS", "IaaS", "FaaS"],
+        "correctIndex": 2,
+        "explanation": "EC2 (Elastic Compute Cloud) is IaaS — you rent virtual machines and manage the OS, runtime, and applications yourself. AWS manages the physical hardware."
+      }
+    },
+    {
+      "id": "ec2",
+      "title": "EC2 — Virtual Machines in the Cloud",
+      "content": [
+        {
+          "type": "text",
+          "value": "**EC2** (Elastic Compute Cloud) is AWS's virtual machine service. You can launch a server in seconds, choose the OS, configure the size (CPU, RAM), and pay only for the time it's running. Think of it as renting a computer by the hour."
+        },
+        {
+          "type": "mermaid",
+          "title": "EC2 Instance Lifecycle",
+          "value": "stateDiagram-v2\n    [*] --> Pending: Launch instance\n    Pending --> Running: Instance ready\n    Running --> Stopping: Stop instance\n    Stopping --> Stopped: Instance stopped\n    Stopped --> Pending: Start instance\n    Running --> ShuttingDown: Terminate\n    ShuttingDown --> Terminated: Instance deleted\n    Terminated --> [*]"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "EC2 CLI Commands",
+          "value": "# Launch an EC2 instance\naws ec2 run-instances \\\n  --image-id ami-0c55b159cbfafe1f0 \\\n  --instance-type t3.micro \\\n  --key-name my-key \\\n  --security-group-ids sg-12345 \\\n  --subnet-id subnet-67890\n\n# List running instances\naws ec2 describe-instances --filters \"Name=instance-state-name,Values=running\"\n\n# SSH into your instance\nssh -i my-key.pem ec2-user@<public-ip>\n\n# Stop / Start / Terminate\naws ec2 stop-instances --instance-ids i-1234567890abcdef0\naws ec2 start-instances --instance-ids i-1234567890abcdef0\naws ec2 terminate-instances --instance-ids i-1234567890abcdef0"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "EC2 Instance Types (Interview Must-Know)",
+          "value": "Family   Purpose              Example    Use Case\n──────────────────────────────────────────────────────\nt3       General purpose       t3.micro   Web servers, dev environments\nm5       Balanced compute     m5.large   Application servers\nc5       Compute optimized    c5.xlarge  Video encoding, ML training\nr5       Memory optimized     r5.large   In-memory databases (Redis)\ni3       Storage optimized    i3.large   Data warehousing, Elasticsearch\ng4       GPU instances        g4dn.xl    Machine learning, rendering"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "t3.micro is in the AWS Free Tier — 750 hours/month for the first 12 months. Perfect for learning! Always use the smallest instance that meets your needs to save costs."
+        }
+      ],
+      "quiz": {
+        "question": "What is an EC2 instance?",
+        "options": [
+          "A database service",
+          "A virtual machine (server) in the AWS cloud",
+          "A file storage service",
+          "A DNS service"
+        ],
+        "correctIndex": 1,
+        "explanation": "EC2 is AWS's virtual machine service. An 'instance' is a single virtual server that you can configure with your choice of OS, CPU, RAM, and storage."
+      }
+    },
+    {
+      "id": "s3",
+      "title": "S3 — Object Storage",
+      "content": [
+        {
+          "type": "text",
+          "value": "**S3** (Simple Storage Service) stores files (called 'objects') in containers (called 'buckets'). It's designed for 99.999999999% durability (11 nines!) — meaning if you store 10 million files, you'd statistically lose 1 file every 10,000 years. It's used for static websites, backups, data lakes, and media storage."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "S3 CLI Commands",
+          "value": "# Create a bucket\naws s3 mb s3://my-company-assets-2024\n\n# Upload a file\naws s3 cp backup.tar.gz s3://my-company-assets-2024/backups/\n\n# Upload an entire directory\naws s3 sync ./public/ s3://my-company-assets-2024/website/\n\n# List bucket contents\naws s3 ls s3://my-company-assets-2024/\n\n# Download a file\naws s3 cp s3://my-company-assets-2024/backups/backup.tar.gz ./\n\n# Delete a file\naws s3 rm s3://my-company-assets-2024/old-file.txt\n\n# Make a bucket public (for static websites)\naws s3 website s3://my-company-assets-2024 --index-document index.html"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "S3 Storage Classes (Cost Optimization)",
+          "value": "Storage Class          Cost      Access            Use Case\n───────────────────────────────────────────────────────────\nS3 Standard            $$$      Instant            Frequently accessed data\nS3 Infrequent Access   $$       Instant            Monthly backups\nS3 Glacier Instant     $        Instant            Archive with rare access\nS3 Glacier Flexible    ¢        Minutes-12 hours   Long-term archival\nS3 Glacier Deep        ¢¢       12-48 hours        Compliance archives (7+ years)"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "S3 bucket names are globally unique across ALL AWS accounts. Use a naming convention like: company-environment-purpose (e.g., 'opsacademy-prod-assets'). Never put sensitive data in publicly accessible buckets!"
+        }
+      ],
+      "quiz": {
+        "question": "What does S3's '11 nines' durability mean?",
+        "options": [
+          "Files are encrypted 11 times",
+          "S3 is available 99.999999999% of the time",
+          "If you store 10 million files, you'd lose 1 every 10,000 years",
+          "S3 has 11 data centers"
+        ],
+        "correctIndex": 2,
+        "explanation": "99.999999999% durability means your data is extremely safe. S3 automatically replicates across multiple facilities, making data loss virtually impossible."
+      }
+    },
+    {
+      "id": "iam",
+      "title": "IAM — Identity & Access Management",
+      "content": [
+        {
+          "type": "text",
+          "value": "**IAM** controls WHO can do WHAT on WHICH resources in your AWS account. It's the security foundation — without proper IAM, a single compromised credential could wipe out your entire infrastructure."
+        },
+        {
+          "type": "mermaid",
+          "title": "IAM Structure",
+          "value": "graph TD\n    ROOT[\"🏛️ AWS Root Account\\n(Never use for daily work!)\"] --> USER1[\"👤 User: alice\\nDeveloper\"]\n    ROOT --> USER2[\"👤 User: bob\\nDBA\"]\n    ROOT --> ROLE[\"🎭 Role: EC2-S3-Access\\n(For services)\"]\n    USER1 --> GROUP1[\"👥 Group: Developers\"]\n    USER2 --> GROUP2[\"👥 Group: DBAdmins\"]\n    GROUP1 --> POLICY1[\"📋 Policy: ReadWriteS3\"]\n    GROUP2 --> POLICY2[\"📋 Policy: FullRDSAccess\"]\n    ROLE --> POLICY3[\"📋 Policy: ReadOnlyS3\"]\n    style ROOT fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style GROUP1 fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style GROUP2 fill:#1a2332,stroke:#f59e0b,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "json",
+          "title": "IAM Policy Example (JSON)",
+          "value": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:GetObject\",\n        \"s3:PutObject\"\n      ],\n      \"Resource\": \"arn:aws:s3:::my-bucket/*\"\n    },\n    {\n      \"Effect\": \"Deny\",\n      \"Action\": \"s3:DeleteBucket\",\n      \"Resource\": \"*\"\n    }\n  ]\n}"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "The #1 AWS security rule: NEVER use the root account for daily work. Create IAM users with minimum required permissions (Principle of Least Privilege). Enable MFA on the root account immediately."
+        }
+      ],
+      "quiz": {
+        "question": "What is the Principle of Least Privilege?",
+        "options": [
+          "Give everyone admin access for convenience",
+          "Grant only the minimum permissions needed to perform a specific task",
+          "Use the root account for everything",
+          "Share passwords between team members"
+        ],
+        "correctIndex": 1,
+        "explanation": "Least Privilege means every user, service, and role should have only the permissions absolutely necessary for their job — nothing more. This minimizes damage if credentials are compromised."
+      }
+    },
+    {
+      "id": "vpc",
+      "title": "VPC — Virtual Private Cloud",
+      "content": [
+        {
+          "type": "text",
+          "value": "A **VPC** is your own private network inside AWS. Think of it as building your own office complex in the cloud — you design the floor plan (subnets), install security doors (security groups), and decide which rooms have windows to the street (public subnets) vs. interior-only rooms (private subnets)."
+        },
+        {
+          "type": "mermaid",
+          "title": "VPC Architecture",
+          "value": "graph TB\n    IGW[\"🌐 Internet Gateway\"] --> PUB1\n    subgraph VPC [\"VPC: 10.0.0.0/16\"]\n        subgraph PUB [\"Public Subnet: 10.0.1.0/24\"]\n            PUB1[\"🌐 Load Balancer\"]\n            PUB2[\"🖥️ Bastion Host (SSH Jump)\"]\n        end\n        subgraph PRIV [\"Private Subnet: 10.0.2.0/24\"]\n            PRIV1[\"⚙️ App Servers\"]\n            PRIV2[\"🗄️ Database (RDS)\"]\n        end\n    end\n    PUB1 --> PRIV1\n    PUB2 --> PRIV1\n    PRIV1 --> PRIV2\n    PRIV1 -->|\"NAT Gateway\"| IGW\n    style VPC fill:#0f1923,stroke:#00d4ff33,color:#e2e8f0\n    style PUB fill:#162231,stroke:#10b98133,color:#e2e8f0\n    style PRIV fill:#162231,stroke:#ef444433,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**Public Subnet** — Has a route to the Internet Gateway. Resources get public IPs. Used for load balancers and bastion hosts.\n\n**Private Subnet** — No direct internet access. Used for application servers and databases. Can reach the internet through a NAT Gateway (outbound only).\n\n**Security Groups** — Virtual firewalls attached to instances. Stateful: if you allow inbound traffic, the response is automatically allowed out.\n\n**NACLs** — Network ACLs at the subnet level. Stateless: you must define both inbound and outbound rules."
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview architecture: 'I'd place the load balancer in a public subnet, app servers in a private subnet, and the database in an isolated private subnet with no internet access. The app servers reach the internet through a NAT Gateway for pulling updates.'"
+        }
+      ],
+      "quiz": {
+        "question": "Why put databases in a private subnet?",
+        "options": [
+          "Databases don't need electricity",
+          "To prevent direct internet access — databases should only be reachable from app servers",
+          "Private subnets are faster",
+          "AWS requires it"
+        ],
+        "correctIndex": 1,
+        "explanation": "Databases contain sensitive data and should never be directly accessible from the internet. Private subnets ensure only internal resources (like your app servers) can connect to the database."
+      }
+    },
+    {
+      "id": "rds-lambda",
+      "title": "RDS and Lambda — Managed Services",
+      "content": [
+        {
+          "type": "text",
+          "value": "AWS offers managed services that handle the heavy lifting of running infrastructure. **RDS** manages your databases. **Lambda** runs your code without any servers at all."
+        },
+        {
+          "type": "mermaid",
+          "title": "Managed vs Self-Managed",
+          "value": "graph LR\n    subgraph SELF [\"Self-Managed (EC2)\"]\n        A1[\"You manage EVERYTHING:\\nOS patches, backups,\\nscaling, monitoring,\\nhigh availability\"]\n    end\n    subgraph MANAGED [\"Managed (RDS)\"]\n        B1[\"AWS manages:\\nPatches, backups,\\nreplicas, failover\\nYou manage: Schema + queries\"]\n    end\n    subgraph SERVERLESS [\"Serverless (Lambda)\"]\n        C1[\"AWS manages:\\nEVERYTHING\\nYou manage: Just your code\"]\n    end\n    style SELF fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style MANAGED fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style SERVERLESS fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**RDS** (Relational Database Service) — Managed MySQL, PostgreSQL, MariaDB, Oracle, or SQL Server. AWS handles backups, patching, replication, and failover. You just connect and run queries.\n\n**Lambda** — Serverless compute. Upload your function code, and AWS runs it in response to events (API calls, S3 uploads, scheduled tasks). You pay only for the milliseconds your code runs. Zero servers to manage."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Lambda CLI Example",
+          "value": "# Create a Lambda function\naws lambda create-function \\\n  --function-name process-order \\\n  --runtime nodejs18.x \\\n  --handler index.handler \\\n  --zip-file fileb://function.zip \\\n  --role arn:aws:iam::123456:role/lambda-role\n\n# Invoke the function\naws lambda invoke --function-name process-order output.json\n\n# View logs\naws logs tail /aws/lambda/process-order --follow"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Lambda free tier: 1 million requests and 400,000 GB-seconds of compute per month — FREE forever. Perfect for microservices, API endpoints, image processing, and scheduled tasks."
+        }
+      ],
+      "quiz": {
+        "question": "What is AWS Lambda?",
+        "options": [
+          "A virtual machine service",
+          "A serverless compute service that runs code without managing servers",
+          "A database service",
+          "A container orchestration service"
+        ],
+        "correctIndex": 1,
+        "explanation": "Lambda is serverless — you upload code and AWS runs it in response to events. No servers to provision, scale, or maintain. You pay only for the compute time your code actually consumes."
+      }
+    }
+  ]
+}

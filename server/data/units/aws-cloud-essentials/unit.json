@@ -1,0 +1,22 @@
+{
+  "id": "aws-cloud-essentials",
+  "title": "Cloud Computing (AWS)",
+  "description": "Understand cloud computing from the ground up. Master core AWS services — EC2, S3, IAM, VPC, RDS, Lambda — and learn how to architect scalable, secure cloud infrastructure.",
+  "difficulty": "intermediate",
+  "duration": "60 min",
+  "category": "Cloud",
+  "prerequisites": ["networking-fundamentals", "linux-basics"],
+  "objectives": [
+    "Understand cloud computing models (IaaS, PaaS, SaaS)",
+    "Launch and manage EC2 instances",
+    "Store and serve files with S3",
+    "Secure access with IAM policies",
+    "Design a VPC network architecture",
+    "Use managed databases (RDS) and serverless (Lambda)"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import mermaid from 'mermaid';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -9,10 +10,45 @@ import {
   Terminal,
   Loader,
   ChevronRight,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { unitApi } from '../services/api';
 import Quiz from '../components/Quiz/Quiz';
 import './LearnPage.css';
+
+/**
+ * MermaidBlock — renders a mermaid chart definition as an interactive SVG diagram.
+ */
+function MermaidBlock({ chart, title }) {
+  const containerRef = useRef(null);
+  const [svg, setSvg] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`;
+
+    mermaid.render(id, chart).then(({ svg: rendered }) => {
+      if (!cancelled) setSvg(rendered);
+    }).catch((err) => {
+      console.warn('Mermaid render error:', err);
+      if (!cancelled) setSvg(`<pre style="color:#f87171">${chart}</pre>`);
+    });
+
+    return () => { cancelled = true; };
+  }, [chart]);
+
+  return (
+    <div className="learn-mermaid glass-card">
+      {title && <h4 className="mermaid-title">{title}</h4>}
+      <div
+        ref={containerRef}
+        className="mermaid-container"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    </div>
+  );
+}
 
 export default function LearnPage() {
   const { unitId } = useParams();
@@ -22,6 +58,45 @@ export default function LearnPage() {
   const [content, setContent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('');
+  const [copiedIdx, setCopiedIdx] = useState(null);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const mermaidInitialized = useRef(false);
+
+  // Initialize mermaid once
+  useEffect(() => {
+    if (!mermaidInitialized.current) {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        themeVariables: {
+          primaryColor: '#1a2332',
+          primaryTextColor: '#e2e8f0',
+          primaryBorderColor: '#00d4ff',
+          lineColor: '#00d4ff',
+          secondaryColor: '#0f1923',
+          tertiaryColor: '#162231',
+          fontFamily: 'Inter, sans-serif',
+          fontSize: '14px',
+          nodeBorder: '#00d4ff',
+          clusterBkg: '#0f1923',
+          clusterBorder: '#00d4ff33',
+          edgeLabelBackground: '#0d1117',
+          actorBkg: '#1a2332',
+          actorBorder: '#00d4ff',
+          actorTextColor: '#e2e8f0',
+          signalColor: '#00d4ff',
+          signalTextColor: '#e2e8f0',
+          labelBoxBkgColor: '#1a2332',
+          labelBoxBorderColor: '#00d4ff',
+          labelTextColor: '#e2e8f0',
+          noteBkgColor: '#162231',
+          noteTextColor: '#e2e8f0',
+          noteBorderColor: '#00d4ff33',
+        },
+      });
+      mermaidInitialized.current = true;
+    }
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
@@ -48,11 +123,31 @@ export default function LearnPage() {
     fetchData();
   }, [unitId]);
 
+  // Track scroll reading progress bar
+  useEffect(() => {
+    const handleScroll = () => {
+      const totalHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      if (totalHeight > 0) {
+        const currentProgress = (window.scrollY / totalHeight) * 100;
+        setScrollProgress(currentProgress);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const handleCopyCode = (text, idx) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIdx(idx);
+    setTimeout(() => setCopiedIdx(null), 2000);
+  };
+
   if (loading) {
     return (
       <div className="learn-loading">
         <Loader size={36} className="spin" />
-        <p>Loading lesson content...</p>
+        <p>Loading interactive lesson...</p>
       </div>
     );
   }
@@ -79,8 +174,29 @@ export default function LearnPage() {
 
       case 'code':
         return (
-          <div key={idx} className="learn-code-block">
-            {block.title && <div className="code-header">{block.title}</div>}
+          <div key={idx} className="learn-code-block glass-card">
+            <div className="code-header">
+              <span>{block.title || 'Shell / Configuration'}</span>
+              <div className="code-header-actions">
+                <button
+                  className="btn btn-ghost btn-sm code-copy-btn"
+                  onClick={() => handleCopyCode(block.value, idx)}
+                >
+                  {copiedIdx === idx ? (
+                    <>
+                      <Check size={14} className="copied-icon" /> Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={14} /> Copy
+                    </>
+                  )}
+                </button>
+                <Link to={`/unit/${unitId}/practice`} className="btn btn-secondary btn-sm code-run-btn">
+                  <Terminal size={12} /> Run in Shell
+                </Link>
+              </div>
+            </div>
             <pre>
               <code>{block.value}</code>
             </pre>
@@ -104,11 +220,14 @@ export default function LearnPage() {
 
       case 'diagram':
         return (
-          <div key={idx} className="learn-diagram">
+          <div key={idx} className="learn-diagram glass-card">
             {block.title && <h4>{block.title}</h4>}
             <pre className="diagram-box">{block.value}</pre>
           </div>
         );
+
+      case 'mermaid':
+        return <MermaidBlock key={idx} chart={block.value} title={block.title} />;
 
       default:
         return null;
@@ -117,6 +236,11 @@ export default function LearnPage() {
 
   return (
     <div className="learn-page">
+      {/* Top Scroll Reading Progress Indicator */}
+      <div className="reading-progress-container">
+        <div className="reading-progress-bar" style={{ width: `${scrollProgress}%` }}></div>
+      </div>
+
       {/* Header */}
       <div className="learn-header">
         <div className="container learn-header-inner">
@@ -168,7 +292,7 @@ export default function LearnPage() {
           ))}
 
           {/* Bottom Next Action */}
-          <div className="learn-footer-cta glass-card">
+          <div className="learn-footer-cta glass-card animate-fade-in-up">
             <div>
               <h3>Ready to test your skills in the shell?</h3>
               <p>Apply what you just learned in a live interactive sandbox terminal.</p>

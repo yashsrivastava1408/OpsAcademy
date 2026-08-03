@@ -2,47 +2,95 @@
   "steps": [
     {
       "step": 1,
-      "title": "Initialize Git Repository",
-      "description": "Create a new project folder and turn it into a Git repository.",
+      "title": "Initialize a Git Repository",
+      "description": "Create a new project directory and initialize Git version control.",
       "tasks": [
-        "Create folder: `mkdir /home/student/git-demo && cd /home/student/git-demo`",
-        "Initialize git: `git init`",
-        "Configure git user: `git config user.name 'Student' && git config user.email 'student@opsacademy.com'`"
+        "Create a directory called `myproject`: `mkdir ~/myproject && cd ~/myproject`",
+        "Initialize Git: `git init`",
+        "Verify: `ls -la .git` to confirm the .git directory exists"
       ],
       "verification": {
-        "command": "test -d /home/student/git-demo/.git && echo PASS || echo FAIL",
+        "command": "test -d /home/student/myproject/.git && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
     },
     {
       "step": 2,
-      "title": "Make Your First Commit",
-      "description": "Create a file, stage it, and record a commit snapshot.",
+      "title": "Make Your First Commits",
+      "description": "Create files, stage them, and commit snapshots of your project.",
       "tasks": [
-        "Create file: `echo 'Hello Git' > README.md`",
-        "Stage file: `git add README.md`",
-        "Commit: `git commit -m 'Initial commit'`"
+        "Create a file: `echo '# My Project' > README.md`",
+        "Stage it: `git add README.md`",
+        "Commit: `git commit -m \"Initial commit: add README\"`",
+        "Add another file: `echo 'console.log(\"hello\")' > app.js && git add app.js && git commit -m \"Add app.js\"`"
       ],
       "verification": {
-        "command": "cd /home/student/git-demo && git log --oneline | grep -q 'Initial commit' && echo PASS || echo FAIL",
+        "command": "cd /home/student/myproject && git log --oneline | wc -l | awk '{if ($1 >= 2) print \"PASS\"; else print \"FAIL\"}'",
         "expectedOutput": "PASS",
         "check": "contains"
       }
     },
     {
       "step": 3,
-      "title": "Create and Merge a Branch",
-      "description": "Create a feature branch, make a change, and merge it back to main.",
+      "title": "Create and Merge a Feature Branch",
+      "description": "Practice the feature branch workflow used by all professional development teams.",
       "tasks": [
-        "Create branch: `git checkout -b feature-auth`",
-        "Create file: `echo 'auth code' > auth.js`",
-        "Stage and commit: `git add auth.js && git commit -m 'Add auth'`",
-        "Switch back to main: `git checkout main`",
-        "Merge branch: `git merge feature-auth`"
+        "Create and switch to a new branch: `git checkout -b feature/add-styles`",
+        "Create a CSS file: `echo 'body { color: cyan; }' > style.css`",
+        "Stage and commit: `git add style.css && git commit -m \"Add styling\"`",
+        "Switch back to main and merge: `git checkout main && git merge feature/add-styles`"
       ],
       "verification": {
-        "command": "cd /home/student/git-demo && test -f auth.js && git log --oneline | grep -q 'Add auth' && echo PASS || echo FAIL",
+        "command": "cd /home/student/myproject && git log --oneline | grep -i 'style\\|styling' && test -f style.css && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Simulate and Resolve a Merge Conflict",
+      "description": "Create a deliberate conflict between two branches and resolve it manually.",
+      "tasks": [
+        "On main: `echo 'version = 1.0' > config.txt && git add config.txt && git commit -m \"Add config v1\"`",
+        "Create branch: `git checkout -b hotfix && echo 'version = 1.1-hotfix' > config.txt && git add . && git commit -m \"Hotfix version\"`",
+        "Go back to main: `git checkout main && echo 'version = 2.0' > config.txt && git add . && git commit -m \"Version 2\"`",
+        "Merge: `git merge hotfix` — resolve the conflict in config.txt, then `git add config.txt && git commit`"
+      ],
+      "verification": {
+        "command": "cd /home/student/myproject && git log --oneline | head -1 | grep -v 'CONFLICT' && test -f config.txt && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "Use Git Stash",
+      "description": "Practice saving work-in-progress with git stash.",
+      "tasks": [
+        "Make some changes: `echo 'work in progress...' >> app.js`",
+        "Stash them: `git stash save \"WIP: app changes\"`",
+        "Verify working directory is clean: `git status`",
+        "Restore the stash: `git stash pop`",
+        "Verify changes are back: `cat app.js`"
+      ],
+      "verification": {
+        "command": "cd /home/student/myproject && grep -q 'work in progress' app.js && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 6,
+      "title": "Tag a Release",
+      "description": "Create a version tag to mark a release milestone.",
+      "tasks": [
+        "Commit any remaining changes: `git add . && git commit -m \"Prepare for release\" 2>/dev/null || true`",
+        "Create an annotated tag: `git tag -a v1.0.0 -m \"First stable release\"`",
+        "Verify the tag: `git tag` and `git show v1.0.0`"
+      ],
+      "verification": {
+        "command": "cd /home/student/myproject && git tag | grep -q 'v1.0.0' && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

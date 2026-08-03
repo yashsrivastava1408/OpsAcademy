@@ -1,0 +1,226 @@
+{
+  "sections": [
+    {
+      "id": "what-is-cicd",
+      "title": "What is CI/CD?",
+      "content": [
+        {
+          "type": "text",
+          "value": "CI/CD is the practice of automating the entire software delivery process — from the moment a developer pushes code to the moment it's running in production. It's like an assembly line in a factory: code automatically goes through building, testing, and deploying without any manual steps."
+        },
+        {
+          "type": "mermaid",
+          "title": "CI/CD Pipeline Flow",
+          "value": "graph LR\n    A[\"👨‍💻 Developer\\ngit push\"] --> B[\"🔨 Build\\nCompile code\"]\n    B --> C[\"🧪 Test\\nUnit + Integration\"]\n    C --> D[\"📦 Package\\nDocker image\"]\n    D --> E[\"🚀 Deploy Staging\\nTest environment\"]\n    E --> F[\"✅ Deploy Production\\nLive users\"]\n    style A fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style B fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style C fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style D fill:#1a2332,stroke:#8b5cf6,color:#e2e8f0\n    style E fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style F fill:#1a2332,stroke:#00d4ff,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**Continuous Integration (CI)** — Automatically build and test code every time someone pushes a commit. Catch bugs within minutes, not days.\n\n**Continuous Delivery (CD)** — Automatically prepare releases that are ready to deploy at the push of a button.\n\n**Continuous Deployment** — Go one step further: automatically deploy every change to production with no human intervention."
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Without CI/CD, a team might deploy once a month with a scary 'big bang' release. With CI/CD, teams deploy multiple times per day with confidence — each change is small, tested, and easy to roll back."
+        }
+      ],
+      "quiz": {
+        "question": "What is the difference between Continuous Delivery and Continuous Deployment?",
+        "options": [
+          "They are the same thing",
+          "Delivery requires manual approval to deploy; Deployment is fully automatic",
+          "Delivery is for staging; Deployment is for production",
+          "Deployment requires more testing"
+        ],
+        "correctIndex": 1,
+        "explanation": "Continuous Delivery prepares releases that are ready to deploy but requires a human to click 'Deploy'. Continuous Deployment automatically pushes every change to production with no manual step."
+      }
+    },
+    {
+      "id": "github-actions",
+      "title": "GitHub Actions — Your First Pipeline",
+      "content": [
+        {
+          "type": "text",
+          "value": "**GitHub Actions** is GitHub's built-in CI/CD platform. Pipelines are defined as YAML files in `.github/workflows/` in your repository. Every push, pull request, or schedule can trigger a workflow."
+        },
+        {
+          "type": "mermaid",
+          "title": "GitHub Actions Concepts",
+          "value": "graph TD\n    WF[\"📋 Workflow\\n(.github/workflows/ci.yml)\"] --> JOB1[\"🔧 Job: Build\\nruns-on: ubuntu-latest\"]\n    WF --> JOB2[\"🧪 Job: Test\\nneeds: build\"]\n    WF --> JOB3[\"🚀 Job: Deploy\\nneeds: test\"]\n    JOB1 --> S1[\"Step 1: Checkout code\"]\n    JOB1 --> S2[\"Step 2: Install deps\"]\n    JOB1 --> S3[\"Step 3: Build\"]\n    style WF fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style JOB1 fill:#162231,stroke:#f59e0b,color:#e2e8f0\n    style JOB2 fill:#162231,stroke:#10b981,color:#e2e8f0\n    style JOB3 fill:#162231,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Your First GitHub Actions Workflow",
+          "value": "# .github/workflows/ci.yml\nname: CI Pipeline\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\njobs:\n  build-and-test:\n    runs-on: ubuntu-latest\n    \n    steps:\n      - name: Checkout code\n        uses: actions/checkout@v4\n      \n      - name: Setup Node.js\n        uses: actions/setup-node@v4\n        with:\n          node-version: '18'\n          cache: 'npm'\n      \n      - name: Install dependencies\n        run: npm ci\n      \n      - name: Run linter\n        run: npm run lint\n      \n      - name: Run tests\n        run: npm test\n      \n      - name: Build\n        run: npm run build"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Use 'actions/checkout@v4' to clone your repo, 'actions/setup-node@v4' to install Node.js with caching. The 'cache: npm' option caches node_modules between runs, speeding up builds significantly."
+        }
+      ],
+      "quiz": {
+        "question": "Where do GitHub Actions workflow files live in a repository?",
+        "options": [
+          "In the root directory",
+          "In .github/workflows/",
+          "In a separate repository",
+          "In package.json"
+        ],
+        "correctIndex": 1,
+        "explanation": "GitHub Actions automatically discovers and runs workflow YAML files stored in the .github/workflows/ directory of your repository."
+      }
+    },
+    {
+      "id": "pipeline-stages",
+      "title": "Pipeline Stages — Build, Test, Deploy",
+      "content": [
+        {
+          "type": "text",
+          "value": "A well-designed pipeline has distinct stages that act as quality gates. Code must pass each stage before moving to the next. If any stage fails, the pipeline stops and the developer is notified."
+        },
+        {
+          "type": "mermaid",
+          "title": "Pipeline Stages with Quality Gates",
+          "value": "graph LR\n    A[\"📥 Code Push\"] --> B{\"🔨 Build\"}\n    B -->|Pass| C{\"🧪 Unit Tests\"}\n    B -->|Fail ❌| STOP1[\"Notify Developer\"]\n    C -->|Pass| D{\"🔗 Integration Tests\"}\n    C -->|Fail ❌| STOP2[\"Notify Developer\"]\n    D -->|Pass| E{\"🔒 Security Scan\"}\n    D -->|Fail ❌| STOP3[\"Notify Developer\"]\n    E -->|Pass| F[\"📦 Build Docker Image\"]\n    F --> G[\"🚀 Deploy to Staging\"]\n    G --> H[\"✅ Deploy to Production\"]\n    style STOP1 fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style STOP2 fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style STOP3 fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style H fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Multi-Stage Pipeline with Docker",
+          "value": "name: Full CI/CD Pipeline\n\non:\n  push:\n    branches: [main]\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with: { node-version: '18' }\n      - run: npm ci\n      - run: npm test\n\n  build:\n    needs: test\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - name: Build Docker image\n        run: docker build -t myapp:${{ github.sha }} .\n      - name: Push to registry\n        run: |\n          echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin\n          docker push myapp:${{ github.sha }}\n\n  deploy:\n    needs: build\n    runs-on: ubuntu-latest\n    if: github.ref == 'refs/heads/main'\n    steps:\n      - name: Deploy to production\n        run: |\n          echo \"Deploying version ${{ github.sha }} to production...\""
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "The 'needs' keyword creates dependencies between jobs. 'deploy needs: build' means deploy only runs after build succeeds. The 'if' condition ensures deploy only runs on the main branch, not on PRs."
+        }
+      ],
+      "quiz": {
+        "question": "What does 'needs: test' mean in a GitHub Actions job?",
+        "options": [
+          "The job needs more testing",
+          "The job only runs after the 'test' job completes successfully",
+          "The job is a test",
+          "The job runs in parallel with tests"
+        ],
+        "correctIndex": 1,
+        "explanation": "'needs: test' creates a dependency — the current job waits for the 'test' job to finish successfully before starting. If 'test' fails, this job is skipped."
+      }
+    },
+    {
+      "id": "testing-strategies",
+      "title": "Testing in CI/CD",
+      "content": [
+        {
+          "type": "text",
+          "value": "Testing is the backbone of CI/CD. Without automated tests, you're just automatically deploying bugs faster. The **testing pyramid** shows the optimal distribution of test types."
+        },
+        {
+          "type": "mermaid",
+          "title": "Testing Pyramid",
+          "value": "graph TB\n    E2E[\"🔝 E2E Tests\\n(Few, slow, expensive)\\nBrowser automation, full user flows\"] \n    INT[\"🔷 Integration Tests\\n(Medium count)\\nAPI endpoints, database queries\"]\n    UNIT[\"🟢 Unit Tests\\n(Many, fast, cheap)\\nIndividual functions & components\"]\n    style E2E fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style INT fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style UNIT fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**Unit Tests** — Test individual functions in isolation. Fast (milliseconds each). Run on every commit. Example: testing a `calculateDiscount()` function.\n\n**Integration Tests** — Test how components work together. Example: testing that your API endpoint correctly reads from the database.\n\n**End-to-End (E2E) Tests** — Test the entire user flow in a real browser. Slow but catch real-world issues. Example: testing the full checkout flow."
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Testing Matrix (Multiple Node Versions)",
+          "value": "jobs:\n  test:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        node-version: [16, 18, 20]\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with:\n          node-version: ${{ matrix.node-version }}\n      - run: npm ci\n      - run: npm test\n      - name: Upload coverage\n        uses: codecov/codecov-action@v3\n        if: matrix.node-version == 18"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Strategy matrix runs the same job with different configurations in parallel. Testing against Node 16, 18, and 20 simultaneously ensures your app works across all supported versions."
+        }
+      ],
+      "quiz": {
+        "question": "According to the testing pyramid, which type of test should you have the most of?",
+        "options": [
+          "End-to-End tests",
+          "Integration tests",
+          "Unit tests",
+          "Manual tests"
+        ],
+        "correctIndex": 2,
+        "explanation": "Unit tests form the base of the pyramid — they're fast, cheap, and you should have many of them. Integration tests are in the middle. E2E tests at the top should be few and focused on critical paths."
+      }
+    },
+    {
+      "id": "environments-secrets",
+      "title": "Environments and Secrets",
+      "content": [
+        {
+          "type": "text",
+          "value": "Production secrets (API keys, database passwords) should NEVER be hardcoded in your pipeline files or source code. CI/CD platforms provide encrypted secrets storage and environment-specific configurations."
+        },
+        {
+          "type": "mermaid",
+          "title": "Environment Promotion Flow",
+          "value": "graph LR\n    DEV[\"🛠️ Development\\nEvery push\"] -->|Auto| STAGING[\"🧪 Staging\\nPre-production testing\"]\n    STAGING -->|Manual Approval| PROD[\"🚀 Production\\nLive users\"]\n    style DEV fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style STAGING fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style PROD fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "Using Secrets in GitHub Actions",
+          "value": "# Store secrets in: Settings → Secrets → Actions\n\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    environment: production       # Links to GitHub Environment\n    steps:\n      - name: Deploy to AWS\n        env:\n          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}\n          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}\n        run: |\n          aws ecs update-service --cluster prod --service api --force-new-deployment\n      \n      - name: Notify Slack\n        run: |\n          curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \\\n            -d '{\"text\": \"✅ Deployed to production!\"}'"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Never echo, print, or log secrets in your pipeline! GitHub masks known secrets in logs, but custom formatting can accidentally expose them. Always use the ${{ secrets.NAME }} syntax — never hardcode."
+        }
+      ],
+      "quiz": {
+        "question": "Where should production API keys be stored in a CI/CD pipeline?",
+        "options": [
+          "In the source code",
+          "In the pipeline YAML file",
+          "In the CI/CD platform's encrypted secrets store",
+          "In a public configuration file"
+        ],
+        "correctIndex": 2,
+        "explanation": "Secrets must be stored in the CI/CD platform's encrypted secrets store (e.g., GitHub Secrets, GitLab CI Variables). They are injected at runtime and masked in logs."
+      }
+    },
+    {
+      "id": "deployment-strategies",
+      "title": "Deployment Strategies",
+      "content": [
+        {
+          "type": "text",
+          "value": "How you deploy matters as much as what you deploy. Different strategies offer different tradeoffs between risk, speed, and complexity."
+        },
+        {
+          "type": "mermaid",
+          "title": "Deployment Strategies Comparison",
+          "value": "graph TD\n    subgraph RR [\"Rolling Update\"]\n        R1[\"v1 v1 v1\"] --> R2[\"v2 v1 v1\"] --> R3[\"v2 v2 v1\"] --> R4[\"v2 v2 v2\"]\n    end\n    subgraph BG [\"Blue-Green\"]\n        B1[\"Blue (v1) LIVE\"] --> B2[\"Green (v2) Ready\"]\n        B2 --> B3[\"Switch traffic → Green LIVE\"]\n    end\n    subgraph CN [\"Canary\"]\n        C1[\"v1 (90% traffic)\"] --> C2[\"v2 (10% traffic)\"]\n        C2 --> C3[\"v2 (100% traffic)\"]\n    end\n    style RR fill:#0f1923,stroke:#00d4ff33,color:#e2e8f0\n    style BG fill:#0f1923,stroke:#10b98133,color:#e2e8f0\n    style CN fill:#0f1923,stroke:#f59e0b33,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**Rolling Update** — Replace instances one by one. Zero downtime. Default in Kubernetes.\n\n**Blue-Green** — Run two identical environments. Switch all traffic from Blue (old) to Green (new) instantly. Easy rollback: just switch back.\n\n**Canary** — Route a small percentage of traffic (5-10%) to the new version. Monitor for errors. If healthy, gradually increase to 100%.\n\n**Recreate** — Stop all old instances, then start new ones. Simple but causes downtime. Only for non-critical services."
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview answer: 'For critical production services, I use canary deployments — deploy to 5% of traffic, monitor error rates and latency for 15 minutes, then gradually promote to 100%. If metrics degrade, I automatically roll back. This limits the blast radius of any bad deployment.'"
+        }
+      ],
+      "quiz": {
+        "question": "What is a canary deployment?",
+        "options": [
+          "Deploying to all servers at once",
+          "Gradually routing a small percentage of traffic to the new version while monitoring",
+          "Running two identical environments",
+          "Stopping the old version before starting the new one"
+        ],
+        "correctIndex": 1,
+        "explanation": "Canary deployment routes a small percentage of traffic (e.g., 5%) to the new version. If errors spike, you roll back before most users are affected. It's named after canaries in coal mines — early warning signals."
+      }
+    }
+  ]
+}

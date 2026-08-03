@@ -1,0 +1,49 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Create a GitHub Actions Workflow",
+      "description": "Create the directory structure and a basic CI workflow file.",
+      "tasks": [
+        "Create workflow directory: `mkdir -p ~/myproject/.github/workflows`",
+        "Create a CI file: `touch ~/myproject/.github/workflows/ci.yml`",
+        "Add content: `echo 'name: CI' > ~/myproject/.github/workflows/ci.yml`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/myproject/.github/workflows/ci.yml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Write a Complete Pipeline",
+      "description": "Write a YAML pipeline with build and test steps.",
+      "tasks": [
+        "Edit ci.yml to include: on push to main, checkout, setup-node, npm ci, npm test",
+        "Validate YAML syntax: `cat ~/myproject/.github/workflows/ci.yml`",
+        "Verify it contains the required keys: name, on, jobs"
+      ],
+      "verification": {
+        "command": "grep -q 'jobs' /home/student/myproject/.github/workflows/ci.yml && grep -q 'on' /home/student/myproject/.github/workflows/ci.yml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "Add a Deployment Stage",
+      "description": "Add a deploy job that depends on the test job.",
+      "tasks": [
+        "Add a 'deploy' job with `needs: test` to your ci.yml",
+        "Add an `if: github.ref == 'refs/heads/main'` condition",
+        "Verify the pipeline structure: `cat ~/myproject/.github/workflows/ci.yml`"
+      ],
+      "verification": {
+        "command": "grep -q 'deploy' /home/student/myproject/.github/workflows/ci.yml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

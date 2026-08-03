@@ -2,27 +2,56 @@
   "flashcards": [
     {
       "id": "fc-k1",
-      "front": "What is a Pod in Kubernetes?",
-      "back": "The smallest deployable unit in Kubernetes. A Pod contains one or more containers that share network IP, storage, and namespaces."
+      "front": "Explain the Kubernetes architecture in simple terms.",
+      "back": "The **Control Plane** is the brain:\n• API Server — receives all commands\n• etcd — stores the entire cluster state\n• Scheduler — decides which node runs each pod\n• Controller Manager — ensures desired state = actual state\n\n**Worker Nodes** are the muscles:\n• Kubelet — manages pods on the node\n• kube-proxy — handles networking\n• Container Runtime — runs containers (containerd)"
     },
     {
       "id": "fc-k2",
-      "front": "What is the difference between a Deployment and a StatefulSet?",
-      "back": "Deployment: Used for stateless apps (web servers). Pods can be destroyed/replaced in any order without losing state.\n\nStatefulSet: Used for stateful apps (databases like Postgres/MongoDB). Pods have fixed sticky identities and persistent storage."
+      "front": "What is the difference between a Pod, Deployment, and Service?",
+      "back": "**Pod** = Smallest unit. Wraps 1+ containers sharing the same network/storage.\n\n**Deployment** = Manages multiple identical Pods. Provides self-healing, scaling, and rolling updates.\n\n**Service** = Stable network endpoint. Load balances traffic across Pods. Pods are temporary; Services are permanent."
     },
     {
       "id": "fc-k3",
-      "front": "How do you troubleshoot a Pod stuck in CrashLoopBackOff?",
-      "back": "1. `kubectl get pods` to verify status.\n2. `kubectl describe pod <name>` to check system events.\n3. `kubectl logs <name>` to inspect application error traces.\n4. `kubectl logs <name> --previous` to see logs from the previously crashed container."
+      "front": "What are the 3 types of Kubernetes Services?",
+      "back": "1. **ClusterIP** (default) — Internal only. Pods talk to each other.\n2. **NodePort** — Opens a port (30000-32767) on every node. External access via Node IP.\n3. **LoadBalancer** — Creates a cloud load balancer with a public IP. For production external traffic."
+    },
+    {
+      "id": "fc-k4",
+      "front": "What is the difference between Liveness and Readiness probes?",
+      "back": "**Liveness**: 'Is the app alive?' If it fails → K8s RESTARTS the container. Catches deadlocks and hangs.\n\n**Readiness**: 'Is the app ready for traffic?' If it fails → K8s REMOVES it from the Service load balancer. The pod stays alive but gets no requests until it recovers."
+    },
+    {
+      "id": "fc-k5",
+      "front": "What is Helm?",
+      "back": "Helm is the package manager for Kubernetes.\n\nA Helm Chart = a package of pre-configured K8s YAML manifests.\n\nInstead of writing 10+ YAML files for PostgreSQL (Deployment, Service, ConfigMap, PVC, Secret), you run:\n`helm install my-db bitnami/postgresql`\n\nOne command. Battle-tested. Upgradeable. Rollbackable."
+    },
+    {
+      "id": "fc-k6",
+      "front": "How does a Rolling Update work in Kubernetes?",
+      "back": "1. K8s creates 1 new Pod with the new version\n2. Waits for the readiness probe to pass ✅\n3. Removes 1 old Pod\n4. Repeats until all Pods are replaced\n\nResult: Zero downtime deployment!\n\nIf the new version fails health checks, K8s stops the rollout and you can undo with:\n`kubectl rollout undo deployment/my-app`"
     }
   ],
   "interviewQuestions": [
     {
       "id": "iq-k1",
-      "question": "What is a Kubernetes Service and why is it needed?",
+      "question": "How does Kubernetes achieve self-healing?",
       "difficulty": "intermediate",
-      "modelAnswer": "Pods in Kubernetes are ephemeral — they get created and destroyed with changing IP addresses. If your app tried to talk to a Pod directly by IP, it would break whenever the Pod restarted.\n\nA Kubernetes Service provides a stable, fixed virtual IP address and DNS name in front of a group of Pods. It automatically load-balances incoming traffic across all healthy matching Pods.",
-      "keyPoints": ["Pods have dynamic ephemeral IPs", "Services provide fixed virtual IP & DNS", "Load-balances traffic across Pods"]
+      "modelAnswer": "Kubernetes uses a 'reconciliation loop' pattern. Controllers continuously compare the desired state (defined in Deployment YAML, e.g., 3 replicas) with the actual state (actual running pods).\n\nIf a Pod crashes, the ReplicaSet controller detects that only 2 of 3 pods are running. It immediately creates a new Pod to restore the desired count.\n\nIf an entire node goes down, the Node Controller marks its pods as unhealthy. The Scheduler then reschedules those pods onto healthy nodes.\n\nKey controllers:\n- ReplicaSet Controller: Maintains pod count\n- Node Controller: Monitors node health\n- Job Controller: Ensures jobs complete\n- Endpoint Controller: Updates service endpoints",
+      "keyPoints": ["Reconciliation loop (desired vs actual state)", "Controllers constantly watching and correcting", "ReplicaSet auto-replaces crashed pods", "Node failure triggers pod rescheduling"]
+    },
+    {
+      "id": "iq-k2",
+      "question": "Walk me through how you would deploy an application to Kubernetes with zero downtime.",
+      "difficulty": "advanced",
+      "modelAnswer": "1. **Containerize**: Build a Docker image with a health endpoint (`/health`).\n2. **Create Deployment YAML**: Define replicas (3+), resource limits, and a rolling update strategy.\n3. **Configure Health Probes**: Add readinessProbe (checks if ready for traffic) and livenessProbe (checks if alive). This is critical for zero-downtime.\n4. **Create a Service**: ClusterIP for internal, or LoadBalancer for external traffic.\n5. **Create Ingress**: For HTTP routing with TLS certificates.\n6. **Deploy**: `kubectl apply -f deployment.yaml` triggers a rolling update.\n7. **Monitor**: `kubectl rollout status deployment/my-app` watches the rollout.\n8. **Rollback if needed**: `kubectl rollout undo deployment/my-app` instantly reverts.\n\nThe key to zero-downtime is the readiness probe — K8s only sends traffic to new pods AFTER the probe passes. Old pods keep serving until new ones are verified healthy.",
+      "keyPoints": ["Readiness probes are the key to zero-downtime", "Rolling update strategy replaces pods gradually", "kubectl rollout undo for instant rollback", "Resource limits prevent node overload"]
+    },
+    {
+      "id": "iq-k3",
+      "question": "A Pod is stuck in CrashLoopBackOff. How do you troubleshoot it?",
+      "difficulty": "intermediate",
+      "modelAnswer": "CrashLoopBackOff means the container keeps crashing and K8s keeps restarting it with increasing delays.\n\nDebugging steps:\n1. `kubectl describe pod <name>` — Check Events section for error messages, image pull errors, or resource limits.\n2. `kubectl logs <name>` — Read application stdout/stderr before the crash.\n3. `kubectl logs <name> --previous` — If it already restarted, read logs from the PREVIOUS crashed container.\n4. Check exit code: Exit 1 = app error, Exit 137 = OOM killed, Exit 143 = SIGTERM.\n5. If the app crashes instantly, override the entrypoint: `kubectl run debug --image=myapp --command -- sleep 3600` then exec into it to investigate.\n6. Check ConfigMaps/Secrets: Missing environment variables or wrong database URLs are common causes.",
+      "keyPoints": ["kubectl describe for events", "kubectl logs --previous for crashed container", "Exit code analysis (1=error, 137=OOM)", "Override entrypoint for investigation", "Check ConfigMaps/Secrets for missing config"]
     }
   ]
 }

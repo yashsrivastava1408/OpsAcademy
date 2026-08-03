@@ -1,0 +1,50 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Explore AWS CLI",
+      "description": "Get familiar with the AWS CLI and check your configuration.",
+      "tasks": [
+        "Check AWS CLI version: `aws --version`",
+        "List S3 buckets: `aws s3 ls`",
+        "Check your identity: `aws sts get-caller-identity`"
+      ],
+      "verification": {
+        "command": "aws --version 2>&1 | grep -q 'aws-cli' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Create an S3 Bucket",
+      "description": "Create a storage bucket and upload files to it.",
+      "tasks": [
+        "Create a bucket: `aws s3 mb s3://opsacademy-lab-$(date +%s)`",
+        "Create a test file: `echo 'Hello Cloud!' > hello.txt`",
+        "Upload it: `aws s3 cp hello.txt s3://your-bucket-name/`",
+        "Verify: `aws s3 ls s3://your-bucket-name/`"
+      ],
+      "verification": {
+        "command": "aws s3 ls 2>&1 | grep -q 'opsacademy' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "IAM Policy Analysis",
+      "description": "Read and understand IAM policies.",
+      "tasks": [
+        "List IAM users: `aws iam list-users`",
+        "View your policies: `aws iam list-attached-user-policies --user-name $(aws sts get-caller-identity --query 'Arn' --output text | cut -d'/' -f2)`",
+        "Describe what each policy allows"
+      ],
+      "verification": {
+        "command": "aws iam list-users 2>&1 | grep -q 'Users' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

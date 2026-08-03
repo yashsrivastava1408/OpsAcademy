@@ -1,0 +1,32 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Expose Application Metrics",
+      "description": "Inspect metrics format and verify /metrics endpoint response.",
+      "tasks": [
+        "Simulate scraping a metrics endpoint: `curl -s http://localhost:4000/api/health || echo 'http_requests_total 42'`",
+        "Verify PromQL compatible metric formatting"
+      ],
+      "verification": {
+        "command": "curl -s http://localhost:4000/api/health 2>&1 | grep -q 'ok\\|status\\|http' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "PromQL Query Practice",
+      "description": "Write PromQL expressions for calculating request rates and error percentages.",
+      "tasks": [
+        "Calculate request rate: `rate(http_requests_total[5m])`",
+        "Filter errors: `http_requests_total{status=~\"5..\"}`"
+      ],
+      "verification": {
+        "command": "echo 'rate(http_requests_total[5m])' | grep -q 'rate' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

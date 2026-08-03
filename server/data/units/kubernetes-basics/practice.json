@@ -2,27 +2,92 @@
   "steps": [
     {
       "step": 1,
-      "title": "Check kubectl CLI Setup",
-      "description": "Check if the kubectl Kubernetes command-line tool is installed in your sandbox.",
+      "title": "Verify kubectl Setup",
+      "description": "Ensure kubectl is configured and can communicate with the cluster.",
       "tasks": [
-        "Run `kubectl version --client` to verify kubectl is ready"
+        "Run `kubectl version --client` to verify kubectl is installed",
+        "Run `kubectl cluster-info` to check cluster connectivity",
+        "Run `kubectl get nodes` to list available nodes"
       ],
       "verification": {
-        "command": "kubectl version --client",
-        "expectedOutput": "Client Version",
+        "command": "kubectl version --client 2>&1 | grep -i 'client version' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
         "check": "contains"
       }
     },
     {
       "step": 2,
-      "title": "Create a Pod Manifest File",
-      "description": "Write a Kubernetes YAML manifest to define an Nginx pod.",
+      "title": "Create Your First Pod",
+      "description": "Deploy a simple nginx Pod using kubectl.",
       "tasks": [
-        "Create folder: `mkdir -p /home/student/k8s`",
-        "Create file `/home/student/k8s/pod.yaml` with apiVersion: v1, kind: Pod, and image: nginx"
+        "Create a pod: `kubectl run my-nginx --image=nginx:alpine`",
+        "Check status: `kubectl get pods`",
+        "View details: `kubectl describe pod my-nginx`"
       ],
       "verification": {
-        "command": "grep -q 'kind: Pod' /home/student/k8s/pod.yaml && echo PASS || echo FAIL",
+        "command": "kubectl get pods | grep my-nginx && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "Deploy with a Deployment",
+      "description": "Create a Deployment that manages 3 replicas of an nginx web server.",
+      "tasks": [
+        "Create deployment: `kubectl create deployment web-app --image=nginx:alpine --replicas=3`",
+        "Watch pods come up: `kubectl get pods -l app=web-app`",
+        "Scale to 5 replicas: `kubectl scale deployment web-app --replicas=5`"
+      ],
+      "verification": {
+        "command": "kubectl get deployment web-app -o jsonpath='{.spec.replicas}' 2>/dev/null | grep -q '5' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Expose with a Service",
+      "description": "Create a Service to provide stable network access to your Deployment.",
+      "tasks": [
+        "Expose the deployment: `kubectl expose deployment web-app --port=80 --target-port=80 --type=NodePort`",
+        "Check the service: `kubectl get services`",
+        "Describe the service: `kubectl describe service web-app`"
+      ],
+      "verification": {
+        "command": "kubectl get service web-app && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "Troubleshoot a Pod",
+      "description": "Practice the debugging workflow for diagnosing pod issues.",
+      "tasks": [
+        "View pod logs: `kubectl logs <pod-name>` (use one of the web-app pods)",
+        "Shell into a pod: `kubectl exec -it <pod-name> -- sh`",
+        "Inside, run: `cat /etc/nginx/nginx.conf` then `exit`",
+        "Check resource usage: `kubectl top pods` (if metrics-server is installed)"
+      ],
+      "verification": {
+        "command": "kubectl logs $(kubectl get pods -l app=web-app -o jsonpath='{.items[0].metadata.name}') 2>&1 | head -1 | grep -q '' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 6,
+      "title": "Clean Up Resources",
+      "description": "Remove all the resources you created in this lab.",
+      "tasks": [
+        "Delete the service: `kubectl delete service web-app`",
+        "Delete the deployment: `kubectl delete deployment web-app`",
+        "Delete the standalone pod: `kubectl delete pod my-nginx`",
+        "Verify cleanup: `kubectl get all`"
+      ],
+      "verification": {
+        "command": "kubectl get deployment web-app 2>&1 | grep -q 'not found' && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

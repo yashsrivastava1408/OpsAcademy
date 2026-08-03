@@ -1,0 +1,65 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Network Discovery",
+      "description": "Explore your network environment using basic diagnostic commands.",
+      "tasks": [
+        "Find your IP address: `ifconfig` or `ip addr show`",
+        "Ping Google's DNS: `ping -c 4 8.8.8.8`",
+        "Trace route to Google: `traceroute google.com` (or `tracepath google.com`)"
+      ],
+      "verification": {
+        "command": "ping -c 1 8.8.8.8 2>&1 | grep -q '1 packets transmitted' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "DNS Lookups",
+      "description": "Practice resolving domain names to IP addresses.",
+      "tasks": [
+        "Look up google.com: `nslookup google.com`",
+        "Use dig for detailed info: `dig google.com +short`",
+        "Look up mail servers: `dig google.com MX +short`",
+        "Check your DNS config: `cat /etc/resolv.conf`"
+      ],
+      "verification": {
+        "command": "nslookup google.com 2>&1 | grep -i address && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "HTTP Requests with curl",
+      "description": "Make HTTP requests and inspect responses like a pro.",
+      "tasks": [
+        "GET request: `curl -I https://httpbin.org/get` (headers only)",
+        "Check status code: `curl -o /dev/null -s -w '%{http_code}' https://httpbin.org/status/200`",
+        "POST data: `curl -X POST https://httpbin.org/post -d 'name=OpsAcademy'`"
+      ],
+      "verification": {
+        "command": "curl -o /dev/null -s -w '%{http_code}' https://httpbin.org/get | grep -q '200' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Port Scanning",
+      "description": "Check which ports are open and what services are listening.",
+      "tasks": [
+        "List listening ports: `ss -tlnp` or `netstat -tlnp`",
+        "Check if port 22 is open: `ss -tlnp | grep :22`",
+        "Find what's using a specific port: `lsof -i :80 2>/dev/null || ss -tlnp | grep :80`"
+      ],
+      "verification": {
+        "command": "ss -tlnp 2>/dev/null | head -1 | grep -q '' && echo PASS || (netstat -tlnp 2>/dev/null | head -1 | grep -q '' && echo PASS || echo FAIL)",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

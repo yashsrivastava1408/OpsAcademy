@@ -6,16 +6,21 @@
       "content": [
         {
           "type": "text",
-          "value": "Think of Git as a supercharged 'Time Machine' for your code. Every time you make a checkpoint (called a **commit**), Git saves a snapshot of your entire project."
+          "value": "Think of Git as a supercharged 'Time Machine' for your code. Every time you make a checkpoint (called a **commit**), Git saves a snapshot of your entire project. If you break something, you can easily travel back to any previous snapshot."
         },
         {
           "type": "text",
-          "value": "If you break something, you can easily travel back to any previous snapshot. It also lets multiple software engineers work on the exact same project simultaneously without overwriting each other's work."
+          "value": "It also lets multiple software engineers work on the exact same project simultaneously without overwriting each other's work. Git is a **Distributed Version Control System** (DVCS) — every developer has a full copy of the entire project history on their machine."
+        },
+        {
+          "type": "mermaid",
+          "title": "Git vs GitHub — The Relationship",
+          "value": "graph LR\n    A[\"💻 Your Laptop\"] -->|git push| B[\"☁️ GitHub\"]\n    B -->|git pull| A\n    C[\"💻 Teammate's Laptop\"] -->|git push| B\n    B -->|git pull| C\n    subgraph LOCAL [\"Local (Git)\"]\n        A\n        C\n    end\n    subgraph REMOTE [\"Remote (GitHub)\"]\n        B\n    end\n    style A fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style B fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style C fill:#1a2332,stroke:#f59e0b,color:#e2e8f0"
         },
         {
           "type": "callout",
           "style": "info",
-          "value": "Git vs GitHub: Git is the command-line tool running on your computer. GitHub is a cloud website (like Google Drive for code) that hosts Git repositories."
+          "value": "Git vs GitHub: Git is the command-line tool running on your computer. GitHub is a cloud website (like Google Drive for code) that hosts Git repositories. Other alternatives include GitLab and Bitbucket."
         },
         {
           "type": "code",
@@ -37,23 +42,65 @@
       }
     },
     {
+      "id": "staging-commits",
+      "title": "Staging Area and Commits",
+      "content": [
+        {
+          "type": "text",
+          "value": "Git has a unique concept called the **Staging Area** (also called the Index). Think of it like a photography studio: you don't take a photo of your entire house — you choose which items to arrange on the stage, then take the photo (commit)."
+        },
+        {
+          "type": "mermaid",
+          "title": "The Three Areas of Git",
+          "value": "graph LR\n    A[\"📁 Working Directory\\n(Your actual files)\"] -->|git add| B[\"📦 Staging Area\\n(Ready for snapshot)\"]\n    B -->|git commit| C[\"📸 Repository\\n(Permanent history)\"]\n    C -->|git checkout| A\n    style A fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style B fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style C fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Staging and Committing",
+          "value": "# Stage specific files\ngit add index.html             # Stage one file\ngit add src/                   # Stage entire directory\ngit add .                      # Stage ALL changes\ngit add -p                     # Interactive: choose which changes to stage\n\n# Check what's staged\ngit status                     # See staged vs unstaged files\ngit diff                       # See unstaged changes\ngit diff --staged              # See what's about to be committed\n\n# Commit (take the snapshot)\ngit commit -m \"Add login page\"           # Commit with a message\ngit commit -am \"Fix typo\"                # Stage + commit tracked files\n\n# Undo mistakes\ngit restore file.txt                     # Discard unstaged changes\ngit restore --staged file.txt            # Unstage a file (keep changes)"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Good commit messages follow this pattern: 'verb + what changed'. Examples: 'Add user login page', 'Fix database connection timeout', 'Remove deprecated API endpoint'. Bad example: 'fixed stuff'."
+        }
+      ],
+      "quiz": {
+        "question": "What does 'git add' do?",
+        "options": [
+          "Uploads files to GitHub",
+          "Moves files from working directory to the staging area",
+          "Deletes files from the repository",
+          "Creates a new branch"
+        ],
+        "correctIndex": 1,
+        "explanation": "git add moves changes from your Working Directory to the Staging Area. They are now 'staged' and ready to be included in the next commit."
+      }
+    },
+    {
       "id": "branching-merging",
       "title": "Branching and Merging",
       "content": [
         {
           "type": "text",
-          "value": "A **branch** is like a parallel universe for your project. The main production code lives on the `main` branch. When building a new feature, you create a feature branch so you don't break working code."
+          "value": "A **branch** is like a parallel universe for your project. The main production code lives on the `main` branch. When building a new feature, you create a feature branch so you don't break working code. When the feature is done and tested, you merge it back."
+        },
+        {
+          "type": "mermaid",
+          "title": "Branch and Merge Workflow",
+          "value": "gitGraph\n    commit id: \"Initial\"\n    commit id: \"Setup\"\n    branch feature-login\n    checkout feature-login\n    commit id: \"Add form\"\n    commit id: \"Add validation\"\n    checkout main\n    commit id: \"Hotfix\"\n    merge feature-login id: \"Merge feature\"\n    commit id: \"Deploy v2\""
         },
         {
           "type": "code",
           "language": "bash",
           "title": "Branching Commands",
-          "value": "git branch feature-login        # Create a new branch\ngit checkout feature-login      # Switch to feature-login branch\ngit checkout -b feature-login   # Shortcut: create AND switch in one step\ngit checkout main               # Switch back to main branch\ngit merge feature-login         # Combine feature-login code INTO main"
+          "value": "# Create and manage branches\ngit branch                      # List all local branches\ngit branch feature-login        # Create a new branch\ngit checkout feature-login      # Switch to feature-login branch\ngit checkout -b feature-login   # Shortcut: create AND switch\ngit switch feature-login        # Modern alternative to checkout\ngit switch -c feature-login     # Modern: create AND switch\n\n# Merging\ngit checkout main               # Switch back to main\ngit merge feature-login         # Merge feature-login INTO main\n\n# Cleanup\ngit branch -d feature-login     # Delete branch after merge\ngit branch -D feature-login     # Force delete unmerged branch"
         },
         {
           "type": "callout",
-          "style": "tip",
-          "value": "Merge vs Rebase (Top Interview Question!): Merge preserves full history and creates a 'merge commit'. Rebase moves your feature branch commits onto the tip of main for a clean linear history."
+          "style": "info",
+          "value": "Naming convention: Use descriptive branch names with prefixes. Examples: feature/user-auth, bugfix/login-crash, hotfix/security-patch, chore/update-deps. This makes branches self-documenting."
         }
       ],
       "quiz": {
@@ -66,6 +113,185 @@
         ],
         "correctIndex": 1,
         "explanation": "Feature branches isolate experimental or incomplete work from the stable main codebase until the feature is tested and ready to merge."
+      }
+    },
+    {
+      "id": "merge-conflicts",
+      "title": "Resolving Merge Conflicts",
+      "content": [
+        {
+          "type": "text",
+          "value": "A **merge conflict** happens when two branches modify the same line in the same file. Git doesn't know which version to keep, so it asks YOU to resolve it manually. Don't panic — conflicts are normal and are a sign of active collaboration!"
+        },
+        {
+          "type": "mermaid",
+          "title": "How Merge Conflicts Happen",
+          "value": "sequenceDiagram\n    participant M as main\n    participant A as feature-A\n    participant B as feature-B\n    M->>A: Branch off\n    M->>B: Branch off\n    A->>A: Edit line 10: color = blue\n    B->>B: Edit line 10: color = red\n    A->>M: Merge feature-A ✅\n    B->>M: Merge feature-B ⚠️ CONFLICT!\n    Note over M: Both changed line 10!<br/>Git asks YOU to choose."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "What a Conflict Looks Like in Your File",
+          "value": "<<<<<<< HEAD (your current branch)\ncolor = blue\n=======\ncolor = red\n>>>>>>> feature-B (the branch being merged)\n\n# To resolve:\n# 1. Choose one version, combine them, or write something new\n# 2. Remove the <<<, ===, >>> markers\n# 3. Save the file\n# 4. git add the resolved file\n# 5. git commit to complete the merge"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Conflict Resolution Commands",
+          "value": "# When a merge conflict occurs:\ngit status                      # See which files have conflicts\n\n# After manually editing the conflicted file:\ngit add resolved-file.txt       # Mark as resolved\ngit commit                      # Complete the merge\n\n# Abort if you want to start over:\ngit merge --abort               # Cancel the merge entirely\n\n# Use a visual merge tool:\ngit mergetool                   # Opens configured visual diff tool"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview pro tip: 'I minimize conflicts by keeping feature branches short-lived (merge within 1-2 days), frequently pulling from main to stay updated, and communicating with teammates when we're working on the same files.'"
+        }
+      ],
+      "quiz": {
+        "question": "What causes a Git merge conflict?",
+        "options": [
+          "Having too many branches",
+          "Two branches modifying the same line in the same file",
+          "Pushing too frequently to GitHub",
+          "Using git add incorrectly"
+        ],
+        "correctIndex": 1,
+        "explanation": "Conflicts occur when Git can't automatically merge because two branches changed the same lines. You must manually choose which changes to keep."
+      }
+    },
+    {
+      "id": "rebase-vs-merge",
+      "title": "Rebase vs Merge",
+      "content": [
+        {
+          "type": "text",
+          "value": "Both `merge` and `rebase` combine work from two branches, but they do it differently. This is one of the most frequently asked Git questions in interviews."
+        },
+        {
+          "type": "mermaid",
+          "title": "Merge: Preserves Full History",
+          "value": "gitGraph\n    commit id: \"A\"\n    commit id: \"B\"\n    branch feature\n    checkout feature\n    commit id: \"C\"\n    commit id: \"D\"\n    checkout main\n    commit id: \"E\"\n    merge feature id: \"Merge commit\""
+        },
+        {
+          "type": "text",
+          "value": "**Merge** creates a new 'merge commit' that ties both branches together. The history shows exactly when and where the branch diverged and reconnected. It's safe and preserves the full truth of what happened."
+        },
+        {
+          "type": "text",
+          "value": "**Rebase** replays your feature commits on top of the latest main, creating a clean linear history as if you had started your work from the latest main all along. The history looks cleaner, but it rewrites commit hashes."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "When to Use Each",
+          "value": "# MERGE — Safe for shared/public branches\ngit checkout main\ngit merge feature-login         # Creates a merge commit\n\n# REBASE — Clean history for local/private branches\ngit checkout feature-login\ngit rebase main                 # Replay commits on top of main\ngit checkout main\ngit merge feature-login         # Now it's a fast-forward (linear)\n\n# Interactive rebase — Squash messy commits before merge\ngit rebase -i HEAD~3            # Rewrite last 3 commits\n# In the editor: change 'pick' to 'squash' to combine commits"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Golden Rule: NEVER rebase commits that have been pushed to a shared branch that others are working on. Rebase rewrites commit history, which will cause chaos for teammates who already have the old commits. Only rebase your own local, unpushed work."
+        }
+      ],
+      "quiz": {
+        "question": "When is it safe to use git rebase?",
+        "options": [
+          "Always, on any branch",
+          "Only on your local, unpushed feature branches",
+          "Only on the main branch",
+          "Never — rebase is dangerous"
+        ],
+        "correctIndex": 1,
+        "explanation": "Rebase rewrites commit history. It's safe on local branches that haven't been shared. Never rebase commits already pushed to shared branches — it creates duplicate commits for teammates."
+      }
+    },
+    {
+      "id": "stash-tags",
+      "title": "Git Stash, Tags, and Logs",
+      "content": [
+        {
+          "type": "text",
+          "value": "**Git Stash** is like a clipboard for your code changes. Imagine you're halfway through writing a feature, and your boss says 'Drop everything — fix this critical bug on main!' Stash saves your unfinished work, lets you switch branches cleanly, and restores it later."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Git Stash — Save Work in Progress",
+          "value": "# Save current changes to stash\ngit stash                       # Stash tracked file changes\ngit stash -u                    # Also stash untracked (new) files\ngit stash save \"WIP: login form\"  # Stash with a description\n\n# View and restore stashed changes\ngit stash list                  # List all stashes\ngit stash pop                   # Restore most recent stash & remove from list\ngit stash apply                 # Restore stash but keep it in the list\ngit stash drop stash@{0}        # Delete a specific stash\ngit stash clear                 # Delete ALL stashes"
+        },
+        {
+          "type": "text",
+          "value": "**Git Tags** mark specific commits as important milestones — like software version releases (v1.0.0, v2.3.1). Tags don't move like branches do; they permanently point to one specific commit."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Git Tags — Version Marking",
+          "value": "git tag v1.0.0                  # Create a lightweight tag\ngit tag -a v1.0.0 -m \"First stable release\"  # Annotated tag (recommended)\ngit tag                         # List all tags\ngit push origin v1.0.0          # Push a specific tag to remote\ngit push origin --tags          # Push ALL tags to remote"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Git Log — Explore History",
+          "value": "git log                         # Full commit history\ngit log --oneline               # Compact one-line format\ngit log --oneline --graph       # Visual branch graph\ngit log --author=\"Alice\"        # Filter by author\ngit log --since=\"2 weeks ago\"   # Filter by date\ngit show abc1234                # Show details of a specific commit\ngit blame file.txt              # Show who last modified each line"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "git blame is incredibly useful for debugging: 'Who changed this line, when, and in which commit?' It helps you find the context behind a change before you modify it."
+        }
+      ],
+      "quiz": {
+        "question": "When would you use git stash?",
+        "options": [
+          "To permanently delete changes",
+          "To temporarily save uncommitted changes so you can switch branches",
+          "To create a new repository",
+          "To push code to GitHub"
+        ],
+        "correctIndex": 1,
+        "explanation": "Git stash temporarily shelves your uncommitted changes so you can work on something else (like a hotfix on another branch), then restore your work later with git stash pop."
+      }
+    },
+    {
+      "id": "github-prs",
+      "title": "GitHub Pull Requests and Code Review",
+      "content": [
+        {
+          "type": "text",
+          "value": "A **Pull Request** (PR) is how teams collaborate on GitHub. Instead of pushing directly to main, you push your feature branch and open a PR asking teammates to review your code before merging. Think of it as submitting a homework assignment for your professor to grade before it counts."
+        },
+        {
+          "type": "mermaid",
+          "title": "Pull Request Workflow",
+          "value": "sequenceDiagram\n    participant D as Developer\n    participant GH as GitHub\n    participant R as Code Reviewer\n    D->>D: Create feature branch\n    D->>D: Write code + commit\n    D->>GH: git push origin feature-branch\n    D->>GH: Open Pull Request\n    GH->>R: Notification: PR ready for review\n    R->>GH: Review code + leave comments\n    R->>GH: Request changes ❌\n    D->>D: Fix issues + push updates\n    R->>GH: Approve ✅\n    GH->>GH: Merge to main\n    GH->>GH: Delete feature branch"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "PR Workflow from Command Line",
+          "value": "# 1. Create and switch to feature branch\ngit checkout -b feature/user-profile\n\n# 2. Make changes, commit\ngit add .\ngit commit -m \"Add user profile page with avatar upload\"\n\n# 3. Push branch to GitHub\ngit push origin feature/user-profile\n\n# 4. Open PR on GitHub (or use GitHub CLI)\ngh pr create --title \"Add user profile page\" --body \"Implements user profile with avatar upload.\"\n\n# 5. After PR is approved and merged, clean up\ngit checkout main\ngit pull origin main             # Get the merged changes\ngit branch -d feature/user-profile  # Delete local branch"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Code review best practices: Keep PRs small (under 400 lines), write descriptive PR titles and descriptions, add screenshots for UI changes, respond to review comments promptly, and test before requesting review."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Keeping Your Branch Updated",
+          "value": "# While working on a feature, main may get new commits\n# Keep your branch updated to avoid conflicts:\ngit checkout feature/user-profile\ngit fetch origin\ngit rebase origin/main           # Replay your commits on latest main\n\n# Or merge main into your branch:\ngit merge origin/main            # Merge latest main into your branch"
+        }
+      ],
+      "quiz": {
+        "question": "Why do teams use Pull Requests instead of pushing directly to main?",
+        "options": [
+          "GitHub requires them",
+          "To allow code review, catch bugs, and ensure code quality before merging",
+          "To make the process slower",
+          "Because git push doesn't work on main"
+        ],
+        "correctIndex": 1,
+        "explanation": "Pull Requests enable peer code review, which catches bugs, improves code quality, shares knowledge across the team, and creates a documented discussion trail for each change."
       }
     }
   ]

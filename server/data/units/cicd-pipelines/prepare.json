@@ -1,0 +1,40 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-ci1",
+      "front": "What is the difference between CI, CD (Delivery), and CD (Deployment)?",
+      "back": "**CI (Continuous Integration)**: Automatically build and test on every commit. Catch bugs early.\n\n**CD (Continuous Delivery)**: Automatically prepare release artifacts. Needs manual approval to deploy.\n\n**CD (Continuous Deployment)**: Fully automatic — every commit that passes tests goes straight to production. No human in the loop."
+    },
+    {
+      "id": "fc-ci2",
+      "front": "What are the 3 deployment strategies?",
+      "back": "1. **Rolling Update**: Replace pods one by one. Zero downtime. Default in K8s.\n2. **Blue-Green**: Two environments. Switch traffic instantly. Easy rollback.\n3. **Canary**: Send 5-10% traffic to new version. Monitor. Gradually increase.\n\nBonus: **Recreate** = stop old, start new (causes downtime)."
+    },
+    {
+      "id": "fc-ci3",
+      "front": "What is the Testing Pyramid?",
+      "back": "Base (many): **Unit tests** — fast, test individual functions\nMiddle: **Integration tests** — test component interactions\nTop (few): **E2E tests** — slow, test full user flows\n\nRule: More tests at the bottom (fast & cheap), fewer at the top (slow & expensive)."
+    },
+    {
+      "id": "fc-ci4",
+      "front": "How do you handle secrets in CI/CD pipelines?",
+      "back": "NEVER hardcode secrets in code or YAML files!\n\nStore in the CI platform's encrypted secrets store:\n• GitHub: Settings → Secrets → Actions\n• GitLab: Settings → CI/CD → Variables\n• Jenkins: Credentials Manager\n\nAccess with: ${{ secrets.API_KEY }}\nSecrets are masked in logs automatically."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-ci1",
+      "question": "Design a CI/CD pipeline for a web application from scratch.",
+      "difficulty": "intermediate",
+      "modelAnswer": "My pipeline has 5 stages:\n\n1. **Lint & Static Analysis**: Run ESLint, Prettier, type checking. Fast — catches obvious issues in seconds.\n\n2. **Unit Tests**: Run test suite with coverage reporting. Fail the pipeline if coverage drops below 80%.\n\n3. **Build**: Compile TypeScript, build Docker image, tag with git SHA for traceability.\n\n4. **Integration Tests**: Spin up test database with docker-compose, run API integration tests against it.\n\n5. **Deploy**:\n   - Staging: Auto-deploy on every push to main\n   - Production: Requires manual approval + canary deployment (10% traffic → monitor → 100%)\n\nI'd also add: branch protection rules requiring PR reviews, security scanning (Snyk/Trivy), and Slack notifications on failure.",
+      "keyPoints": ["5-stage pipeline (lint, test, build, integration, deploy)", "Coverage thresholds", "Docker image tagging with git SHA", "Canary deployment for production", "Branch protection and notifications"]
+    },
+    {
+      "id": "iq-ci2",
+      "question": "A deployment to production caused errors. How do you handle it?",
+      "difficulty": "advanced",
+      "modelAnswer": "Immediate response:\n1. **Assess severity**: Check error rates, user impact. Is it affecting all users or a subset?\n2. **Rollback**: If using canary, it's already limited to 10% of traffic — stop the rollout. For rolling updates: `kubectl rollout undo`. For blue-green: switch traffic back to the blue (old) environment.\n3. **Communicate**: Notify the team via Slack/PagerDuty. Update the status page if user-facing.\n\nPost-rollback:\n4. **Reproduce locally**: Pull the exact Docker image that was deployed and reproduce the bug.\n5. **Fix and re-test**: Write a test that catches this specific bug, fix the code.\n6. **Deploy again**: The new pipeline run includes the fix AND the new test.\n\nPrevention:\n7. Add the scenario to integration tests.\n8. Consider adding a smoke test stage that hits critical endpoints after deployment.\n9. Conduct a blameless post-mortem to improve the process.",
+      "keyPoints": ["Rollback immediately (kubectl rollout undo)", "Canary limits blast radius", "Reproduce with exact deployed image", "Write regression test for the bug", "Blameless post-mortem"]
+    }
+  ]
+}

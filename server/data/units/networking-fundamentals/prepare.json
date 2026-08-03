@@ -1,0 +1,45 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-n1",
+      "front": "Name the 7 OSI model layers from bottom to top.",
+      "back": "1. Physical (cables, signals)\n2. Data Link (MAC addresses, switches)\n3. Network (IP addresses, routers)\n4. Transport (TCP/UDP, ports)\n5. Session (connection management)\n6. Presentation (encryption, compression)\n7. Application (HTTP, DNS, SSH)\n\nMemory trick: 'Please Do Not Throw Sausage Pizza Away'"
+    },
+    {
+      "id": "fc-n2",
+      "front": "What is the difference between TCP and UDP?",
+      "back": "**TCP**: Connection-oriented, reliable, ordered delivery. Uses 3-way handshake. Used for web (HTTP), email, file transfer.\n\n**UDP**: Connectionless, best-effort, no ordering. No handshake = faster. Used for video streaming, gaming, DNS queries.\n\nRule: Need reliability? TCP. Need speed? UDP."
+    },
+    {
+      "id": "fc-n3",
+      "front": "What happens when you type 'google.com' in a browser?",
+      "back": "1. Browser checks DNS cache\n2. DNS resolver finds google.com's IP (142.250.80.46)\n3. TCP 3-way handshake with the server\n4. TLS handshake (for HTTPS)\n5. Browser sends HTTP GET request\n6. Server returns HTML response\n7. Browser parses HTML, loads CSS/JS/images\n8. Page renders on screen"
+    },
+    {
+      "id": "fc-n4",
+      "front": "What are the HTTP status code groups?",
+      "back": "• 1xx — Informational (request received)\n• 2xx — Success (200 OK, 201 Created)\n• 3xx — Redirect (301 Permanent, 302 Temporary)\n• 4xx — Client Error (400 Bad Request, 401 Unauthorized, 404 Not Found)\n• 5xx — Server Error (500 Internal Error, 502 Bad Gateway, 503 Unavailable)"
+    },
+    {
+      "id": "fc-n5",
+      "front": "What is the difference between L4 and L7 load balancing?",
+      "back": "**L4 (Transport)**: Routes based on IP + port. Fast, protocol-agnostic. Can't inspect HTTP content.\n\n**L7 (Application)**: Routes based on HTTP headers, URL paths, cookies. Can do path-based routing (/api → backend, / → frontend). Slightly slower but much smarter.\n\nExamples: AWS NLB = L4, AWS ALB = L7"
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-n1",
+      "question": "What happens when you type google.com in a browser and press Enter?",
+      "difficulty": "beginner",
+      "modelAnswer": "This is the most classic networking interview question. Here's the journey:\n\n1. **DNS Resolution**: Browser checks its cache, then OS cache, then sends a DNS query to the recursive resolver, which traverses root → .com TLD → google.com authoritative server to get the IP address.\n\n2. **TCP Connection**: Browser initiates a TCP 3-way handshake (SYN → SYN-ACK → ACK) with the server at port 443.\n\n3. **TLS Handshake**: Since it's HTTPS, the browser and server negotiate encryption: exchange certificates, verify with Certificate Authority, and derive shared session keys.\n\n4. **HTTP Request**: Browser sends `GET / HTTP/2` with headers (User-Agent, Accept, cookies).\n\n5. **Server Response**: Server returns `200 OK` with HTML content.\n\n6. **Rendering**: Browser parses HTML, discovers CSS/JS/image resources, makes additional requests, builds the DOM tree, applies styles, executes JavaScript, and paints the page.",
+      "keyPoints": ["DNS resolution chain", "TCP 3-way handshake", "TLS for HTTPS encryption", "HTTP request/response", "Browser rendering pipeline"]
+    },
+    {
+      "id": "iq-n2",
+      "question": "Explain the difference between a firewall and a load balancer.",
+      "difficulty": "intermediate",
+      "modelAnswer": "A **Firewall** is a security tool that filters traffic based on rules — it decides what's allowed in and what's blocked. It operates like a security guard checking IDs. Firewalls use rules based on source/destination IP, ports, and protocols.\n\nA **Load Balancer** is a traffic distribution tool — it accepts incoming requests and distributes them across multiple backend servers. It's like a receptionist directing visitors to available staff members.\n\nKey differences:\n- Firewall: Security (allow/deny). Load Balancer: Performance (distribute).\n- Firewall: Inspects packets. Load Balancer: Routes requests.\n- They often work together: Firewall filters malicious traffic, then the load balancer distributes the remaining clean traffic across servers.\n\nIn cloud: AWS Security Groups = Firewall, AWS ALB/NLB = Load Balancer.",
+      "keyPoints": ["Firewall = security filtering", "Load Balancer = traffic distribution", "They work together in practice", "Cloud equivalents: Security Groups + ALB/NLB"]
+    }
+  ]
+}

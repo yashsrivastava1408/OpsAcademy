@@ -13,14 +13,14 @@
           "value": "Think of it like shipping containers in real life — a standardized box that can hold anything and be transported anywhere. Software containers work the same way: \"Build once, run anywhere.\""
         },
         {
-          "type": "diagram",
+          "type": "mermaid",
           "title": "Containers vs Virtual Machines",
-          "value": "Virtual Machine:                    Container:\n┌──────────────────┐              ┌──────────────────┐\n│   App A  │ App B │              │   App A  │ App B │\n├──────────┼───────┤              ├──────────┼───────┤\n│  Libs A  │ Libs B│              │  Libs A  │ Libs B│\n├──────────┼───────┤              ├──────────┴───────┤\n│ Guest OS │Guest OS│              │  Container Engine │\n├──────────┴───────┤              │    (Docker)       │\n│   Hypervisor     │              ├──────────────────┤\n├──────────────────┤              │    Host OS        │\n│    Host OS       │              ├──────────────────┤\n├──────────────────┤              │    Hardware       │\n│    Hardware      │              └──────────────────┘\n└──────────────────┘\n\nVMs: Each app gets a full OS (GBs, minutes to start)\nContainers: Share host kernel (MBs, seconds to start)"
+          "value": "graph TB\n    subgraph VM [\"Virtual Machine\"]\n        VA[\"App A\"] & VB[\"App B\"]\n        VLA[\"Libs A\"] & VLB[\"Libs B\"]\n        VGA[\"Guest OS\"] & VGB[\"Guest OS\"]\n        VH[\"Hypervisor\"]\n        VHW[\"Hardware\"]\n    end\n    subgraph CT [\"Container\"]\n        CA[\"App A\"] & CB[\"App B\"]\n        CLA[\"Libs A\"] & CLB[\"Libs B\"]\n        CE[\"Container Engine (Docker)\"]\n        CHO[\"Host OS Kernel\"]\n        CHW[\"Hardware\"]\n    end\n    style VM fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style CT fill:#1a2332,stroke:#10b981,color:#e2e8f0"
         },
         {
           "type": "callout",
           "style": "info",
-          "value": "Key interview fact: Containers share the host OS kernel while VMs each run their own kernel. This makes containers 10-100x lighter and faster to start than VMs."
+          "value": "Key interview fact: Containers share the host OS kernel while VMs each run their own kernel. This makes containers 10-100x lighter (MBs vs GBs) and faster to start (seconds vs minutes) than VMs."
         }
       ],
       "quiz": {
@@ -41,13 +41,12 @@
       "content": [
         {
           "type": "text",
-          "value": "Docker uses a client-server architecture with three main components:"
+          "value": "Docker uses a client-server architecture. You type commands into the **Docker Client** (CLI), which sends HTTP API requests to the **Docker Daemon** (dockerd), which does the actual work of building, running, and managing containers."
         },
         {
-          "type": "code",
-          "language": "text",
-          "title": "Docker Components",
-          "value": "Docker Client (CLI)  ──HTTP API──▶  Docker Daemon (dockerd)\n                                        │\n                                   Manages:\n                                   ├── Images (blueprints)\n                                   ├── Containers (running instances)\n                                   ├── Networks (communication)\n                                   └── Volumes (persistent storage)"
+          "type": "mermaid",
+          "title": "Docker Architecture",
+          "value": "graph LR\n    CLI[\"🖥️ Docker CLI\\n(docker run, build)\"] -->|REST API| DAEMON[\"⚙️ Docker Daemon\\n(dockerd)\"]\n    DAEMON --> IMAGES[\"📦 Images\\n(Blueprints)\"]\n    DAEMON --> CONTAINERS[\"🏃 Containers\\n(Running instances)\"]\n    DAEMON --> NETWORKS[\"🌐 Networks\\n(Communication)\"]\n    DAEMON --> VOLUMES[\"💾 Volumes\\n(Persistent storage)\"]\n    DAEMON <-->|pull/push| REGISTRY[\"☁️ Docker Hub\\n(Registry)\"]\n    style CLI fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style DAEMON fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style REGISTRY fill:#1a2332,stroke:#f59e0b,color:#e2e8f0"
         },
         {
           "type": "text",
@@ -78,7 +77,12 @@
       "content": [
         {
           "type": "text",
-          "value": "A Dockerfile is a text file with instructions to build a Docker image. Each instruction creates a layer in the image, and Docker caches these layers for faster rebuilds."
+          "value": "A Dockerfile is a text file with instructions to build a Docker image. Each instruction creates a layer in the image, and Docker caches these layers for faster rebuilds. Think of it as a recipe — each step builds on the previous one."
+        },
+        {
+          "type": "mermaid",
+          "title": "Dockerfile Build Process",
+          "value": "graph TD\n    A[\"FROM node:18-alpine\"] -->|Layer 1: Base image| B[\"WORKDIR /app\"]\n    B -->|Layer 2: Set directory| C[\"COPY package*.json ./\"]\n    C -->|Layer 3: Copy deps file| D[\"RUN npm install\"]\n    D -->|Layer 4: Install deps ⚡ CACHED| E[\"COPY . .\"]\n    E -->|Layer 5: Copy source code| F[\"CMD node server.js\"]\n    F --> G[\"🐳 Final Image\"]\n    style A fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style D fill:#162231,stroke:#10b981,color:#e2e8f0\n    style G fill:#1a2332,stroke:#f59e0b,color:#e2e8f0"
         },
         {
           "type": "code",
@@ -95,7 +99,7 @@
           "type": "code",
           "language": "bash",
           "title": "Build and Run",
-          "value": "docker build -t myapp:v1 .              # Build image, tag as myapp:v1\ndocker run -d -p 3000:3000 myapp:v1     # Run the container"
+          "value": "docker build -t myapp:v1 .              # Build image, tag as myapp:v1\ndocker run -d -p 3000:3000 myapp:v1     # Run the container\ndocker image ls                         # List all images with sizes"
         }
       ],
       "quiz": {
@@ -116,7 +120,12 @@
       "content": [
         {
           "type": "text",
-          "value": "By default, containers are isolated from each other. Docker provides networking to let containers communicate, and volumes to persist data beyond the container lifecycle."
+          "value": "By default, containers are isolated from each other. Docker provides **networking** to let containers communicate (like connecting offices with phone lines), and **volumes** to persist data beyond the container lifecycle (like saving files to a USB drive that survives a computer restart)."
+        },
+        {
+          "type": "mermaid",
+          "title": "Docker Networking Model",
+          "value": "graph TB\n    subgraph NET [\"Custom Network: mynet\"]\n        APP[\"🌐 App Container\\nName: app\\nPort: 3000\"] <-->|\"app:3000\"| DB[\"🗄️ Database Container\\nName: db\\nPort: 5432\"]\n        APP <-->|\"cache:6379\"| CACHE[\"⚡ Redis Container\\nName: cache\\nPort: 6379\"]\n    end\n    HOST[\"💻 Host Machine\"] -->|\"localhost:3000 → app:3000\"| APP\n    style NET fill:#0f1923,stroke:#00d4ff33,color:#e2e8f0\n    style APP fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style DB fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style CACHE fill:#1a2332,stroke:#ef4444,color:#e2e8f0"
         },
         {
           "type": "code",
@@ -133,7 +142,7 @@
           "type": "code",
           "language": "bash",
           "title": "Docker Volumes",
-          "value": "docker volume create mydata                          # Create a named volume\ndocker run -v mydata:/data postgres                  # Mount volume at /data\ndocker run -v $(pwd)/config:/app/config myapp        # Bind mount: host dir → container\n\n# Volumes persist data even after the container is deleted"
+          "value": "docker volume create mydata                          # Create a named volume\ndocker run -v mydata:/data postgres                  # Mount volume at /data\ndocker run -v $(pwd)/config:/app/config myapp        # Bind mount: host dir → container\n\n# Volumes persist data even after the container is deleted\ndocker volume ls                                     # List all volumes\ndocker volume inspect mydata                         # See volume details"
         }
       ],
       "quiz": {
@@ -146,6 +155,170 @@
         ],
         "correctIndex": 2,
         "explanation": "On a user-defined Docker network, containers can resolve each other by name. 'docker run --name db --network mynet postgres' can be reached at hostname 'db' by other containers on 'mynet'."
+      }
+    },
+    {
+      "id": "docker-compose",
+      "title": "Docker Compose — Multi-Container Apps",
+      "content": [
+        {
+          "type": "text",
+          "value": "Real applications are never a single container. A typical web app might have: a frontend, a backend API, a database, and a cache. **Docker Compose** lets you define and run all these containers together with a single YAML file and a single command."
+        },
+        {
+          "type": "mermaid",
+          "title": "Compose Multi-Container Architecture",
+          "value": "graph LR\n    U[\"👤 User\"] -->|port 80| NGINX[\"🌐 Nginx\\nReverse Proxy\"]\n    NGINX -->|port 3000| API[\"⚙️ Node.js API\"]\n    API -->|port 5432| DB[\"🗄️ PostgreSQL\"]\n    API -->|port 6379| REDIS[\"⚡ Redis Cache\"]\n    DB --- VOL1[(\"📁 db-data volume\")]\n    style NGINX fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style API fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style DB fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style REDIS fill:#1a2332,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "docker-compose.yml Example",
+          "value": "version: '3.8'\n\nservices:\n  api:\n    build: ./server\n    ports:\n      - \"3000:3000\"\n    environment:\n      - DATABASE_URL=postgres://user:pass@db:5432/mydb\n      - REDIS_URL=redis://cache:6379\n    depends_on:\n      - db\n      - cache\n    networks:\n      - app-network\n\n  db:\n    image: postgres:15-alpine\n    environment:\n      POSTGRES_USER: user\n      POSTGRES_PASSWORD: pass\n      POSTGRES_DB: mydb\n    volumes:\n      - db-data:/var/lib/postgresql/data\n    networks:\n      - app-network\n\n  cache:\n    image: redis:7-alpine\n    networks:\n      - app-network\n\nvolumes:\n  db-data:\n\nnetworks:\n  app-network:"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Docker Compose Commands",
+          "value": "docker compose up              # Start all services\ndocker compose up -d           # Start in detached (background) mode\ndocker compose down            # Stop and remove all containers\ndocker compose logs -f api     # Follow logs for the 'api' service\ndocker compose ps              # List running services\ndocker compose build           # Rebuild images\ndocker compose exec api sh     # Open shell in running 'api' container"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview tip: depends_on only waits for the container to START, not for the application inside to be READY. For production, use healthchecks to ensure the database is actually accepting connections before the API tries to connect."
+        }
+      ],
+      "quiz": {
+        "question": "What does 'docker compose up -d' do?",
+        "options": [
+          "Deletes all containers",
+          "Starts all services defined in docker-compose.yml in detached (background) mode",
+          "Downloads Docker Compose",
+          "Shows container logs"
+        ],
+        "correctIndex": 1,
+        "explanation": "'docker compose up' creates and starts all containers defined in the Compose file. The '-d' flag runs them in the background so you get your terminal back."
+      }
+    },
+    {
+      "id": "multistage-builds",
+      "title": "Multi-Stage Builds",
+      "content": [
+        {
+          "type": "text",
+          "value": "Multi-stage builds are a Dockerfile technique where you use multiple FROM statements to separate the **build environment** from the **runtime environment**. This dramatically reduces your final image size because build tools, compilers, and dev dependencies are left behind."
+        },
+        {
+          "type": "mermaid",
+          "title": "Multi-Stage Build Flow",
+          "value": "graph LR\n    subgraph STAGE1 [\"Stage 1: Builder (1.2 GB)\"]\n        S1A[\"Node.js + npm\"] --> S1B[\"Install ALL deps\"]\n        S1B --> S1C[\"Compile & Build\"]\n    end\n    subgraph STAGE2 [\"Stage 2: Production (85 MB)\"]\n        S2A[\"Alpine base only\"] --> S2B[\"Copy built output\"]\n        S2B --> S2C[\"Production deps only\"]\n    end\n    S1C -->|COPY --from=builder| S2B\n    style STAGE1 fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style STAGE2 fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "dockerfile",
+          "title": "Multi-Stage Dockerfile (React + Node.js)",
+          "value": "# ---- Stage 1: Build ----\nFROM node:18-alpine AS builder\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci                      # Install ALL dependencies (including devDependencies)\nCOPY . .\nRUN npm run build                # Compile React/TypeScript → static files\n\n# ---- Stage 2: Production ----\nFROM node:18-alpine AS production\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci --omit=dev            # Only production dependencies\nCOPY --from=builder /app/dist ./dist\nEXPOSE 3000\nCMD [\"node\", \"dist/server.js\"]"
+        },
+        {
+          "type": "text",
+          "value": "The result: Your build stage might be 1.2 GB with all the compilers and dev tools. But the final production image is only 85 MB — containing just the compiled output and production runtime. This means faster deployments, smaller attack surface, and lower cloud costs."
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Use 'npm ci' instead of 'npm install' in Dockerfiles. 'npm ci' installs exact versions from package-lock.json and is faster and more reliable for CI/CD environments."
+        }
+      ],
+      "quiz": {
+        "question": "What is the main benefit of multi-stage Docker builds?",
+        "options": [
+          "They make containers run faster",
+          "They allow using multiple programming languages",
+          "They dramatically reduce final image size by separating build tools from runtime",
+          "They are required by Docker Hub"
+        ],
+        "correctIndex": 2,
+        "explanation": "Multi-stage builds separate the heavy build environment (compilers, dev deps) from the lightweight production image. Only the compiled output is copied to the final stage, resulting in much smaller images."
+      }
+    },
+    {
+      "id": "docker-security",
+      "title": "Docker Security Best Practices",
+      "content": [
+        {
+          "type": "text",
+          "value": "Security is critical when running containers in production. A misconfigured container can expose your entire host system. Here are the essential security practices every DevOps engineer must follow."
+        },
+        {
+          "type": "mermaid",
+          "title": "Container Security Layers",
+          "value": "graph TD\n    A[\"🔒 Image Security\"] --> A1[\"Use official base images\"]\n    A --> A2[\"Scan for vulnerabilities\"]\n    A --> A3[\"Use minimal base (Alpine)\"]\n    B[\"👤 Runtime Security\"] --> B1[\"Run as non-root user\"]\n    B --> B2[\"Read-only filesystem\"]\n    B --> B3[\"Drop capabilities\"]\n    C[\"🌐 Network Security\"] --> C1[\"Limit exposed ports\"]\n    C --> C2[\"Use internal networks\"]\n    C --> C3[\"Never expose Docker socket\"]\n    style A fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style B fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style C fill:#1a2332,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "dockerfile",
+          "title": "Secure Dockerfile Example",
+          "value": "FROM node:18-alpine\n\n# Create a non-root user\nRUN addgroup -S appgroup && adduser -S appuser -G appgroup\n\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci --omit=dev\nCOPY --chown=appuser:appgroup . .\n\n# Switch to non-root user\nUSER appuser\n\nEXPOSE 3000\nCMD [\"node\", \"server.js\"]"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Security Commands",
+          "value": "# Scan images for vulnerabilities\ndocker scout cves myapp:latest\n\n# Run with read-only filesystem\ndocker run --read-only --tmpfs /tmp myapp\n\n# Run with limited capabilities\ndocker run --cap-drop ALL --cap-add NET_BIND_SERVICE myapp\n\n# Never do this in production!\ndocker run -v /var/run/docker.sock:/var/run/docker.sock  # DANGEROUS!"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Never run containers as root in production! If an attacker escapes the container, they'll have root access to your host machine. Always create and switch to a non-root user with the USER directive in your Dockerfile."
+        }
+      ],
+      "quiz": {
+        "question": "Why should you avoid running containers as root?",
+        "options": [
+          "Root containers are slower",
+          "Root containers use more memory",
+          "If an attacker escapes the container, they'd have root access to the host system",
+          "Docker doesn't support root containers"
+        ],
+        "correctIndex": 2,
+        "explanation": "Running as root is a security risk. If a container is compromised, the attacker could potentially break out and gain root access to the host machine. Always use a non-root USER in your Dockerfile."
+      }
+    },
+    {
+      "id": "container-debugging",
+      "title": "Container Debugging & Troubleshooting",
+      "content": [
+        {
+          "type": "text",
+          "value": "When containers misbehave in production, you need a systematic approach to diagnose and fix issues. Here's the debugging toolkit every DevOps engineer needs."
+        },
+        {
+          "type": "mermaid",
+          "title": "Container Debugging Flowchart",
+          "value": "graph TD\n    START[\"🚨 Container Problem\"] --> Q1{\"Is it running?\"}\n    Q1 -->|No| A1[\"docker ps -a\\nCheck exit code\"]\n    A1 --> A2[\"docker logs container_id\\nRead error messages\"]\n    Q1 -->|Yes but unhealthy| B1[\"docker logs -f container_id\\nWatch live logs\"]\n    B1 --> B2[\"docker exec -it id sh\\nShell into container\"]\n    B2 --> B3[\"docker stats\\nCheck CPU/Memory\"]\n    A2 --> FIX[\"🔧 Fix and Redeploy\"]\n    B3 --> FIX\n    style START fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style FIX fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Debugging Commands",
+          "value": "# Step 1: Check container status and exit codes\ndocker ps -a                              # See all containers + exit status\n# Exit code 0 = normal exit\n# Exit code 1 = application error\n# Exit code 137 = killed (OOM or SIGKILL)\n# Exit code 143 = graceful termination (SIGTERM)\n\n# Step 2: Read logs\ndocker logs <container_id>                # Full log output\ndocker logs --tail 50 <container_id>      # Last 50 lines\ndocker logs -f <container_id>             # Follow logs in real-time\n\n# Step 3: Shell into a running container\ndocker exec -it <container_id> /bin/sh    # Open interactive shell\n\n# Step 4: Inspect container details\ndocker inspect <container_id>             # Full JSON config + network info\ndocker stats                              # Live CPU/Memory/Network usage\n\n# Step 5: Debug a crashing container\ndocker run -it --entrypoint /bin/sh myapp  # Override CMD to get a shell"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Pro debugging trick: If a container keeps crashing on startup, override the entrypoint to get a shell: 'docker run -it --entrypoint /bin/sh myapp'. This lets you poke around inside the container's filesystem and run the app manually to see the real error."
+        }
+      ],
+      "quiz": {
+        "question": "A container exits with code 137. What happened?",
+        "options": [
+          "The application had a bug",
+          "The container was killed (likely Out of Memory or SIGKILL)",
+          "The Dockerfile was invalid",
+          "The port was already in use"
+        ],
+        "correctIndex": 1,
+        "explanation": "Exit code 137 = 128 + 9 (SIGKILL). This usually means the container ran out of memory and was killed by the kernel's OOM killer, or someone manually ran 'docker kill'."
       }
     }
   ]

@@ -46,15 +46,49 @@
     },
     {
       "step": 4,
-      "title": "Inspect and Clean Up",
-      "description": "View logs from your web server and safely stop and remove the container.",
+      "title": "Shell Into a Running Container",
+      "description": "Open an interactive shell inside the running Nginx container and explore its filesystem.",
       "tasks": [
-        "Check container logs: `docker logs my-webserver`",
-        "Stop the container: `docker stop my-webserver`",
-        "Remove the stopped container: `docker rm my-webserver`"
+        "Open a shell: `docker exec -it my-webserver /bin/sh`",
+        "Inside the container, run: `cat /etc/nginx/nginx.conf`",
+        "Exit the shell: type `exit`",
+        "View container logs: `docker logs my-webserver`"
       ],
       "verification": {
-        "command": "docker ps -a | grep my-webserver && echo FAIL || echo PASS",
+        "command": "docker logs my-webserver 2>&1 | head -1 | grep -q '' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "Build a Custom Image",
+      "description": "Create a Dockerfile and build your own custom Docker image.",
+      "tasks": [
+        "Create a project: `mkdir ~/myapp && cd ~/myapp`",
+        "Create an index.html: `echo '<h1>Built with OpsAcademy!</h1>' > index.html`",
+        "Create a Dockerfile: `echo 'FROM nginx:alpine' > Dockerfile && echo 'COPY index.html /usr/share/nginx/html/' >> Dockerfile`",
+        "Build the image: `docker build -t myapp:v1 .`",
+        "Run it: `docker run -d --name myapp -p 9090:80 myapp:v1`"
+      ],
+      "verification": {
+        "command": "docker images | grep myapp && docker ps | grep myapp && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 6,
+      "title": "Inspect and Clean Up",
+      "description": "View logs from your containers and safely stop and remove everything.",
+      "tasks": [
+        "Check container resource usage: `docker stats --no-stream`",
+        "Stop all running containers: `docker stop my-webserver myapp`",
+        "Remove stopped containers: `docker rm my-webserver myapp`",
+        "Verify cleanup: `docker ps -a` should show no containers"
+      ],
+      "verification": {
+        "command": "docker ps -a | grep -E 'my-webserver|myapp' && echo FAIL || echo PASS",
         "expectedOutput": "PASS",
         "check": "contains"
       }

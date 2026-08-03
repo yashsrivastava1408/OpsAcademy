@@ -1,0 +1,21 @@
+{
+  "id": "cicd-pipelines",
+  "title": "CI/CD Pipelines",
+  "description": "Master the art of automated software delivery. Learn CI vs CD, GitHub Actions, pipeline stages, testing strategies, and deployment automation — the backbone of modern DevOps.",
+  "difficulty": "intermediate",
+  "duration": "55 min",
+  "category": "CI/CD",
+  "prerequisites": ["git-basics", "docker-basics"],
+  "objectives": [
+    "Understand CI vs CD vs CD (Continuous Integration, Delivery, Deployment)",
+    "Build a complete GitHub Actions pipeline from scratch",
+    "Implement build, test, and deploy stages",
+    "Configure environment-specific deployments",
+    "Understand pipeline security and secrets management"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

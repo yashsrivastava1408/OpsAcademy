@@ -2,27 +2,56 @@
   "flashcards": [
     {
       "id": "fc-g1",
-      "front": "What is the difference between git merge and git rebase?",
-      "back": "git merge: Combines histories and creates a new 'merge commit'. Preserves original commit order.\n\ngit rebase: Re-applies your commits on top of another branch for a clean, straight-line history."
+      "front": "What are the 3 areas of Git?",
+      "back": "1. **Working Directory** — Your actual files on disk (you edit here).\n2. **Staging Area (Index)** — Files marked for the next commit (git add puts them here).\n3. **Repository (.git)** — Permanent commit history (git commit saves here).\n\nFlow: Working → Staging → Repository"
     },
     {
       "id": "fc-g2",
-      "front": "What is the staging area (index) in Git?",
-      "back": "The middle layer between your working directory files and the committed history.\n\nRunning `git add` moves changes to the staging area before `git commit` permanently saves them."
+      "front": "What is the difference between Merge and Rebase?",
+      "back": "**Merge**: Creates a new 'merge commit' that joins two branches. Preserves complete history including when branches diverged.\n\n**Rebase**: Replays your commits on top of the target branch. Creates a clean, linear history but rewrites commit hashes.\n\nRule: Rebase local/private branches. Merge shared/public branches."
     },
     {
       "id": "fc-g3",
-      "front": "How do you undo the last commit without losing file changes?",
-      "back": "git reset --soft HEAD~1\n\nThis removes the commit snapshot but keeps your code changes staged in your working directory!"
+      "front": "How do you undo the last commit without losing changes?",
+      "back": "git reset --soft HEAD~1\n\nThis moves HEAD back one commit, but keeps all changes in the staging area. You can re-edit and recommit.\n\n• --soft: Keeps changes staged\n• --mixed (default): Keeps changes but unstages them\n• --hard: DELETES all changes permanently (dangerous!)"
+    },
+    {
+      "id": "fc-g4",
+      "front": "What does 'git stash' do?",
+      "back": "Temporarily saves your uncommitted changes to a hidden stack, giving you a clean working directory.\n\nPerfect for: 'I need to switch branches but I'm not ready to commit.'\n\n• git stash — Save changes\n• git stash pop — Restore and remove from stack\n• git stash list — View all stashed items"
+    },
+    {
+      "id": "fc-g5",
+      "front": "What is a Pull Request (PR)?",
+      "back": "A PR is a request to merge your feature branch into main on GitHub/GitLab.\n\nWorkflow:\n1. Push feature branch to remote\n2. Open PR with description of changes\n3. Teammates review code and leave comments\n4. Fix any issues and push updates\n5. After approval, merge to main\n\nPRs enable code review, catching bugs before they reach production."
+    },
+    {
+      "id": "fc-g6",
+      "front": "What does 'git cherry-pick' do?",
+      "back": "Copies a specific commit from one branch and applies it to your current branch — without merging the entire branch.\n\nUseful when: A critical bugfix was committed on a feature branch, and you need it on main immediately without merging the whole incomplete feature.\n\nUsage: git cherry-pick <commit-hash>"
     }
   ],
   "interviewQuestions": [
     {
       "id": "iq-g1",
-      "question": "How do you resolve a Git merge conflict during a pull request?",
+      "question": "Walk me through your typical Git workflow when working on a new feature.",
+      "difficulty": "beginner",
+      "modelAnswer": "1. Pull latest main: `git checkout main && git pull origin main`\n2. Create a feature branch: `git checkout -b feature/user-dashboard`\n3. Write code in small, logical commits with descriptive messages.\n4. Push the branch to remote: `git push origin feature/user-dashboard`\n5. Open a Pull Request on GitHub with a clear description and screenshots.\n6. Address code review feedback, push fixes.\n7. After approval, merge the PR (I prefer squash-merge for clean history).\n8. Delete the feature branch locally and remotely.\n9. Pull the updated main: `git checkout main && git pull`.",
+      "keyPoints": ["Feature branch workflow", "Small descriptive commits", "Code review via PR", "Squash merge for clean history", "Branch cleanup"]
+    },
+    {
+      "id": "iq-g2",
+      "question": "You accidentally committed a file containing API keys to a public repository. What do you do?",
+      "difficulty": "advanced",
+      "modelAnswer": "This is a critical security incident. Here's my response:\n\n1. **Immediately revoke the exposed keys** — Generate new API keys/secrets from the service provider (AWS, Stripe, etc.). The old keys are compromised regardless of what we do with Git.\n\n2. **Remove from Git history** — Use `git filter-branch` or the modern tool `git filter-repo` to purge the file from ALL commits, not just the latest. A simple `git rm` only removes it from future commits — the secret still exists in history.\n\n3. **Force push** — `git push --force-with-lease` to overwrite the remote history.\n\n4. **Prevent recurrence** — Add the file to `.gitignore`, use environment variables instead of hardcoded secrets, and set up pre-commit hooks (like `git-secrets` by AWS) that scan for secret patterns before allowing commits.\n\n5. **Contact GitHub** — Request a cache purge if the repo is public.",
+      "keyPoints": ["Revoke keys immediately", "git filter-repo to purge history", "Force push to remote", ".gitignore + environment variables", "Pre-commit hooks for prevention"]
+    },
+    {
+      "id": "iq-g3",
+      "question": "Explain merge vs rebase. When would you use each?",
       "difficulty": "intermediate",
-      "modelAnswer": "1. Run `git status` to see which files are conflicting.\n2. Open the conflicting files and look for the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`).\n3. Talk to the teammate if needed, decide which code to keep, and delete the conflict markers.\n4. Save the file, run `git add <file>` to mark conflict as resolved.\n5. Run `git commit` to complete the merge.",
-      "keyPoints": ["Find conflict markers", "Decide correct code to keep", "git add to resolve", "git commit to finalize"]
+      "modelAnswer": "**Merge** creates a merge commit that joins two branches, preserving the full branching history. I use merge for:\n- Merging feature branches into main/develop (via PRs)\n- When I want a clear record of when branches were integrated\n- On shared branches where history shouldn't be rewritten\n\n**Rebase** replays commits on top of another branch, creating linear history. I use rebase for:\n- Updating my local feature branch with latest main (`git rebase main`)\n- Cleaning up my commits before opening a PR (`git rebase -i`)\n- Squashing work-in-progress commits into logical units\n\nThe golden rule: **Never rebase commits that have been pushed to a shared remote branch.** This rewrites history and causes pain for everyone who already pulled those commits.",
+      "keyPoints": ["Merge preserves history with merge commit", "Rebase creates linear history", "Rebase only local/private work", "Interactive rebase for cleanup", "Golden rule: never rebase shared branches"]
     }
   ]
 }

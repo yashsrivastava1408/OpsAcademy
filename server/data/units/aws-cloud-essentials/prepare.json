@@ -1,0 +1,40 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-a1",
+      "front": "What is the difference between IaaS, PaaS, and SaaS?",
+      "back": "**IaaS**: You rent infrastructure (VMs, networks). YOU manage OS, runtime, app. Example: AWS EC2.\n\n**PaaS**: You deploy your code. PLATFORM manages infrastructure. Example: Heroku, AWS Beanstalk.\n\n**SaaS**: You use finished software. Example: Gmail, Slack.\n\nMore management = More control. Less management = Less hassle."
+    },
+    {
+      "id": "fc-a2",
+      "front": "What is a VPC and why is it important?",
+      "back": "VPC (Virtual Private Cloud) is your own isolated network inside AWS.\n\n• Public subnets: Internet-facing (load balancers)\n• Private subnets: Internal only (app servers, databases)\n• Security Groups: Instance-level firewall\n• NACLs: Subnet-level firewall\n\nImportance: Without a VPC, all your resources would be on the public internet!"
+    },
+    {
+      "id": "fc-a3",
+      "front": "What is the Principle of Least Privilege in IAM?",
+      "back": "Grant only the MINIMUM permissions needed for a specific task.\n\n❌ Bad: Give everyone AdministratorAccess\n✅ Good: Developer gets ReadWrite to S3 + Read to CloudWatch\n✅ Good: Lambda function gets PutItem on ONE DynamoDB table\n\nIf credentials are stolen, the damage is contained to only what those credentials can do."
+    },
+    {
+      "id": "fc-a4",
+      "front": "Name the most important AWS services and their purpose.",
+      "back": "• EC2 — Virtual machines\n• S3 — Object storage (files)\n• RDS — Managed databases\n• Lambda — Serverless functions\n• VPC — Private networking\n• IAM — Access control\n• CloudWatch — Monitoring & logs\n• ELB — Load balancing\n• Route 53 — DNS\n• ECS/EKS — Container orchestration"
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-a1",
+      "question": "Design a highly available web application architecture on AWS.",
+      "difficulty": "advanced",
+      "modelAnswer": "I'd design a 3-tier architecture across 2 Availability Zones for high availability:\n\n**Tier 1 — Presentation (Public Subnets):**\n- Application Load Balancer (ALB) in 2 AZs distributing traffic\n- Route 53 for DNS with health checks and failover\n\n**Tier 2 — Application (Private Subnets):**\n- EC2 instances in an Auto Scaling Group (min 2, max 10)\n- Or ECS/Fargate for containerized deployment\n- NAT Gateway for outbound internet access (updates, external APIs)\n\n**Tier 3 — Database (Private Subnets):**\n- RDS Multi-AZ (automatic failover to standby in another AZ)\n- ElastiCache (Redis) for session storage and caching\n\n**Security:** VPC with public/private subnet separation, Security Groups restricting access per tier, IAM roles with least privilege, WAF on the ALB for web attack protection.\n\n**Monitoring:** CloudWatch alarms for CPU, memory, response time. SNS notifications to the ops team.",
+      "keyPoints": ["Multi-AZ for high availability", "ALB + Auto Scaling for horizontal scaling", "Public/private subnet separation", "RDS Multi-AZ for database failover", "CloudWatch + SNS for monitoring"]
+    },
+    {
+      "id": "iq-a2",
+      "question": "What is the difference between Security Groups and NACLs in AWS?",
+      "difficulty": "intermediate",
+      "modelAnswer": "Both are firewalls but operate at different levels:\n\n**Security Groups:**\n- Instance-level (attached to EC2, RDS, etc.)\n- Stateful: If inbound is allowed, outbound response is automatic\n- Allow rules only (no deny rules)\n- All rules evaluated before deciding\n\n**NACLs (Network ACLs):**\n- Subnet-level (applies to all instances in the subnet)\n- Stateless: Must define BOTH inbound AND outbound rules\n- Allow AND deny rules\n- Rules evaluated in order (lowest number first, first match wins)\n\nIn practice, I primarily use Security Groups for most access control (easier to manage) and NACLs as an additional defense layer for the subnet — defense in depth.",
+      "keyPoints": ["SGs are stateful; NACLs are stateless", "SGs on instances; NACLs on subnets", "SGs allow-only; NACLs allow+deny", "Use both for defense in depth"]
+    }
+  ]
+}

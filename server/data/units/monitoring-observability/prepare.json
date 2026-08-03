@@ -1,0 +1,28 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-m1",
+      "front": "What are the 3 Pillars of Observability?",
+      "back": "1. **Logs**: Discrete, timestamped event records detailing specific actions.\n2. **Metrics**: Aggregatable numeric measurements over time windows.\n3. **Traces**: End-to-end request path and timing across microservices."
+    },
+    {
+      "id": "fc-m2",
+      "front": "What are the 4 Golden Signals of Monitoring?",
+      "back": "1. **Latency**: Time taken to service a request.\n2. **Traffic**: Demand placed on system (RPS, network IO).\n3. **Errors**: Rate of failed requests.\n4. **Saturation**: How full the system is (CPU %, memory %, disk IOPS)."
+    },
+    {
+      "id": "fc-m3",
+      "front": "Difference between SLI, SLO, and SLA?",
+      "back": "• **SLI**: Metric measurement ('99.2% of requests took < 200ms')\n• **SLO**: Internal goal set by dev team ('99.5% latency < 200ms')\n• **SLA**: Legal customer contract with financial consequences if breached."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-m1",
+      "question": "How do you investigate a production latency spike using observability tools?",
+      "difficulty": "advanced",
+      "modelAnswer": "1. **Metrics**: Check Grafana dashboard for the Latency Golden Signal to pinpoint when the spike started and which service/endpoint is affected.\n2. **Traces**: Look at Distributed Tracing (Jaeger/Tempo) for high-latency traces. Inspect individual spans to find where time was spent (e.g. slow DB query vs external API call).\n3. **Logs**: Filter logs around that timestamp in Loki/Elasticsearch for error messages or slow query logs.\n4. **Saturation**: Check CPU/RAM/Disk IOPS on node exporter metrics to rule out resource starvation.",
+      "keyPoints": ["Check metrics first for scope", "Use distributed traces for span bottlenecks", "Check logs for root cause details", "Correlate with system saturation"]
+    }
+  ]
+}

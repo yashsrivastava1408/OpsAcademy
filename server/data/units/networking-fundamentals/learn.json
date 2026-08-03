@@ -1,0 +1,230 @@
+{
+  "sections": [
+    {
+      "id": "osi-model",
+      "title": "The OSI Model — 7 Layers of Networking",
+      "content": [
+        {
+          "type": "text",
+          "value": "The **OSI Model** is a conceptual framework that describes how data travels from one computer to another across a network. It has 7 layers, each handling a specific job. Think of it like sending a letter: you write it (Application), put it in an envelope (Presentation), address it (Session), give it to the post office (Transport), which routes it through roads (Network), across bridges (Data Link), and along physical wires (Physical)."
+        },
+        {
+          "type": "mermaid",
+          "title": "OSI Model — 7 Layers",
+          "value": "graph TB\n    L7[\"Layer 7: Application\\nHTTP, HTTPS, DNS, FTP, SSH\"] --> L6[\"Layer 6: Presentation\\nSSL/TLS encryption, compression\"]\n    L6 --> L5[\"Layer 5: Session\\nManages connections (open/close)\"]\n    L5 --> L4[\"Layer 4: Transport\\nTCP (reliable), UDP (fast)\"]\n    L4 --> L3[\"Layer 3: Network\\nIP addressing, routing\"]\n    L3 --> L2[\"Layer 2: Data Link\\nMAC addresses, switches\"]\n    L2 --> L1[\"Layer 1: Physical\\nCables, fiber optics, Wi-Fi signals\"]\n    style L7 fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style L4 fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style L3 fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style L1 fill:#1a2332,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Memory trick for OSI layers (top to bottom): 'All People Seem To Need Data Processing' — Application, Presentation, Session, Transport, Network, Data Link, Physical."
+        },
+        {
+          "type": "text",
+          "value": "In practice, most DevOps work happens at **Layer 4 (Transport — TCP/UDP)** and **Layer 7 (Application — HTTP/HTTPS)**. Load balancers can operate at either layer: L4 (fast, protocol-agnostic) or L7 (smart, can inspect HTTP headers and paths)."
+        }
+      ],
+      "quiz": {
+        "question": "At which OSI layer does HTTP operate?",
+        "options": ["Layer 1 (Physical)", "Layer 3 (Network)", "Layer 4 (Transport)", "Layer 7 (Application)"],
+        "correctIndex": 3,
+        "explanation": "HTTP is an Application Layer (Layer 7) protocol. It defines how web browsers and servers communicate using methods like GET, POST, PUT, DELETE."
+      }
+    },
+    {
+      "id": "tcp-udp",
+      "title": "TCP vs UDP — Reliable vs Fast",
+      "content": [
+        {
+          "type": "text",
+          "value": "The two main transport protocols are **TCP** and **UDP**. Think of TCP as sending a registered letter — the postal service confirms delivery and resends if lost. UDP is like shouting across a room — fast, but no guarantee the message was heard."
+        },
+        {
+          "type": "mermaid",
+          "title": "TCP Three-Way Handshake",
+          "value": "sequenceDiagram\n    participant C as Client\n    participant S as Server\n    C->>S: SYN (Hey, can we talk?)\n    S->>C: SYN-ACK (Sure, I'm ready!)\n    C->>S: ACK (Great, let's go!)\n    Note over C,S: Connection established ✅\n    C->>S: Data transfer begins...\n    C->>S: FIN (I'm done)\n    S->>C: ACK + FIN (OK, me too)\n    C->>S: ACK (Goodbye!)\n    Note over C,S: Connection closed 🔒"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "TCP vs UDP Comparison",
+          "value": "Feature          TCP                    UDP\n─────────────────────────────────────────────────\nConnection       Connection-oriented     Connectionless\nReliability      Guaranteed delivery     Best-effort (no guarantee)\nOrder            Packets arrive in order No ordering guarantee\nSpeed            Slower (overhead)       Faster (minimal overhead)\nUse cases        Web (HTTP), Email,      Video streaming, Gaming,\n                 File transfer, SSH      DNS queries, VoIP"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Real-world examples: When you load a webpage, TCP ensures every byte arrives correctly. When you watch a YouTube live stream, UDP is used because dropping a few frames is better than pausing to retransmit."
+        }
+      ],
+      "quiz": {
+        "question": "Why would you choose UDP over TCP?",
+        "options": [
+          "UDP is more reliable",
+          "UDP is faster because it doesn't wait for delivery confirmation",
+          "UDP is more secure",
+          "UDP uses less bandwidth always"
+        ],
+        "correctIndex": 1,
+        "explanation": "UDP skips the handshake and delivery confirmation overhead, making it faster. This is ideal for real-time applications (video, gaming, DNS) where speed matters more than perfect delivery."
+      }
+    },
+    {
+      "id": "ip-addressing-ports",
+      "title": "IP Addresses, Subnets, and Ports",
+      "content": [
+        {
+          "type": "text",
+          "value": "An **IP address** is like a street address for a device on a network. A **port number** is like an apartment number at that address — it identifies which specific application should receive the data."
+        },
+        {
+          "type": "mermaid",
+          "title": "IP Address and Port Concept",
+          "value": "graph LR\n    USER[\"👤 Browser\"] -->|\"192.168.1.100:443\"| SERVER[\"🖥️ Web Server\"]\n    subgraph PORTS [\"Server Ports\"]\n        P80[\":80 HTTP\"]\n        P443[\":443 HTTPS\"]\n        P22[\":22 SSH\"]\n        P5432[\":5432 PostgreSQL\"]\n    end\n    SERVER --> PORTS\n    style USER fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style SERVER fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Common Port Numbers (Must Know!)",
+          "value": "Port    Protocol    Description\n──────────────────────────────────────\n22      SSH         Secure Shell (remote login)\n80      HTTP        Web traffic (unencrypted)\n443     HTTPS       Web traffic (encrypted)\n53      DNS         Domain name resolution\n3306    MySQL       MySQL database\n5432    PostgreSQL  PostgreSQL database\n6379    Redis       Redis cache\n27017   MongoDB     MongoDB database\n8080    Alt HTTP    Common development port\n3000    Dev         Node.js / React dev server"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Network Diagnostic Commands",
+          "value": "# Check your IP address\nip addr show                    # Linux\nifconfig                        # macOS / older Linux\n\n# Test connectivity\nping google.com                 # Is the server reachable?\nping -c 4 8.8.8.8              # Ping Google DNS 4 times\n\n# Check which ports are open/listening\nss -tlnp                        # Linux: show listening TCP ports\nnetstat -tlnp                   # Alternative\nlsof -i :3000                   # What's using port 3000?\n\n# Trace the route packets take\ntraceroute google.com           # Show each hop to destination"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "IPv4 (e.g., 192.168.1.100) has ~4.3 billion addresses — not enough for every device on Earth. IPv6 (e.g., 2001:0db8::1) has 340 undecillion addresses — enough for every grain of sand on Earth to have its own IP!"
+        }
+      ],
+      "quiz": {
+        "question": "What port does HTTPS use by default?",
+        "options": ["22", "80", "443", "8080"],
+        "correctIndex": 2,
+        "explanation": "HTTPS (HTTP Secure) uses port 443 by default. HTTP (unencrypted) uses port 80. SSH uses port 22."
+      }
+    },
+    {
+      "id": "dns",
+      "title": "DNS — The Internet's Phone Book",
+      "content": [
+        {
+          "type": "text",
+          "value": "**DNS** (Domain Name System) translates human-readable domain names like `google.com` into machine-readable IP addresses like `142.250.80.46`. Without DNS, you'd have to memorize IP addresses for every website — like memorizing phone numbers instead of saving contact names."
+        },
+        {
+          "type": "mermaid",
+          "title": "DNS Resolution Process",
+          "value": "sequenceDiagram\n    participant B as Browser\n    participant R as Recursive Resolver\n    participant ROOT as Root DNS Server\n    participant TLD as .com TLD Server\n    participant AUTH as google.com Auth Server\n    B->>R: What's the IP of google.com?\n    R->>ROOT: Where is .com?\n    ROOT->>R: Ask the .com TLD server\n    R->>TLD: Where is google.com?\n    TLD->>R: Ask google.com's authoritative server\n    R->>AUTH: What's the IP of google.com?\n    AUTH->>R: 142.250.80.46\n    R->>B: 142.250.80.46\n    Note over B,R: Result cached for future requests"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "DNS Lookup Commands",
+          "value": "# Look up a domain's IP address\nnslookup google.com\ndig google.com                   # Detailed DNS query\ndig google.com +short            # Just the IP address\n\n# Check which DNS server you're using\ncat /etc/resolv.conf\n\n# Common DNS record types:\n# A      → Maps domain to IPv4 address\n# AAAA   → Maps domain to IPv6 address\n# CNAME  → Alias pointing to another domain\n# MX     → Mail server for the domain\n# TXT    → Text records (used for verification)\n# NS     → Nameservers for the domain\n\ndig google.com MX               # Look up mail servers\ndig google.com NS                # Look up nameservers"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview question: 'When you type google.com in a browser, what happens?' Start with DNS resolution → TCP connection → TLS handshake → HTTP request → Server response → Browser renders HTML. This end-to-end understanding impresses interviewers."
+        }
+      ],
+      "quiz": {
+        "question": "What does DNS do?",
+        "options": [
+          "Encrypts web traffic",
+          "Translates domain names (google.com) into IP addresses (142.250.80.46)",
+          "Blocks malicious websites",
+          "Speeds up internet connections"
+        ],
+        "correctIndex": 1,
+        "explanation": "DNS is the phone book of the internet. It translates human-friendly domain names into IP addresses that computers use to find each other on the network."
+      }
+    },
+    {
+      "id": "http-https",
+      "title": "HTTP/HTTPS and Status Codes",
+      "content": [
+        {
+          "type": "text",
+          "value": "**HTTP** (HyperText Transfer Protocol) is the language that web browsers and servers use to communicate. **HTTPS** adds TLS encryption on top, making the conversation private — like whispering instead of shouting in a crowded room."
+        },
+        {
+          "type": "mermaid",
+          "title": "HTTPS Connection Flow",
+          "value": "sequenceDiagram\n    participant C as Client (Browser)\n    participant S as Server\n    C->>S: TCP Handshake (SYN, SYN-ACK, ACK)\n    C->>S: TLS Hello + Supported Ciphers\n    S->>C: TLS Hello + Certificate + Public Key\n    C->>C: Verify certificate with CA\n    C->>S: Encrypted Pre-Master Secret\n    Note over C,S: Both derive session key 🔑\n    C->>S: GET /api/users (Encrypted)\n    S->>C: 200 OK + JSON data (Encrypted)\n    Note over C,S: All data is encrypted end-to-end 🔒"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "HTTP Status Codes (Must Know!)",
+          "value": "Code    Meaning                    When You'll See It\n──────────────────────────────────────────────────────\n200     OK                         Successful request\n201     Created                    POST created a resource\n204     No Content                 DELETE succeeded, no body\n301     Moved Permanently          URL permanently changed\n302     Found (Redirect)           Temporary redirect\n400     Bad Request                Client sent invalid data\n401     Unauthorized               Missing authentication\n403     Forbidden                  Authenticated but no permission\n404     Not Found                  Resource doesn't exist\n429     Too Many Requests          Rate limit exceeded\n500     Internal Server Error      Server crashed\n502     Bad Gateway                Upstream server unavailable\n503     Service Unavailable        Server overloaded/maintenance\n504     Gateway Timeout            Upstream server too slow"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "HTTP Testing with curl",
+          "value": "# Basic GET request\ncurl https://api.example.com/users\n\n# See response headers\ncurl -I https://example.com\n\n# POST JSON data\ncurl -X POST https://api.example.com/users \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"Alice\", \"email\": \"alice@test.com\"}'\n\n# Show full request/response details\ncurl -v https://example.com\n\n# Follow redirects\ncurl -L https://short.url/abc"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Quick status code groups: 2xx = Success, 3xx = Redirect, 4xx = Client Error (your fault), 5xx = Server Error (server's fault). If you see 5xx in production, check your application logs immediately!"
+        }
+      ],
+      "quiz": {
+        "question": "What does HTTP status code 502 mean?",
+        "options": [
+          "The page was not found",
+          "The server is overloaded",
+          "The reverse proxy couldn't reach the upstream server",
+          "The request was unauthorized"
+        ],
+        "correctIndex": 2,
+        "explanation": "502 Bad Gateway means a proxy or load balancer (like Nginx) tried to forward your request to an upstream application server, but that server was unavailable or returned an invalid response."
+      }
+    },
+    {
+      "id": "firewalls-loadbalancers",
+      "title": "Firewalls and Load Balancers",
+      "content": [
+        {
+          "type": "text",
+          "value": "A **Firewall** is a security guard at the door — it decides which network traffic is allowed in and which is blocked. A **Load Balancer** is a traffic director — it distributes incoming requests across multiple servers to prevent any single server from being overwhelmed."
+        },
+        {
+          "type": "mermaid",
+          "title": "Load Balancer Architecture",
+          "value": "graph LR\n    U1[\"👤 User 1\"] & U2[\"👤 User 2\"] & U3[\"👤 User 3\"] --> LB[\"⚖️ Load Balancer\"]\n    LB -->|\"33%\"| S1[\"🖥️ Server 1\"]\n    LB -->|\"33%\"| S2[\"🖥️ Server 2\"]\n    LB -->|\"33%\"| S3[\"🖥️ Server 3\"]\n    S1 & S2 & S3 --> DB[(\"🗄️ Database\")]\n    style LB fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style S1 fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style S2 fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style S3 fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Firewall Commands (iptables / ufw)",
+          "value": "# UFW (Uncomplicated Firewall) — Ubuntu\nsudo ufw status                  # Check firewall status\nsudo ufw enable                  # Turn on the firewall\nsudo ufw allow 22/tcp            # Allow SSH\nsudo ufw allow 80/tcp            # Allow HTTP\nsudo ufw allow 443/tcp           # Allow HTTPS\nsudo ufw deny 3306/tcp           # Block MySQL from outside\nsudo ufw status verbose          # Show all rules\n\n# AWS Security Groups (Cloud Firewall)\n# Inbound: Allow 80, 443 from 0.0.0.0/0 (public)\n# Inbound: Allow 22 from YOUR_IP only\n# Inbound: Allow 5432 from VPC CIDR only (internal)"
+        },
+        {
+          "type": "text",
+          "value": "**Load Balancing Algorithms:**\n\n• **Round Robin** — Requests are distributed to servers one by one in order. Simple and fair.\n• **Least Connections** — Sends the next request to the server with the fewest active connections.\n• **IP Hash** — Routes requests from the same client IP to the same server (useful for sessions).\n• **Weighted** — Assigns more traffic to more powerful servers."
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview question: 'What is the difference between L4 and L7 load balancing?' L4 (Transport Layer) routes based on IP and port — fast but can't inspect content. L7 (Application Layer) routes based on HTTP headers, paths, and cookies — smarter but slightly slower."
+        }
+      ],
+      "quiz": {
+        "question": "What does a load balancer do?",
+        "options": [
+          "Blocks malicious traffic",
+          "Distributes incoming traffic across multiple servers",
+          "Encrypts data in transit",
+          "Stores user sessions"
+        ],
+        "correctIndex": 1,
+        "explanation": "A load balancer distributes incoming network traffic across multiple backend servers, preventing any single server from being overloaded and improving reliability."
+      }
+    }
+  ]
+}

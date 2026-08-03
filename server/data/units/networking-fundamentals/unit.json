@@ -1,0 +1,21 @@
+{
+  "id": "networking-fundamentals",
+  "title": "Networking Fundamentals",
+  "description": "Understand how the internet works from the ground up. Master the OSI model, TCP/UDP, DNS, HTTP/HTTPS, firewalls, and load balancers — essential knowledge for every DevOps engineer.",
+  "difficulty": "beginner",
+  "duration": "50 min",
+  "category": "Networking",
+  "prerequisites": ["linux-basics"],
+  "objectives": [
+    "Explain the OSI model and TCP/IP layers",
+    "Understand TCP vs UDP and when to use each",
+    "Explain how DNS resolves domain names to IP addresses",
+    "Understand HTTP/HTTPS, status codes, and TLS",
+    "Configure firewalls and understand load balancing"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

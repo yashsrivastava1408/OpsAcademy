@@ -13,14 +13,18 @@
           "value": "When people say \"Linux\", they usually mean a **Linux distribution** (distro) — a complete OS built on the Linux kernel. Popular distros include Ubuntu, CentOS, Alpine, and Debian. In DevOps, you'll encounter Alpine (lightweight containers) and Ubuntu (general-purpose servers) most often."
         },
         {
+          "type": "mermaid",
+          "title": "Linux Architecture Layers",
+          "value": "graph TB\n    A[\"👤 User Applications\"] --> B[\"🐚 Shell (bash / zsh)\"]\n    B --> C[\"📚 System Libraries (glibc)\"]\n    C --> D[\"🧠 Linux Kernel\"]\n    D --> E[\"💻 Hardware (CPU, RAM, Disk, Network)\"]\n    style A fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style B fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style C fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style D fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style E fill:#1a2332,stroke:#8b5cf6,color:#e2e8f0"
+        },
+        {
           "type": "callout",
           "style": "info",
           "value": "Over 96% of the world's top 1 million servers run Linux. Every major cloud provider (AWS, GCP, Azure) defaults to Linux instances. Knowing Linux is non-negotiable for DevOps."
         },
         {
-          "type": "diagram",
-          "title": "Linux Architecture",
-          "value": "Hardware → Kernel → System Libraries → Shell → Applications\n\nThe kernel manages hardware resources. The shell (bash/zsh) is your interface to interact with the kernel via commands."
+          "type": "text",
+          "value": "Think of Linux like a restaurant kitchen. The **Kernel** is the head chef who manages all the equipment (hardware). The **Shell** is the waiter who takes your orders (commands) and delivers them to the kitchen. **Applications** are the meals — the things you actually interact with."
         }
       ],
       "quiz": {
@@ -36,28 +40,29 @@
       "content": [
         {
           "type": "text",
-          "value": "Linux organizes everything as files in a tree structure starting from the root directory `/`. Unlike Windows drive letters (C:, D:), Linux has a single unified tree."
+          "value": "Linux organizes everything as files in a tree structure starting from the root directory `/`. Unlike Windows drive letters (C:, D:), Linux has a single unified tree. Think of it like a library — the root `/` is the front door, and every book (file) has a unique shelf address (path)."
+        },
+        {
+          "type": "mermaid",
+          "title": "Linux Directory Tree",
+          "value": "graph TD\n    ROOT[\"/\"] --> HOME[\"/home\"]\n    ROOT --> ETC[\"/etc\"]\n    ROOT --> VAR[\"/var\"]\n    ROOT --> TMP[\"/tmp\"]\n    ROOT --> USR[\"/usr\"]\n    ROOT --> BIN[\"/bin\"]\n    ROOT --> OPT[\"/opt\"]\n    HOME --> STUDENT[\"/home/student\"]\n    HOME --> DEPLOY[\"/home/deploy\"]\n    VAR --> LOG[\"/var/log\"]\n    VAR --> DATA[\"/var/data\"]\n    ETC --> NGINX[\"/etc/nginx\"]\n    ETC --> SSH[\"/etc/ssh\"]\n    style ROOT fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style HOME fill:#162231,stroke:#10b981,color:#e2e8f0\n    style ETC fill:#162231,stroke:#f59e0b,color:#e2e8f0\n    style VAR fill:#162231,stroke:#ef4444,color:#e2e8f0"
         },
         {
           "type": "code",
           "language": "text",
-          "title": "Key Directories",
-          "value": "/          Root of the filesystem\n/home      User home directories\n/etc       Configuration files\n/var       Variable data (logs, databases)\n/tmp       Temporary files (cleared on reboot)\n/usr       User programs and utilities\n/bin       Essential command binaries\n/opt       Optional/third-party software"
-        },
-        {
-          "type": "text",
-          "value": "You navigate using these essential commands:"
+          "title": "Key Directories Cheat Sheet",
+          "value": "/          Root of the entire filesystem\n/home      User home directories (your personal space)\n/etc       Configuration files (nginx.conf, ssh settings)\n/var       Variable data (logs, databases, caches)\n/tmp       Temporary files (auto-cleared on reboot)\n/usr       User programs and utilities\n/bin       Essential command binaries (ls, cp, mv)\n/opt       Optional/third-party software\n/proc      Virtual filesystem exposing kernel & process info\n/dev       Device files (disks, terminals)"
         },
         {
           "type": "code",
           "language": "bash",
           "title": "Navigation Commands",
-          "value": "pwd                    # Print Working Directory — where am I?\nls                     # List files in current directory\nls -la                 # List ALL files (including hidden) with details\ncd /home/student       # Change Directory to an absolute path\ncd ..                  # Go up one level\ncd ~                   # Go to your home directory\ncd -                   # Go back to previous directory"
+          "value": "pwd                    # Print Working Directory — where am I?\nls                     # List files in current directory\nls -la                 # List ALL files (including hidden) with details\nls -lh                 # List with human-readable file sizes (KB, MB)\ncd /home/student       # Change Directory to an absolute path\ncd ..                  # Go up one level\ncd ~                   # Go to your home directory\ncd -                   # Go back to previous directory\nfind / -name \"*.log\"   # Search for files by name across the system\nwhich python3          # Find where a command binary lives"
         },
         {
           "type": "callout",
           "style": "tip",
-          "value": "Use Tab for auto-completion. Type 'cd /ho' then press Tab — it completes to 'cd /home/'. This saves massive time."
+          "value": "Use Tab for auto-completion. Type 'cd /ho' then press Tab — it completes to 'cd /home/'. This saves massive time and prevents typos."
         }
       ],
       "quiz": {
@@ -73,7 +78,7 @@
       "content": [
         {
           "type": "text",
-          "value": "Creating, copying, moving, and deleting files are the bread and butter of Linux administration. Here are the core commands:"
+          "value": "Creating, copying, moving, and deleting files are the bread and butter of Linux administration. Imagine you're organizing a filing cabinet — these commands are how you create folders, file documents, move things around, and shred what you don't need."
         },
         {
           "type": "code",
@@ -96,7 +101,7 @@
           "type": "code",
           "language": "bash",
           "title": "Reading Files",
-          "value": "cat file.txt                # Print entire file content\nhead -n 5 file.txt          # Print first 5 lines\ntail -n 5 file.txt          # Print last 5 lines\ntail -f /var/log/syslog     # Follow a log file in real-time\nless file.txt               # Paginated file viewer (q to quit)\nwc -l file.txt              # Count lines in a file"
+          "value": "cat file.txt                # Print entire file content\nhead -n 5 file.txt          # Print first 5 lines\ntail -n 5 file.txt          # Print last 5 lines\ntail -f /var/log/syslog     # Follow a log file in real-time\nless file.txt               # Paginated file viewer (q to quit)\nwc -l file.txt              # Count lines in a file\nstat file.txt               # Show file size, permissions, timestamps"
         }
       ],
       "quiz": {
@@ -117,19 +122,24 @@
       "content": [
         {
           "type": "text",
-          "value": "Linux uses a permission system to control who can read, write, or execute files. Every file has three permission groups: **owner** (u), **group** (g), and **others** (o)."
+          "value": "Linux uses a permission system to control who can read, write, or execute files. Every file has three permission groups: **owner** (u), **group** (g), and **others** (o). Think of it like a house — the owner has the master key, family members (group) have limited access, and strangers (others) may only ring the doorbell."
+        },
+        {
+          "type": "mermaid",
+          "title": "Linux Permission Model",
+          "value": "graph LR\n    F[\"📄 File\"] --> O[\"👤 Owner (u)\\nrwx = 7\"]\n    F --> G[\"👥 Group (g)\\nr-x = 5\"]\n    F --> OT[\"🌍 Others (o)\\nr-- = 4\"]\n    O --> R1[\"Read (4)\"]\n    O --> W1[\"Write (2)\"]\n    O --> X1[\"Execute (1)\"]\n    style F fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style O fill:#162231,stroke:#10b981,color:#e2e8f0\n    style G fill:#162231,stroke:#f59e0b,color:#e2e8f0\n    style OT fill:#162231,stroke:#ef4444,color:#e2e8f0"
         },
         {
           "type": "code",
           "language": "text",
           "title": "Reading Permission Strings",
-          "value": "-rwxr-xr--  1  student  devops  4096  Jan 1 12:00  script.sh\n │││ ││││││\n │││ │││└┘└── Others: r-- (read only)\n │││ └┘└──── Group:  r-x (read + execute)\n └┘└────── Owner:  rwx (read + write + execute)\n └──────── File type: - (file) or d (directory)"
+          "value": "-rwxr-xr--  1  student  devops  4096  Jan 1 12:00  script.sh\n │││ │││└┘└── Others: r-- (read only)\n │││ └┘└──── Group:  r-x (read + execute)\n └┘└────── Owner:  rwx (read + write + execute)\n └──────── File type: - (file) or d (directory)"
         },
         {
           "type": "code",
           "language": "bash",
           "title": "Changing Permissions",
-          "value": "chmod +x script.sh          # Add execute permission for all\nchmod 755 script.sh         # Owner: rwx, Group: r-x, Others: r-x\nchmod 644 config.txt        # Owner: rw-, Group: r--, Others: r--\nchown student:devops file   # Change owner and group"
+          "value": "chmod +x script.sh          # Add execute permission for all\nchmod 755 script.sh         # Owner: rwx, Group: r-x, Others: r-x\nchmod 644 config.txt        # Owner: rw-, Group: r--, Others: r--\nchmod 600 secret.key        # Owner: rw-, nobody else can access\nchown student:devops file   # Change owner and group\nchown -R deploy:www /var/www  # Recursively change ownership"
         },
         {
           "type": "callout",
@@ -155,24 +165,29 @@
       "content": [
         {
           "type": "text",
-          "value": "Every running program in Linux is a **process** with a unique Process ID (PID). Understanding processes is essential for debugging servers, managing resources, and troubleshooting in production."
+          "value": "Every running program in Linux is a **process** with a unique Process ID (PID). Understanding processes is essential for debugging servers, managing resources, and troubleshooting in production. Think of processes like employees in an office — each has an ID badge (PID), some work in the foreground (on your screen), and some work in the background."
+        },
+        {
+          "type": "mermaid",
+          "title": "Process Lifecycle",
+          "value": "stateDiagram-v2\n    [*] --> Created: fork() / exec()\n    Created --> Running: Scheduler assigns CPU\n    Running --> Sleeping: Waiting for I/O\n    Sleeping --> Running: I/O complete\n    Running --> Stopped: SIGSTOP / Ctrl+Z\n    Stopped --> Running: SIGCONT / fg\n    Running --> Zombie: Process exits\n    Zombie --> [*]: Parent reads exit code"
         },
         {
           "type": "code",
           "language": "bash",
           "title": "Viewing Processes",
-          "value": "ps aux                      # List all running processes\nps aux | grep nginx         # Find a specific process\ntop                         # Real-time process monitor\nhtop                        # Better interactive process monitor"
+          "value": "ps aux                      # List all running processes\nps aux | grep nginx         # Find a specific process\ntop                         # Real-time process monitor\nhtop                        # Better interactive process monitor\npstree                      # Show process hierarchy as a tree"
         },
         {
           "type": "code",
           "language": "bash",
           "title": "Managing Processes",
-          "value": "kill 1234                   # Send SIGTERM to PID 1234 (graceful)\nkill -9 1234                # Send SIGKILL (force kill — last resort)\nkillall nginx               # Kill all processes named 'nginx'\nnohup ./server.sh &         # Run in background, survives logout\njobs                        # List background jobs\nfg %1                       # Bring job 1 to foreground"
+          "value": "kill 1234                   # Send SIGTERM to PID 1234 (graceful)\nkill -9 1234                # Send SIGKILL (force kill — last resort)\nkillall nginx               # Kill all processes named 'nginx'\nnohup ./server.sh &         # Run in background, survives logout\njobs                        # List background jobs\nfg %1                       # Bring job 1 to foreground\nbg %1                       # Resume job 1 in background"
         },
         {
           "type": "callout",
           "style": "tip",
-          "value": "Interview tip: Always explain that you'd try 'kill' (SIGTERM) before 'kill -9' (SIGKILL). SIGTERM lets the process clean up gracefully. SIGKILL is a last resort. This shows production maturity."
+          "value": "Interview tip: Always explain that you'd try 'kill' (SIGTERM) before 'kill -9' (SIGKILL). SIGTERM lets the process clean up gracefully (save data, close connections). SIGKILL is a last resort that can leave corrupted files. This shows production maturity."
         }
       ],
       "quiz": {
@@ -185,6 +200,146 @@
         ],
         "correctIndex": 1,
         "explanation": "'kill' sends SIGTERM which asks the process to shut down gracefully (save state, close connections). 'kill -9' sends SIGKILL which immediately terminates the process with no cleanup."
+      }
+    },
+    {
+      "id": "pipes-redirection",
+      "title": "Pipes and Redirection",
+      "content": [
+        {
+          "type": "text",
+          "value": "Pipes and redirection are the secret superpowers of Linux. They let you **chain commands together** like an assembly line in a factory — the output of one command becomes the input of the next. This is how you build powerful one-liners that process data instantly."
+        },
+        {
+          "type": "mermaid",
+          "title": "How Pipes Work",
+          "value": "graph LR\n    A[\"cat server.log\"] -->|pipe| B[\"grep ERROR\"]\n    B -->|pipe| C[\"sort\"]\n    C -->|pipe| D[\"uniq -c\"]\n    D -->|pipe| E[\"head -10\"]\n    E --> F[\"📊 Top 10 Errors\"]\n    style A fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style B fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style C fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style D fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style E fill:#1a2332,stroke:#8b5cf6,color:#e2e8f0\n    style F fill:#1a2332,stroke:#00d4ff,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Pipe Examples (The | Symbol)",
+          "value": "# Count how many processes are running\nps aux | wc -l\n\n# Find all lines containing 'error' in a log file\ncat /var/log/syslog | grep -i error\n\n# Sort files by size in human-readable format\nls -lhS /var/log/ | head -10\n\n# Count unique IP addresses hitting your web server\ncat access.log | awk '{print $1}' | sort | uniq -c | sort -rn | head -10\n\n# Chain 3 commands: find large files, sort by size, show top 5\ndu -ah /var | sort -rh | head -5"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Redirection (>, >>, 2>, &>)",
+          "value": "echo 'Hello' > output.txt         # Write stdout to file (overwrite)\necho 'World' >> output.txt        # Append stdout to file\ncommand 2> error.log              # Redirect stderr (errors) to file\ncommand &> all.log                # Redirect BOTH stdout AND stderr\ncommand > output.txt 2>&1         # Same thing, older syntax\ncommand < input.txt               # Use file as stdin input\ncat /dev/null > huge.log          # Fastest way to empty a file"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "The pipe symbol (|) passes the STDOUT of the left command as STDIN to the right command. Think of it like connecting two hoses — water flows from left to right."
+        }
+      ],
+      "quiz": {
+        "question": "What does 'ps aux | grep nginx | wc -l' do?",
+        "options": [
+          "Starts nginx processes",
+          "Lists all processes, filters for nginx, then counts the matching lines",
+          "Deletes nginx processes",
+          "Installs nginx"
+        ],
+        "correctIndex": 1,
+        "explanation": "The pipe chain: ps aux lists all processes → grep nginx filters for lines containing 'nginx' → wc -l counts those lines. This gives you the number of nginx processes running."
+      }
+    },
+    {
+      "id": "text-processing",
+      "title": "Text Processing (grep, sed, awk)",
+      "content": [
+        {
+          "type": "text",
+          "value": "Linux has incredibly powerful built-in tools for searching, filtering, and transforming text. These three commands — **grep**, **sed**, and **awk** — are the Swiss Army knives of DevOps. They let you parse log files, extract data, and automate text manipulation instantly."
+        },
+        {
+          "type": "mermaid",
+          "title": "Text Processing Toolkit",
+          "value": "graph TD\n    INPUT[\"📄 Raw Text / Log File\"] --> GREP[\"🔍 grep\\nSearch & Filter lines\"]\n    INPUT --> SED[\"✏️ sed\\nFind & Replace text\"]\n    INPUT --> AWK[\"📊 awk\\nExtract columns & compute\"]\n    GREP --> OUTPUT[\"📋 Processed Output\"]\n    SED --> OUTPUT\n    AWK --> OUTPUT\n    style INPUT fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style GREP fill:#162231,stroke:#10b981,color:#e2e8f0\n    style SED fill:#162231,stroke:#f59e0b,color:#e2e8f0\n    style AWK fill:#162231,stroke:#ef4444,color:#e2e8f0\n    style OUTPUT fill:#1a2332,stroke:#8b5cf6,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "grep — Search for Patterns",
+          "value": "grep 'error' server.log           # Find lines containing 'error'\ngrep -i 'error' server.log        # Case-insensitive search\ngrep -r 'TODO' /src/              # Recursively search entire directory\ngrep -n 'panic' app.log           # Show line numbers with results\ngrep -c 'warning' server.log      # Count matching lines\ngrep -v 'debug' server.log        # Show lines NOT matching (invert)\ngrep -E 'error|warning|critical' server.log  # Search multiple patterns (regex)"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "sed — Stream Editor (Find & Replace)",
+          "value": "# Replace first occurrence on each line\nsed 's/old/new/' file.txt\n\n# Replace ALL occurrences (global flag)\nsed 's/http/https/g' config.txt\n\n# Delete lines containing a pattern\nsed '/debug/d' server.log\n\n# Edit file in-place (careful!)\nsed -i 's/localhost/0.0.0.0/g' config.yaml\n\n# Print only lines 10-20\nsed -n '10,20p' file.txt"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "awk — Column Extraction & Analysis",
+          "value": "# Print the first column (space-separated)\nawk '{print $1}' file.txt\n\n# Print specific columns from /etc/passwd\nawk -F: '{print $1, $6}' /etc/passwd      # Username and home dir\n\n# Sum numbers in column 3\nawk '{sum += $3} END {print sum}' data.txt\n\n# Find lines where column 5 > 1000 (e.g., large file sizes)\nls -l | awk '$5 > 1000 {print $9, $5}'\n\n# Count unique HTTP status codes from access.log\nawk '{print $9}' access.log | sort | uniq -c | sort -rn"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview combo: 'How would you find the top 10 IP addresses in an access log?' Answer: awk '{print $1}' access.log | sort | uniq -c | sort -rn | head -10. This one-liner is asked in almost every DevOps interview!"
+        }
+      ],
+      "quiz": {
+        "question": "What does 'grep -r \"TODO\" /src/' do?",
+        "options": [
+          "Deletes all TODO comments",
+          "Creates TODO files in /src/",
+          "Recursively searches all files under /src/ for lines containing 'TODO'",
+          "Renames files containing TODO"
+        ],
+        "correctIndex": 2,
+        "explanation": "grep -r performs a recursive search through all files and subdirectories under /src/, printing every line that contains the text 'TODO'."
+      }
+    },
+    {
+      "id": "cron-jobs",
+      "title": "Cron Jobs and Scheduling",
+      "content": [
+        {
+          "type": "text",
+          "value": "Cron is the Linux task scheduler — it lets you run commands automatically at specific times or intervals. Think of it like setting an alarm clock for your server: 'Every day at 2 AM, clean up old log files' or 'Every 5 minutes, check if the web server is healthy.'"
+        },
+        {
+          "type": "mermaid",
+          "title": "Cron Expression Format",
+          "value": "graph LR\n    A[\"┌─ Minute (0-59)\"] --> B[\"┌─ Hour (0-23)\"]\n    B --> C[\"┌─ Day of Month (1-31)\"]\n    C --> D[\"┌─ Month (1-12)\"]\n    D --> E[\"┌─ Day of Week (0-7)\"]\n    E --> F[\"Command to Run\"]\n    style A fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style B fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style C fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style D fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style E fill:#1a2332,stroke:#8b5cf6,color:#e2e8f0\n    style F fill:#1a2332,stroke:#00d4ff,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Cron Expression Examples",
+          "value": "# ┌───── minute (0-59)\n# │ ┌───── hour (0-23)\n# │ │ ┌───── day of month (1-31)\n# │ │ │ ┌───── month (1-12)\n# │ │ │ │ ┌───── day of week (0=Sun, 7=Sun)\n# │ │ │ │ │\n# * * * * *  command\n\n  0 2 * * *   /scripts/backup.sh          # Every day at 2:00 AM\n */5 * * * *   /scripts/healthcheck.sh     # Every 5 minutes\n  0 0 * * 0   /scripts/weekly-cleanup.sh  # Every Sunday at midnight\n  0 9 1 * *   /scripts/monthly-report.sh  # 1st of every month at 9 AM\n 30 8 * * 1-5 /scripts/morning-alert.sh   # Mon-Fri at 8:30 AM"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Managing Cron Jobs",
+          "value": "crontab -e                 # Edit your cron jobs (opens editor)\ncrontab -l                 # List all your scheduled jobs\ncrontab -r                 # Remove ALL your cron jobs (careful!)\nsudo crontab -u deploy -l  # View another user's cron jobs\n\n# System-wide cron directories:\nls /etc/cron.daily/        # Scripts run once daily\nls /etc/cron.hourly/       # Scripts run once hourly\nls /etc/cron.weekly/       # Scripts run once weekly"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Common cron gotcha: Cron runs with a minimal environment — it doesn't load your .bashrc or .profile. Always use full paths in cron jobs (e.g., /usr/bin/python3 instead of python3). This catches many people in production!"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview tip: 'How would you schedule a log rotation every night at 2 AM?' Answer: Add '0 2 * * * /usr/sbin/logrotate /etc/logrotate.conf' to your crontab with 'crontab -e'. Also mention that most production systems use logrotate with a daily cron already configured."
+        }
+      ],
+      "quiz": {
+        "question": "What does the cron expression '*/5 * * * *' mean?",
+        "options": [
+          "Run at 5 AM every day",
+          "Run every 5 minutes",
+          "Run 5 times per hour",
+          "Run on the 5th of every month"
+        ],
+        "correctIndex": 1,
+        "explanation": "'*/5' in the minute field means 'every 5 minutes'. The asterisks in the remaining fields mean 'every hour, every day, every month, every day of the week'."
       }
     }
   ]

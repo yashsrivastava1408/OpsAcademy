@@ -1,0 +1,21 @@
+{
+  "id": "monitoring-observability",
+  "title": "Monitoring & Observability",
+  "description": "Learn how to monitor, debug, and maintain production systems. Master Prometheus, Grafana, logs vs metrics vs traces, alerting strategies, and SLA/SLO/SLI frameworks.",
+  "difficulty": "advanced",
+  "duration": "50 min",
+  "category": "Observability",
+  "prerequisites": ["linux-basics", "docker-basics"],
+  "objectives": [
+    "Understand the 3 pillars of observability (Logs, Metrics, Traces)",
+    "Set up Prometheus metric collection and PromQL queries",
+    "Build interactive Grafana dashboards",
+    "Distinguish between SLAs, SLOs, and SLIs",
+    "Configure alerting and incident management workflows"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}
