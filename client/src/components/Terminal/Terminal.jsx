@@ -25,6 +25,10 @@ export default function Terminal({ sessionId, onDisconnect }) {
 
     ws.onopen = () => {
       setStatus('connected');
+      // Focus xterm terminal for immediate typing
+      if (xtermRef.current) {
+        xtermRef.current.focus();
+      }
       // Send initial resize
       if (fitAddonRef.current && xtermRef.current) {
         const dims = fitAddonRef.current.proposeDimensions();
@@ -193,14 +197,16 @@ export default function Terminal({ sessionId, onDisconnect }) {
       </div>
 
       {/* Terminal body */}
-      <div className="terminal-body">
-        {!sessionId ? (
+      <div
+        className="terminal-body"
+        onClick={() => xtermRef.current && xtermRef.current.focus()}
+      >
+        <div ref={termRef} style={{ height: '100%', width: '100%' }} />
+        {!sessionId && (
           <div className="terminal-loading">
             <div className="terminal-loading-spinner"></div>
             <span>Start a lab to open the terminal</span>
           </div>
-        ) : (
-          <div ref={termRef} style={{ height: '100%', width: '100%' }} />
         )}
       </div>
     </div>
