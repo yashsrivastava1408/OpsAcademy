@@ -12,8 +12,10 @@ import {
   Loader,
   BookOpen,
   Award,
+  Bot,
 } from 'lucide-react';
 import Terminal from '../components/Terminal/Terminal';
+import MentorChat from '../components/MentorChat/MentorChat';
 import { sandboxApi, unitApi, labApi } from '../services/api';
 import { markUnitCompleted } from '../services/progressService';
 import './LabPage.css';
@@ -33,6 +35,7 @@ export default function LabPage() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [verifyResult, setVerifyResult] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [showMentor, setShowMentor] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -179,6 +182,13 @@ export default function LabPage() {
           <Link to={`/unit/${unitId}/prepare`} className="btn btn-ghost btn-sm">
             <Award size={14} /> Prepare Q&A
           </Link>
+
+          <button
+            className={`btn btn-sm ${showMentor ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setShowMentor(!showMentor)}
+          >
+            <Bot size={14} /> AI Mentor
+          </button>
 
           {sessionId && (
             <span className="lab-timer">
@@ -331,6 +341,15 @@ export default function LabPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── AI Mentor Chat Drawer ───────────────────────── */}
+      {showMentor && (
+        <MentorChat
+          unitId={unitId}
+          currentStep={1}
+          onClose={() => setShowMentor(false)}
+        />
       )}
     </div>
   );

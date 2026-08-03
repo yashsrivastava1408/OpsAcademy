@@ -404,13 +404,12 @@ graph LR
 - [x] **Phase 2** — Automated lab verification engine
 - [x] **Phase 2** — JWT authentication API & bcrypt hashing
 - [x] **Phase 2** — Auto-reaper background cleanup service
-- [ ] **Phase 3** — Student Placement Toolkit (Readiness score & progress engine)
-- [ ] **Phase 3** — Course content expansion (Git & Kubernetes units)
-- [ ] **Phase 3** — Terminal helper drawer & click-to-insert command panel
-- [ ] **Phase 3** — Shareable completion certificate generator
-- [ ] **Phase 4** — Python AI Agent Hub (Flask + LangGraph multi-agent graph)
-- [ ] **Phase 4** — RAG with Qdrant vector DB
-- [ ] **Phase 4** — Anti-abuse ML detection (Isolation Forest)
+- [x] **Phase 3** — Student Placement Toolkit (Readiness score & progress engine)
+- [x] **Phase 3** — Course content expansion (Git & Kubernetes units)
+- [x] **Phase 3** — Shareable completion certificate generator
+- [x] **Phase 4** — Python AI Agent Hub (Flask + LangGraph multi-agent graph)
+- [x] **Phase 4** — RAG with Qdrant vector DB
+- [x] **Phase 4** — Anti-abuse ML detection (Isolation Forest)
 - [ ] **Phase 5** — Docker Compose & Kubernetes production manifests
 - [ ] **Phase 5** — Production deployment to Vercel + Render
 

@@ -63,6 +63,15 @@ export const labApi = {
     api.post(`/labs/${unitId}/verify`, { sessionId, stepNumber }),
 };
 
+// ── Agent API (AI Mentor & Security Scan) ────────────────────
+export const agentApi = {
+  getHint: (query, unitId, stepNumber, commandHistory) =>
+    api.post('/agent/hint', { query, unitId, stepNumber, commandHistory }),
+
+  scanCommand: (command) =>
+    api.post('/agent/scan', { command }),
+};
+
 // ── Health Check ─────────────────────────────────────────────
 export const healthCheck = () => api.get('/health');
 
