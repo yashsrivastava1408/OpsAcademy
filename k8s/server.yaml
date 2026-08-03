@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsacademy-server
+  namespace: opsacademy
+  labels:
+    app: opsacademy-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: opsacademy-server
+  template:
+    metadata:
+      labels:
+        app: opsacademy-server
+    spec:
+      containers:
+        - name: server
+          image: opsacademy/server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: opsacademy-config
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opsacademy-server
+  namespace: opsacademy
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4000
+      targetPort: 4000
+  selector:
+    app: opsacademy-server

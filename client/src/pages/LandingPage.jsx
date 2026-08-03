@@ -9,6 +9,9 @@ import {
   GitBranch,
   Layers,
   ArrowRight,
+  Lock,
+  CheckCircle2,
+  Sparkles,
 } from 'lucide-react';
 import './LandingPage.css';
 
@@ -16,37 +19,44 @@ const FEATURES = [
   {
     icon: <Terminal size={24} />,
     title: 'Live Terminal',
-    description: 'Real Linux shell in your browser. Execute commands, write scripts, and build infrastructure — no local setup needed.',
+    description: 'Real Linux shell in your browser via WebSocket streaming (<50ms latency). Execute commands, write scripts, and build infrastructure live.',
     color: 'cyan',
   },
   {
     icon: <Brain size={24} />,
-    title: 'AI Mentor',
-    description: 'Stuck? Get contextual hints from an AI that reads your container state and searches technical docs — without spoiling the answer.',
+    title: 'Multi-Agent AI Mentor',
+    description: '4-agent RAG pipeline (LangGraph + Qdrant) that inspects your environment and provides hints without giving away the direct answer.',
     color: 'purple',
   },
   {
     icon: <Shield size={24} />,
     title: 'Sandbox Security',
-    description: 'Every lab runs in an isolated container with memory caps, CPU limits, and read-only rootfs. Your host is fully protected.',
+    description: 'Isolated containers with cgroup memory caps (256MB), CPU limits (0.5 cores), read-only rootfs, and non-root execution.',
     color: 'green',
   },
   {
     icon: <Zap size={24} />,
-    title: 'Auto-Grading',
-    description: 'Hit "Verify" and our system inspects your container state against lab objectives. Instant pass/fail with detailed feedback.',
+    title: 'Auto-Grading Verification',
+    description: 'Automated test suite executing checks inside active sandboxes. Evaluates outputs and returns instant step-by-step verification.',
     color: 'orange',
   },
 ];
 
+const SECURITY_HIGHLIGHTS = [
+  { title: 'Isolation Forest ML Anomaly Detection', desc: 'Agent 0 scans command telemetry to block fork bombs & miners' },
+  { title: 'Read-Only Root Filesystem', desc: 'System files are immutable; writable only in isolated student workspace' },
+  { title: 'Auto-Reaper Background Service', desc: 'Sweeps and reaps stale container sessions >30 minutes to save resources' },
+  { title: 'JWT & Bcrypt Hardened Auth', desc: 'Secure stateless authorization headers with salt-hashed password storage' },
+];
+
 const TECH_STACK = [
-  { name: 'React', icon: '⚛️' },
+  { name: 'React 19', icon: '⚛️' },
   { name: 'Node.js', icon: '🟢' },
   { name: 'Docker', icon: '🐳' },
   { name: 'Python', icon: '🐍' },
   { name: 'LangGraph', icon: '🧠' },
   { name: 'WebSocket', icon: '🔌' },
-  { name: 'Qdrant', icon: '🔍' },
+  { name: 'Qdrant RAG', icon: '🔍' },
   { name: 'Kubernetes', icon: '☸️' },
 ];
 
@@ -78,7 +88,7 @@ export default function LandingPage() {
           <div className="hero-text">
             <div className="hero-badge animate-fade-in">
               <Cpu size={14} />
-              AI-Powered DevOps Learning
+              AI-Powered DevOps Learning Platform
             </div>
             <h1 className="hero-title animate-fade-in-up">
               Learn DevOps by <span className="gradient-text">Doing</span>,
@@ -87,8 +97,8 @@ export default function LandingPage() {
             </h1>
             <p className="hero-subtitle animate-fade-in-up" style={{ animationDelay: '100ms' }}>
               Interactive, browser-based labs with a live Linux terminal.
-              An AI mentor guides you without giving away the answer.
-              Master Docker, Kubernetes, CI/CD, and cloud engineering — hands-on.
+              A multi-agent AI mentor guides you without giving away the solution.
+              Master Linux, Docker, Git, and Kubernetes for placement interviews.
             </p>
             <div className="hero-actions animate-fade-in-up" style={{ animationDelay: '200ms' }}>
               <Link to="/dashboard" className="btn btn-primary btn-lg">
@@ -96,14 +106,14 @@ export default function LandingPage() {
                 <ArrowRight size={18} />
               </Link>
               <a href="#features" className="btn btn-secondary btn-lg">
-                See Features
+                Explore Platform
                 <ChevronRight size={18} />
               </a>
             </div>
             <div className="hero-stats animate-fade-in-up" style={{ animationDelay: '300ms' }}>
               <div className="hero-stat">
-                <span className="hero-stat-value">6+</span>
-                <span className="hero-stat-label">Hands-on Labs</span>
+                <span className="hero-stat-value">4</span>
+                <span className="hero-stat-label">Core Courses</span>
               </div>
               <div className="hero-stat-divider"></div>
               <div className="hero-stat">
@@ -118,7 +128,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="hero-terminal animate-fade-in-up" style={{ animationDelay: '200ms' }}>
+          <div className="hero-terminal animate-fade-in-up animate-float" style={{ animationDelay: '200ms' }}>
             <div className="mock-terminal">
               <div className="mock-terminal-header">
                 <div className="terminal-dots">
@@ -126,7 +136,7 @@ export default function LandingPage() {
                   <span className="terminal-dot yellow"></span>
                   <span className="terminal-dot green"></span>
                 </div>
-                <span className="mock-terminal-title">student@opsacademy ~/lab-1</span>
+                <span className="mock-terminal-title">student@opsacademy ~/demo</span>
               </div>
               <div className="mock-terminal-body">
                 {TERMINAL_LINES.map((line, i) => (
@@ -146,10 +156,10 @@ export default function LandingPage() {
         <div className="container">
           <div className="section-header">
             <h2 className="section-title">
-              Everything You Need to <span className="gradient-text">Master DevOps</span>
+              Everything You Need to <span className="gradient-text">Crack DevOps Placements</span>
             </h2>
             <p className="section-subtitle">
-              A complete learning platform with real infrastructure, AI tutoring, and automated assessment.
+              A 3-mode learning system with real infrastructure, AI tutoring, and automated assessment.
             </p>
           </div>
 
@@ -167,15 +177,44 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Security Architecture Section ──────────────────── */}
+      <section className="security-section">
+        <div className="container">
+          <div className="security-card glass-card">
+            <div className="security-header">
+              <div className="security-title-area">
+                <Lock size={22} className="security-icon" />
+                <h3>Enterprise Security & Sandbox Isolation</h3>
+              </div>
+              <span className="security-badge-indicator">
+                <Sparkles size={12} /> Defense-in-Depth
+              </span>
+            </div>
+
+            <div className="security-grid">
+              {SECURITY_HIGHLIGHTS.map((item, i) => (
+                <div key={i} className="security-item">
+                  <CheckCircle2 size={16} className="security-check" />
+                  <div>
+                    <h4>{item.title}</h4>
+                    <p>{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Architecture Section ───────────────────────────── */}
       <section className="architecture">
         <div className="container">
           <div className="section-header">
             <h2 className="section-title">
-              Built with <span className="gradient-text">Modern Stack</span>
+              Built with <span className="gradient-text">Modern Microservices</span>
             </h2>
             <p className="section-subtitle">
-              Production-grade microservices architecture with pluggable sandbox engine.
+              Production-grade architecture with pluggable sandbox engine & multi-agent AI pipeline.
             </p>
           </div>
 
@@ -192,7 +231,7 @@ export default function LandingPage() {
             <div className="arch-layer">
               <div className="arch-box arch-client">
                 <Layers size={18} />
-                <span>React + xterm.js</span>
+                <span>React 19 + xterm.js</span>
                 <small>Browser Client</small>
               </div>
             </div>
@@ -201,12 +240,12 @@ export default function LandingPage() {
               <div className="arch-box arch-gateway">
                 <GitBranch size={18} />
                 <span>Node.js Gateway</span>
-                <small>Express + WS</small>
+                <small>Express + WS + Strategy Sandbox</small>
               </div>
               <div className="arch-box arch-ai">
                 <Brain size={18} />
                 <span>AI Agent Hub</span>
-                <small>Flask + LangGraph</small>
+                <small>Python Flask + LangGraph</small>
               </div>
             </div>
             <div className="arch-arrow">↓ Docker Socket / PTY</div>
@@ -232,7 +271,7 @@ export default function LandingPage() {
               Stop watching tutorials. Start typing commands.
             </p>
             <Link to="/dashboard" className="btn btn-primary btn-lg">
-              Open Lab Dashboard
+              Open Learning Dashboard
               <ArrowRight size={18} />
             </Link>
           </div>

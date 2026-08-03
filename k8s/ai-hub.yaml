@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsacademy-ai-hub
+  namespace: opsacademy
+  labels:
+    app: opsacademy-ai-hub
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: opsacademy-ai-hub
+  template:
+    metadata:
+      labels:
+        app: opsacademy-ai-hub
+    spec:
+      containers:
+        - name: ai-hub
+          image: opsacademy/ai-hub:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opsacademy-ai-hub
+  namespace: opsacademy
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5000
+      targetPort: 5000
+  selector:
+    app: opsacademy-ai-hub
