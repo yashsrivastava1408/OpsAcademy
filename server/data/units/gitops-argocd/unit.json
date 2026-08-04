@@ -1,0 +1,20 @@
+{
+  "id": "gitops-argocd",
+  "title": "GitOps & Progressive Delivery (ArgoCD)",
+  "description": "Master GitOps principles using ArgoCD and Kubernetes. Learn declarative synchronization, automated reconciliation, canary rollouts, and Git-driven deployment pipelines.",
+  "difficulty": "advanced",
+  "duration": "50 min",
+  "category": "GitOps",
+  "prerequisites": ["kubernetes-basics", "git-basics", "cicd-pipelines"],
+  "objectives": [
+    "Understand Core GitOps Principles (Git as Single Source of Truth)",
+    "Deploy applications using ArgoCD",
+    "Understand Push-based vs Pull-based deployment models",
+    "Execute automated canary rollouts using Argo Rollouts"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

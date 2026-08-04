@@ -1,0 +1,21 @@
+{
+  "id": "system-design-scalability",
+  "title": "System Design & Scalability",
+  "description": "Master high-availability architecture principles. Learn Caching, Database Sharding, Load Balancing, Microservices, CAP Theorem, and Message Queues for campus placement interviews.",
+  "difficulty": "advanced",
+  "duration": "60 min",
+  "category": "System Design",
+  "prerequisites": ["networking-fundamentals", "aws-cloud-essentials"],
+  "objectives": [
+    "Understand Monolithic vs Microservices trade-offs",
+    "Design multi-tier caching with Redis and Memcached",
+    "Scale databases with Read Replicas, Partitioning, & Sharding",
+    "Apply CAP Theorem & Eventual Consistency in real architectures",
+    "Implement asynchronous processing with Message Queues (Kafka/RabbitMQ)"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "sections": [
+    {
+      "id": "what-is-gitops",
+      "title": "What is GitOps & Pull-Based Architecture?",
+      "content": [
+        {
+          "type": "text",
+          "value": "**GitOps** is an operational framework where the entire desired state of your Kubernetes infrastructure is stored in a Git repository. Git is the single source of truth."
+        },
+        {
+          "type": "mermaid",
+          "title": "Push-Based vs Pull-Based (GitOps) Architecture",
+          "value": "graph TB\n    subgraph PUSH [\"❌ Traditional Push-Based (Jenkins / GitHub Actions)\"]\n        CI1[\"CI Server\"] -->|kubectl apply| K8S1[\"Kubernetes Cluster\"]\n        NOTE1[\"Security Risk: CI server needs cluster admin credentials!\"]\n    end\n    subgraph PULL [\"✅ GitOps Pull-Based (ArgoCD)\"]\n        GIT[\"🐙 Git Repository (Manifests)\"] <-->|Auto Sync| ARGO[\"🐙 ArgoCD (Inside Cluster)\"]\n        ARGO -->|Reconcile| K8S2[\"Local K8s Cluster\"]\n        NOTE2[\"Secure: No external admin keys needed outside the cluster!\"]\n    end\n    style PUSH fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style PULL fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Key GitOps Rule: Never edit a live cluster with 'kubectl' manually! If you want to change replicas from 3 to 5, update the YAML file in Git, commit, and let ArgoCD sync it to the cluster."
+        }
+      ],
+      "quiz": {
+        "question": "What is the primary advantage of ArgoCD's Pull-based model over traditional Push pipelines?",
+        "options": [
+          "ArgoCD makes YAML files smaller",
+          "The agent runs INSIDE the cluster, continually pulling changes from Git without exposing cluster admin credentials to external CI servers",
+          "ArgoCD replaces Git",
+          "Push pipelines are faster"
+        ],
+        "correctIndex": 1,
+        "explanation": "Pull-based GitOps keeps cluster admin credentials inside the cluster. ArgoCD polls Git, detects drift, and syncs automatically without external CI runners needing cluster access."
+      }
+    },
+    {
+      "id": "argocd-manifests",
+      "title": "ArgoCD Application Manifest",
+      "content": [
+        {
+          "type": "code",
+          "language": "yaml",
+          "title": "ArgoCD Application Custom Resource (CRD)",
+          "value": "apiVersion: argoproj.io/v1alpha1\nkind: Application\nmetadata:\n  name: production-web-app\n  namespace: argocd\nspec:\n  project: default\n  source:\n    repoURL: 'https://github.com/opsacademy/k8s-manifests.git'\n    targetRevision: HEAD\n    path: overlays/production\n  destination:\n    server: 'https://kubernetes.default.svc'\n    namespace: prod\n  syncPolicy:\n    automated:\n      prune: true        # Delete resources removed from Git\n      selfHeal: true     # Revert manual kubectl edits automatically!"
+        }
+      ],
+      "quiz": {
+        "question": "What does 'selfHeal: true' do in an ArgoCD Application spec?",
+        "options": [
+          "It fixes code bugs automatically",
+          "If someone manually modifies the cluster via kubectl, ArgoCD automatically detects the drift and overwrites it to match Git",
+          "It restarts the server",
+          "It creates backups"
+        ],
+        "correctIndex": 1,
+        "explanation": "'selfHeal: true' guarantees Git is the single source of truth. If an engineer manually alters live cluster state, ArgoCD immediately detects drift and forces the cluster back to the state in Git."
+      }
+    }
+  ]
+}

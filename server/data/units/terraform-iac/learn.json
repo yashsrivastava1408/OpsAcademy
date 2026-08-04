@@ -1,0 +1,145 @@
+{
+  "sections": [
+    {
+      "id": "what-is-iac",
+      "title": "What is Infrastructure as Code (IaC)?",
+      "content": [
+        {
+          "type": "text",
+          "value": "Imagine ordering custom furniture. In the manual world, you call a carpenter, explain what you want over the phone, and hope they build it correctly. If you need a second identical chair next week, you have to explain it all over again, risking mistakes."
+        },
+        {
+          "type": "text",
+          "value": "**Infrastructure as Code (IaC)** is like handing the carpenter a precise 3D blueprint file. The machine reads the blueprint and crafts 1 or 1,000 identical chairs automatically with 0 human error. In cloud engineering, instead of clicking around the AWS Console to create servers, you write text files that describe your servers, databases, and networks."
+        },
+        {
+          "type": "mermaid",
+          "title": "Manual Cloud vs Infrastructure as Code",
+          "value": "graph TB\n    subgraph MANUAL [\"❌ Manual Web Console (Slow & Error-Prone)\"]\n        M1[\"👤 Engineer\"] -->|Click Click Click| M2[\"AWS Web Console\"]\n        M2 -->|30 mins later| M3[\"Server 1 (Forgot firewall rule!)\"]\n    end\n    subgraph IAC [\"✅ Infrastructure as Code (Fast & Reproducible)\"]\n        I1[\"📄 main.tf Code\"] -->|terraform apply| I2[\"🤖 Terraform Engine\"]\n        I2 -->|20 seconds| I3[\"Identical Server 1, 2, 3\"]\n    end\n    style MANUAL fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style IAC fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Declarative vs Imperative: Declarative (Terraform) means 'Tell me WHAT you want, and I will figure out how to build it.' Imperative (Bash/Python) means 'Tell me STEP-BY-STEP how to build it.' Declarative is much safer for cloud infrastructure!"
+        }
+      ],
+      "quiz": {
+        "question": "What is the primary advantage of Declarative IaC (Terraform) over imperative scripts?",
+        "options": [
+          "Imperative scripts are faster",
+          "Declarative code specifies the desired end state, allowing Terraform to calculate the minimal changes needed safely",
+          "Declarative code doesn't require a state file",
+          "Imperative scripts don't use APIs"
+        ],
+        "correctIndex": 1,
+        "explanation": "Declarative tools like Terraform focus on the desired final state. You describe what you want, and Terraform figures out whether to create, update, or destroy resources to reach that target."
+      }
+    },
+    {
+      "id": "hcl-basics",
+      "title": "Terraform Syntax & HCL Basics",
+      "content": [
+        {
+          "type": "text",
+          "value": "Terraform uses **HCL (HashiCorp Configuration Language)**. It is human-readable, easy to write, and designed specifically for cloud infrastructure declarations."
+        },
+        {
+          "type": "mermaid",
+          "title": "Terraform Architecture Lifecycle",
+          "value": "graph LR\n    A[\"📄 main.tf\\n(Your Code)\"] -->|terraform init| B[\"🔌 Providers\\n(AWS, GCP, Azure plugins)\"]\n    B -->|terraform plan| C[\"📋 Execution Plan\\n(Dry Run Preview)\"]\n    C -->|terraform apply| D[\"☁️ Cloud Resources\\n(Live Infrastructure)\"]\n    D <-->|State Sync| E[\"💾 terraform.tfstate\\n(State File)\"]\n    style A fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style C fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style D fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style E fill:#1a2332,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "hcl",
+          "title": "Example main.tf Manifest",
+          "value": "# 1. Configure the Provider (AWS)\nprovider \"aws\" {\n  region = \"us-east-1\"\n}\n\n# 2. Define a Virtual Server (EC2 Instance)\nresource \"aws_instance\" \"web_server\" {\n  ami           = \"ami-0c55b159cbfafe1f0\"\n  instance_type = \"t3.micro\"\n\n  tags = {\n    Name        = \"OpsAcademy-Web-Prod\"\n    Environment = \"Production\"\n  }\n}\n\n# 3. Output the Public IP Address\noutput \"server_public_ip\" {\n  value       = aws_instance.web_server.public_ip\n  description = \"The public IP address of our web server\"\n}"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Core 4 Terraform Commands",
+          "value": "terraform init      # Downloads provider plugins (AWS, GCP, Docker)\nterraform plan      # Preview changes BEFORE applying (dry run)\nterraform apply     # Execute changes and create live cloud resources\nterraform destroy   # Safely tear down all infrastructure created by code"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview Tip: Always mention running 'terraform plan' before 'terraform apply'. It shows production discipline by checking exactly what will be added (+), changed (~), or destroyed (-) before touching real infrastructure."
+        }
+      ],
+      "quiz": {
+        "question": "Which command previews infrastructure changes without modifying live cloud resources?",
+        "options": ["terraform init", "terraform apply", "terraform plan", "terraform destroy"],
+        "correctIndex": 2,
+        "explanation": "'terraform plan' creates an execution plan, comparing your current code with live cloud state to show a detailed preview of additions, modifications, and deletions."
+      }
+    },
+    {
+      "id": "state-management",
+      "title": "State Files & Remote Backends",
+      "content": [
+        {
+          "type": "text",
+          "value": "Terraform maintains a file called `terraform.tfstate`. Think of this file as a **receipt & map**: it records the exact mapping between your code and the real resources created in AWS."
+        },
+        {
+          "type": "mermaid",
+          "title": "Local vs Remote State Locking",
+          "value": "graph TD\n    subgraph BAD [\"❌ Local State (Dangerous for Teams)\"]\n        U1[\"Dev Alice\"] -->|Overwrites| ST1[\"Local terraform.tfstate\"]\n        U2[\"Dev Bob\"] -->|Overwrites| ST1\n    end\n    subgraph GOOD [\"✅ Remote Backend (Safe Production Setup)\"]\n        U3[\"Dev Alice\"] & U4[\"Dev Bob\"] -->|Locking via DynamoDB| S3[\"☁️ AWS S3 Bucket (tfstate storage)\"]\n        S3 <--> DYN[\"🔒 DynamoDB Table (State Lock)\"]\n    end\n    style BAD fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style GOOD fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "hcl",
+          "title": "Production Remote Backend Config",
+          "value": "terraform {\n  backend \"s3\" {\n    bucket         = \"opsacademy-tfstate-prod\"\n    key            = \"global/s3/terraform.tfstate\"\n    region         = \"us-east-1\"\n    dynamodb_table = \"terraform-locks\"\n    encrypt        = true\n  }\n}"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Never commit `terraform.tfstate` to Git! It contains raw unencrypted resource details and secrets. Always use a remote backend like AWS S3 with DynamoDB state locking."
+        }
+      ],
+      "quiz": {
+        "question": "Why should you store Terraform state in a remote backend like AWS S3 with DynamoDB?",
+        "options": [
+          "To make Terraform commands run faster",
+          "To enable team collaboration, state encryption, and prevent concurrent execution conflicts via state locking",
+          "Because S3 is required to install HCL plugins",
+          "To compress HCL code"
+        ],
+        "correctIndex": 1,
+        "explanation": "Remote state in S3 allows multiple team members to share the single source of truth. DynamoDB provides state locking so two developers can't run 'apply' simultaneously and corrupt state."
+      }
+    },
+    {
+      "id": "modules-drift",
+      "title": "Terraform Modules & Drift Detection",
+      "content": [
+        {
+          "type": "text",
+          "value": "A **Terraform Module** is a container for multiple resources that are used together. Think of a module like a Lego building block — instead of writing 50 lines of VPC configuration every time, you package it into a module and call it with 3 arguments!"
+        },
+        {
+          "type": "code",
+          "language": "hcl",
+          "title": "Reusing a VPC Module",
+          "value": "module \"production_vpc\" {\n  source = \"terraform-aws-modules/vpc/aws\"\n\n  name = \"prod-vpc\"\n  cidr = \"10.0.0.0/16\"\n\n  azs             = [\"us-east-1a\", \"us-east-1b\"]\n  private_subnets = [\"10.0.1.0/24\", \"10.0.2.0/24\"]\n  public_subnets  = [\"10.0.101.0/24\", \"10.0.102.0/24\"]\n\n  enable_nat_gateway = true\n}"
+        },
+        {
+          "type": "text",
+          "value": "**Drift** occurs when someone manually changes a cloud setting in the AWS Console (e.g. manually opening port 22). When you run `terraform plan`, Terraform detects the difference between live cloud settings and code, alerting you to fix or revert the manual change."
+        }
+      ],
+      "quiz": {
+        "question": "What is 'Infrastructure Drift' in Terraform?",
+        "options": [
+          "When servers change IP addresses automatically",
+          "When live cloud resources are modified manually outside of Terraform, causing a discrepancy with the code state",
+          "When Terraform version expires",
+          "When state files get deleted"
+        ],
+        "correctIndex": 1,
+        "explanation": "Drift happens when someone changes live infrastructure out-of-band (e.g., via the AWS Web UI). Terraform detects drift during 'plan' or 'refresh' and offers to restore the state defined in code."
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-sec1",
+      "front": "Difference between SAST and DAST?",
+      "back": "**SAST**: Scans raw source code offline (Inside-Out). Fast, finds exact line numbers.\n\n**DAST**: Scans running application via HTTP requests (Outside-In). Finds live runtime & configuration vulnerabilities."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-sec1",
+      "question": "How do you prevent hardcoded secrets from leaking into Git repositories?",
+      "difficulty": "intermediate",
+      "modelAnswer": "1. Use pre-commit hooks (like `gitleaks` or `git-secrets`) to block commits containing API keys/passwords.\n2. Store secrets in environment variables or cloud secret managers (HashiCorp Vault / AWS Secrets Manager).\n3. Add files containing keys to `.gitignore`.\n4. Run automated secret scanning tools (TruffleHog) in CI/CD pipeline.\n5. If leaked, immediately revoke/rotate the credential, then purge Git history using `git filter-repo`.",
+      "keyPoints": ["Pre-commit hooks (gitleaks)", "Vault/Secrets Manager", ".gitignore enforcement", "Immediate credential revocation upon leak"]
+    }
+  ]
+}

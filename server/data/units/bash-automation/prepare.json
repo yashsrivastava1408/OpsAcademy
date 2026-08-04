@@ -1,0 +1,18 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-ba1",
+      "front": "Explain 'set -euo pipefail' line by line.",
+      "back": "• `-e`: Abort script if any command fails (non-zero status)\n• `-u`: Abort if an uninitialized variable is referenced\n• `-o pipefail`: Pipeline returns failure status if ANY command in the pipeline fails"
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-ba1",
+      "question": "Write a script to check if a web service is healthy and restart it if down.",
+      "difficulty": "intermediate",
+      "modelAnswer": "#!/usr/bin/env bash\nset -euo pipefail\n\nURL=\"http://localhost:8080/health\"\n\nif ! curl -sf \"$URL\" > /dev/null; then\n  echo \"[$(date)] Service down! Restarting...\" >> /var/log/monitor.log\n  systemctl restart my-webserver\nfi",
+      "keyPoints": ["set -euo pipefail usage", "curl -sf flag for quiet error checking", "Logging timestamped events", "systemctl management"]
+    }
+  ]
+}

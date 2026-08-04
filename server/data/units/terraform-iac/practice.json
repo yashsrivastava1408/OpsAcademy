@@ -1,0 +1,33 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Check Terraform CLI",
+      "description": "Verify Terraform CLI is ready to use in your environment.",
+      "tasks": [
+        "Run `terraform --version` to check installed version",
+        "Create a working directory: `mkdir ~/tf-lab && cd ~/tf-lab`"
+      ],
+      "verification": {
+        "command": "terraform --version 2>&1 | grep -i 'Terraform' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Write Your First Manifest",
+      "description": "Create a main.tf file with local provider resources.",
+      "tasks": [
+        "Create `main.tf`: `echo 'resource \"local_file\" \"pet\" { filename = \"/tmp/pet.txt\" content = \"My Pet Cat\" }' > main.tf`",
+        "Run `terraform init`",
+        "Run `terraform plan`"
+      ],
+      "verification": {
+        "command": "grep -q 'local_file' ~/tf-lab/main.tf 2>/dev/null && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

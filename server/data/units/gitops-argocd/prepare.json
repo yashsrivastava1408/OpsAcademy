@@ -1,0 +1,18 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-go1",
+      "front": "What are the 4 core principles of GitOps?",
+      "back": "1. Declarative system description\n2. Git as versioned single source of truth\n3. Automated software agents to pull state\n4. Continuous reconciliation (self-healing)"
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-go1",
+      "question": "What is the difference between Push vs Pull deployment pipelines?",
+      "difficulty": "intermediate",
+      "modelAnswer": "Push pipelines (Jenkins/GitHub Actions) execute from outside the cluster and require cluster admin credentials stored on CI runners. Pull pipelines (ArgoCD/Flux) run an agent INSIDE the cluster that continuously monitors Git for changes, pulling and applying them securely without exposing credentials outside.",
+      "keyPoints": ["Push requires external credentials", "Pull (ArgoCD) runs inside cluster", "Continuous drift detection and self-healing"]
+    }
+  ]
+}

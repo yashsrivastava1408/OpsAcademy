@@ -1,0 +1,19 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Write a Defensive Script",
+      "description": "Create a script with set -euo pipefail.",
+      "tasks": [
+        "Create `~/defensive.sh`: `echo '#!/bin/bash' > ~/defensive.sh && echo 'set -euo pipefail' >> ~/defensive.sh && echo 'echo \"Safe Script\"' >> ~/defensive.sh`",
+        "Make it executable: `chmod +x ~/defensive.sh`",
+        "Run it: `~/defensive.sh`"
+      ],
+      "verification": {
+        "command": "test -x ~/defensive.sh && grep -q 'set -euo pipefail' ~/defensive.sh && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

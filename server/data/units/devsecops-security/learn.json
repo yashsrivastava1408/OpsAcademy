@@ -1,0 +1,75 @@
+{
+  "sections": [
+    {
+      "id": "shift-left",
+      "title": "Shift-Left Security & SAST/DAST",
+      "content": [
+        {
+          "type": "text",
+          "value": "Traditionally, security testing happened at the very end of development — right before release. Finding a critical vulnerability right before launch caused delayed releases and cost millions to fix."
+        },
+        {
+          "type": "text",
+          "value": "**DevSecOps** moves security to the left ('Shift-Left'). Security testing happens automatically on every code commit inside the CI/CD pipeline, catching vulnerabilities within minutes while the code is fresh in the developer's mind."
+        },
+        {
+          "type": "mermaid",
+          "title": "Shift-Left Pipeline Security Gates",
+          "value": "graph LR\n    A[\"👩‍💻 IDE Auto-Scan\"] -->|git push| B[\"🔍 SAST Scan\\n(Code Linting)\"]\n    B -->|npm audit| C[\"📦 Dependency Scan\\n(Snyk/Trivy)\"]\n    C -->|docker build| D[\"🐳 Container Scan\\n(Trivy CVEs)\"]\n    D -->|Deploy Staging| E[\"⚡ DAST Scan\\n(OWASP ZAP)\"]\n    E --> F[\"🚀 Production\"]\n    style A fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style B fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style C fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style D fill:#1a2332,stroke:#ef4444,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**SAST (Static Application Security Testing)** — Scans raw source code without executing it (e.g. SonarQube, Semgrep).\n\n**DAST (Dynamic Application Security Testing)** — Tests a running application by sending malicious HTTP payloads (e.g. OWASP ZAP, Burp Suite)."
+        }
+      ],
+      "quiz": {
+        "question": "What does 'Shift-Left Security' mean in DevSecOps?",
+        "options": [
+          "Moving servers to the left side of the data center",
+          "Integrating automated security checks early in the development & CI/CD lifecycle rather than testing at the end",
+          "Using Linux instead of Windows",
+          "Deleting legacy code"
+        ],
+        "correctIndex": 1,
+        "explanation": "Shift-Left means moving security testing earlier in the software development lifecycle. Catching bugs at the IDE or PR stage is 100x cheaper than fixing a breach in production."
+      }
+    },
+    {
+      "id": "container-secrets",
+      "title": "Container Vulnerabilities & Secrets Management",
+      "content": [
+        {
+          "type": "text",
+          "value": "Docker base images can contain hundreds of outdated OS packages with known security flaws (CVEs). Tools like **Trivy** scan container images before deployment and block infected images from reaching production."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Scanning Docker Images with Trivy",
+          "value": "# Scan a local docker image for CRITICAL vulnerabilities\ntrivy image --severity CRITICAL,HIGH myapp:v1\n\n# Fail CI/CD build if critical vulnerabilities are found\ntrivy image --exit-code 1 --severity CRITICAL myapp:v1"
+        },
+        {
+          "type": "mermaid",
+          "title": "Zero Trust Network Architecture",
+          "value": "graph TD\n    EXT[\"🌍 Public Internet\"] -->|Explicit Auth + TLS| API[\"🌐 API Gateway\"]\n    API -->|Mutual TLS (mTLS)| SVC1[\"⚙️ Order Service\"]\n    API -->|Mutual TLS (mTLS)| SVC2[\"⚙️ User Service\"]\n    SVC1 -->|Token Validation| DB[(\"🗄️ Database\")]\n    style EXT fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style API fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style DB fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Zero Trust Principle: 'Never Trust, Always Verify.' Even traffic inside your internal Kubernetes cluster must be authenticated and encrypted using mTLS (mutual TLS)."
+        }
+      ],
+      "quiz": {
+        "question": "What is the core rule of Zero Trust Architecture?",
+        "options": [
+          "Trust all internal network traffic",
+          "Never trust, always verify — authenticate and authorize every request regardless of origin",
+          "Disable all passwords",
+          "Only use public cloud"
+        ],
+        "correctIndex": 1,
+        "explanation": "Zero Trust assumes the internal network is already hostile. Every user, device, and service-to-service call must be explicitly authenticated and authorized."
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "terraform-iac",
+  "title": "Terraform & Infrastructure as Code",
+  "description": "Master automated infrastructure provisioning with Terraform. Learn HCL, state management, providers, modules, drift detection, and production workflows in simple terms.",
+  "difficulty": "intermediate",
+  "duration": "55 min",
+  "category": "Infrastructure as Code",
+  "prerequisites": ["aws-cloud-essentials", "linux-basics"],
+  "objectives": [
+    "Understand Declarative vs Imperative IaC",
+    "Write HCL (HashiCorp Configuration Language) manifests",
+    "Manage Terraform state files and remote backends safely",
+    "Use modules to build reusable infrastructure templates",
+    "Detect and fix infrastructure drift with terraform plan"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

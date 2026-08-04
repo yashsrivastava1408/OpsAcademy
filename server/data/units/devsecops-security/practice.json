@@ -1,0 +1,18 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Secret Detection Challenge",
+      "description": "Verify secret scanning rules.",
+      "tasks": [
+        "Create sample file: `echo 'AWS_KEY=AKIAIOSFODNN7EXAMPLE' > /tmp/sample.txt`",
+        "Scan for AWS credentials pattern: `grep -E 'AKIA[0-9A-Z]{16}' /tmp/sample.txt`"
+      ],
+      "verification": {
+        "command": "grep -E 'AKIA[0-9A-Z]{16}' /tmp/sample.txt && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

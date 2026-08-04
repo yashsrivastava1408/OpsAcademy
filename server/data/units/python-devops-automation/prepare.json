@@ -1,0 +1,18 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-py1",
+      "front": "What is boto3 and how is it used in DevOps?",
+      "back": "boto3 is the AWS SDK for Python. It allows writing scripts/Lambda functions to create EC2 instances, manage S3 buckets, audit IAM roles, and handle cloud events automatically."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-py1",
+      "question": "How would you write a Python script to find all unattached AWS Elastic IP addresses and release them to save money?",
+      "difficulty": "intermediate",
+      "modelAnswer": "import boto3\n\nec2 = boto3.client('ec2')\neips = ec2.describe_addresses()\n\nfor eip in eips['Addresses']:\n    if 'AssociationId' not in eip:\n        print(f\"Releasing unattached EIP: {eip['PublicIp']}\")\n        ec2.release_address(AllocationId=eip['AllocationId'])",
+      "keyPoints": ["boto3 ec2 client", "describe_addresses API call", "Checking AssociationId existence", "release_address execution"]
+    }
+  ]
+}

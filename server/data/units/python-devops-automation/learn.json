@@ -1,0 +1,58 @@
+{
+  "sections": [
+    {
+      "id": "boto3-aws",
+      "title": "AWS Automation with Boto3",
+      "content": [
+        {
+          "type": "text",
+          "value": "**Boto3** is the official AWS SDK for Python. It allows engineers to write Python scripts to stop unused EC2 instances at night, take automatic S3 backups, or audit security groups."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Automated EC2 Cleanup Script",
+          "value": "import boto3\n\nec2 = boto3.client('ec2', region_name='us-east-1')\n\ndef stop_unneeded_dev_instances():\n    # Find all running instances tagged Environment=Dev\n    response = ec2.describe_instances(\n        Filters=[\n            {'Name': 'tag:Environment', 'Values': ['Dev']},\n            {'Name': 'instance-state-name', 'Values': ['running']}\n        ]\n    )\n    \n    instance_ids = []\n    for reservation in response['Reservations']:\n        for instance in reservation['Instances']:\n            instance_ids.append(instance['InstanceId'])\n            \n    if instance_ids:\n        print(f\"Stopping Dev instances: {instance_ids}\")\n        ec2.stop_instances(InstanceIds=instance_ids)\n    else:\n        print(\"No dev instances to stop.\")\n\nif __name__ == '__main__':\n    stop_unneeded_dev_instances()"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Cost Optimization Tip: Running a script like this as a Lambda function every night at 8 PM saves company cloud budgets thousands of dollars per month!"
+        }
+      ],
+      "quiz": {
+        "question": "What is boto3 in the Python ecosystem?",
+        "options": [
+          "A web framework",
+          "The official AWS SDK for Python to programmatically control AWS services",
+          "A testing library",
+          "A database driver"
+        ],
+        "correctIndex": 1,
+        "explanation": "boto3 is the official Python SDK for AWS. It allows developers to create, configure, and manage AWS services (EC2, S3, DynamoDB) via Python code."
+      }
+    },
+    {
+      "id": "api-requests",
+      "title": "REST API Automation with Requests",
+      "content": [
+        {
+          "type": "text",
+          "value": "DevOps engineers frequently interact with external APIs (GitHub, PagerDuty, Jira, Datadog). The `requests` library makes HTTP calls straightforward."
+        },
+        {
+          "type": "code",
+          "language": "python",
+          "title": "Trigger GitHub Actions Workflow via API",
+          "value": "import requests\nimport os\n\nGITHUB_TOKEN = os.getenv('GITHUB_TOKEN')\nREPO = 'opsacademy/server'\n\nheaders = {\n    'Authorization': f'Bearer {GITHUB_TOKEN}',\n    'Accept': 'application/vnd.github.v3+json'\n}\n\n# Trigger dispatch event\nresponse = requests.post(\n    f'https://api.github.com/repos/{REPO}/dispatches',\n    headers=headers,\n    json={'event_type': 'run-e2e-tests'}\n)\n\nif response.status_code == 204:\n    print(\"✅ Workflow triggered successfully!\")\nelse:\n    print(f\"❌ Failed: {response.status_code} - {response.text}\")"
+        }
+      ],
+      "quiz": {
+        "question": "Which Python library is standard for making HTTP REST API requests?",
+        "options": ["boto3", "requests", "sys", "os"],
+        "correctIndex": 1,
+        "explanation": "The 'requests' library is the de-facto standard in Python for making HTTP GET, POST, PUT, DELETE calls to REST APIs cleanly."
+      }
+    }
+  ]
+}

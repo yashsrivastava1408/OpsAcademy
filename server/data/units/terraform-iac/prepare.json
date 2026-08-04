@@ -1,0 +1,23 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-tf1",
+      "front": "What are the 4 core Terraform CLI commands?",
+      "back": "1. `terraform init`: Download providers & backend modules\n2. `terraform plan`: Preview changes (dry run)\n3. `terraform apply`: Execute and build live resources\n4. `terraform destroy`: Safely delete all resources"
+    },
+    {
+      "id": "fc-tf2",
+      "front": "What is the purpose of `terraform.tfstate`?",
+      "back": "It records the exact mapping between your HCL code and the real resources deployed in the cloud. It allows Terraform to calculate minimal diffs during future applies."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-tf1",
+      "question": "How do you handle secrets and sensitive data in Terraform?",
+      "difficulty": "intermediate",
+      "modelAnswer": "1. Never hardcode passwords/keys in .tf files.\n2. Use environment variables (TF_VAR_db_password).\n3. Pass secrets at runtime from AWS Secrets Manager or HashiCorp Vault using data sources.\n4. Mark variables as `sensitive = true` so Terraform suppresses them in stdout CLI logs.\n5. Store the state file in an encrypted remote S3 bucket with restricted IAM permissions.",
+      "keyPoints": ["TF_VAR environment variables", "Integration with Vault/Secrets Manager", "sensitive = true attribute", "Encrypted remote S3 backend"]
+    }
+  ]
+}

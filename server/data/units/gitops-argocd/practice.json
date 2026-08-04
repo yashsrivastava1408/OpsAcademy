@@ -1,0 +1,18 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "GitOps Manifest Validation",
+      "description": "Inspect ArgoCD CRD YAML structures.",
+      "tasks": [
+        "Create sample app spec: `echo 'kind: Application' > /tmp/argo-app.yaml`",
+        "Verify kind declaration"
+      ],
+      "verification": {
+        "command": "grep -q 'Application' /tmp/argo-app.yaml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

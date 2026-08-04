@@ -1,0 +1,18 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Analyze Cache Performance",
+      "description": "Simulate calculating cache hit ratio and latency metrics.",
+      "tasks": [
+        "Run `echo 'cache_hits=950 cache_misses=50' > /tmp/cache.log`",
+        "Calculate hit ratio: `awk '{print ($1/($1+$2))*100}' /tmp/cache.log`"
+      ],
+      "verification": {
+        "command": "test -f /tmp/cache.log && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

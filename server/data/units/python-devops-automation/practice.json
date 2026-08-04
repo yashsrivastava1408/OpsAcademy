@@ -1,0 +1,18 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Python JSON Automation",
+      "description": "Parse and update a JSON config file using Python.",
+      "tasks": [
+        "Create script: `echo 'import json; print(json.dumps({\"status\": \"ok\"}))' > /tmp/test.py`",
+        "Run script: `python3 /tmp/test.py`"
+      ],
+      "verification": {
+        "command": "python3 /tmp/test.py | grep -q 'ok' && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

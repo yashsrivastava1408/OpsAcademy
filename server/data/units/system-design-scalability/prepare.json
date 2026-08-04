@@ -1,0 +1,18 @@
+{
+  "flashcards": [
+    {
+      "id": "fc-sd1",
+      "front": "What is the difference between CP and AP systems in CAP Theorem?",
+      "back": "**CP (Consistency + Partition Tolerance)**: Returns errors or waits if data isn't synchronized across network partitions. Uses strong consistency (e.g. Banking transactions).\n\n**AP (Availability + Partition Tolerance)**: Returns stale data if necessary to ensure 100% availability. Uses eventual consistency (e.g. Social media likes)."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "id": "iq-sd1",
+      "question": "How would you design a URL shortener like bit.ly?",
+      "difficulty": "advanced",
+      "modelAnswer": "1. **Traffic & Storage Estimation**: 100M URLs created/day → ~1,100 writes/sec, 10,000 reads/sec.\n2. **API Endpoint**: `POST /api/v1/shorten` (returns short URL), `GET /:shortUrl` (301/302 redirect).\n3. **Encoding Algorithm**: Convert auto-incrementing ID to Base62 (a-z, A-Z, 0-9). 7 characters give 62^7 = 3.5 trillion unique URLs!\n4. **Database & Caching**: Use NoSQL (MongoDB/DynamoDB) for fast key-value lookups. Cache top 20% URLs in Redis (Cache-Aside) for sub-5ms redirects.",
+      "keyPoints": ["Base62 encoding of unique ID", "Cache-Aside pattern with Redis", "301 vs 302 redirect distinction", "NoSQL key-value store"]
+    }
+  ]
+}

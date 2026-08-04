@@ -1,0 +1,72 @@
+{
+  "sections": [
+    {
+      "id": "defensive-bash",
+      "title": "Defensive Bash Scripting (set -euo pipefail)",
+      "content": [
+        {
+          "type": "text",
+          "value": "By default, Bash continues running a script even if a command fails! Imagine a backup script: `cd /backup_dir` fails (directory missing), and the next line is `rm -rf *`. Standard Bash will run `rm -rf *` inside your home directory and delete everything! Scared?"
+        },
+        {
+          "type": "text",
+          "value": "To prevent disaster, every professional production Bash script MUST start with the **Unofficial Bash Strict Mode**: `set -euo pipefail`."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Strict Mode Explanation",
+          "value": "#!/usr/bin/env bash\nset -euo pipefail\n\n# -e : Exit immediately if ANY command returns a non-zero exit code\n# -u : Exit immediately if an UNSET variable is referenced\n# -o pipefail : If any command in a pipeline fails (e.g. cat bad | grep foo), fail the WHOLE pipeline"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Interview favorite: 'What does set -euo pipefail do?' Explain each letter (-e, -u, -o pipefail). Mentioning this in any Linux/DevOps interview proves you have real-world production experience!"
+        }
+      ],
+      "quiz": {
+        "question": "What happens when 'set -e' is enabled in a Bash script?",
+        "options": [
+          "The script ignores all errors",
+          "The script exits immediately if any command returns a non-zero (failure) exit code",
+          "The script runs in the background",
+          "The script encrypts files"
+        ],
+        "correctIndex": 1,
+        "explanation": "'set -e' tells Bash to immediately abort script execution if any single command fails. This prevents cascading errors and accidental file deletion."
+      }
+    },
+    {
+      "id": "error-trapping",
+      "title": "Error Trapping & Cleanup Hooks",
+      "content": [
+        {
+          "type": "text",
+          "value": "When a script crashes or exits, it might leave temporary files or lock files behind. The `trap` command registers a cleanup function that automatically executes whenever the script exits, dies, or receives a signal."
+        },
+        {
+          "type": "mermaid",
+          "title": "Bash Trap Cleanup Lifecycle",
+          "value": "graph TD\n    START[\"🚀 Script Begins\"] --> TEMP[\"Create /tmp/lock.pid\"]\n    TEMP --> REG[\"trap cleanup EXIT INT TERM\"]\n    REG --> EXEC[\"Perform operations...\"]\n    EXEC -->|Script Exits or Crashes| TRAP[\"🧹 Trap Triggers: cleanup()\"]\n    TRAP --> RM[\"Delete /tmp/lock.pid\"]\n    RM --> FINISH[\"🏁 Clean Shutdown\"]\n    style TRAP fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style RM fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Complete Robust Script Template",
+          "value": "#!/usr/bin/env bash\nset -euo pipefail\n\n# Create temporary file\nTEMP_FILE=$(mktemp /tmp/myapp.XXXXXX)\n\n# Cleanup function\ncleanup() {\n  echo \"Cleaning up temporary files...\"\n  rm -f \"$TEMP_FILE\"\n}\n\n# Register trap on EXIT, INT (Ctrl+C), TERM\ntrap cleanup EXIT INT TERM\n\necho \"Processing data into $TEMP_FILE...\"\n# Do work here..."
+        }
+      ],
+      "quiz": {
+        "question": "What is the primary use case of the 'trap' command in Bash?",
+        "options": [
+          "To catch network packets",
+          "To execute a cleanup function automatically when a script terminates or crashes",
+          "To pause execution for 10 seconds",
+          "To list running processes"
+        ],
+        "correctIndex": 1,
+        "explanation": "'trap' registers handlers for signals (like EXIT, SIGINT, SIGTERM). It guarantees that temporary files, locks, or sockets are cleaned up regardless of how the script ends."
+      }
+    }
+  ]
+}

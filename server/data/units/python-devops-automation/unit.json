@@ -1,0 +1,20 @@
+{
+  "id": "python-devops-automation",
+  "title": "Python for Cloud & DevOps Automation",
+  "description": "Master Python for infrastructure scripting. Learn AWS automation with boto3, REST API manipulation with requests, JSON/YAML parsing, and building custom CLI tools.",
+  "difficulty": "intermediate",
+  "duration": "50 min",
+  "category": "Automation",
+  "prerequisites": ["linux-basics", "aws-cloud-essentials"],
+  "objectives": [
+    "Automate AWS resources using boto3",
+    "Interact with REST APIs using requests",
+    "Parse and update JSON and YAML configurations programmatically",
+    "Build custom CLI tools with argparse"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

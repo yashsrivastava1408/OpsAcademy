@@ -1,0 +1,20 @@
+{
+  "id": "bash-automation",
+  "title": "Advanced Shell & Bash Automation",
+  "description": "Master industrial Bash scripting for DevOps automation. Learn defensive scripting (set -euo pipefail), error trapping, loops, functions, arguments, and automated log processing.",
+  "difficulty": "beginner",
+  "duration": "45 min",
+  "category": "Automation",
+  "prerequisites": ["linux-basics"],
+  "objectives": [
+    "Write robust defensive Bash scripts with set -euo pipefail",
+    "Parse command line arguments ($1, $@, getopts)",
+    "Implement error trapping and cleanup hooks with trap",
+    "Automate log backups, disk monitoring, and status checks"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

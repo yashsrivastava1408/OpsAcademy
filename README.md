@@ -271,7 +271,7 @@ opsacademy/
 |   |-- config/
 |   |   +-- index.js                 # Centralized config (env vars)
 |   |-- data/
-|   |   +-- units/                   # 8 Complete Learning Units
+|   |   +-- units/                   # 14 Complete A-to-Z Learning Units
 |   |       |-- linux-basics/        # Linux Fundamentals (8 sections)
 |   |       |-- git-basics/          # Git & GitHub Workflow (7 sections)
 |   |       |-- docker-basics/       # Docker Fundamentals (8 sections)
@@ -279,7 +279,13 @@ opsacademy/
 |   |       |-- networking-fundamentals/ # Networking (6 sections)
 |   |       |-- cicd-pipelines/      # CI/CD Pipelines (6 sections)
 |   |       |-- aws-cloud-essentials/ # Cloud Computing / AWS (6 sections)
-|   |       +-- monitoring-observability/ # Monitoring & Observability (5 sections)
+|   |       |-- monitoring-observability/ # Monitoring & Observability (5 sections)
+|   |       |-- terraform-iac/       # Terraform & Infrastructure as Code (4 sections)
+|   |       |-- system-design-scalability/ # System Design & Scalability (4 sections)
+|   |       |-- devsecops-security/  # DevSecOps & Cloud Security (2 sections)
+|   |       |-- bash-automation/     # Advanced Bash Automation (2 sections)
+|   |       |-- python-devops-automation/ # Python Cloud Automation (2 sections)
+|   |       +-- gitops-argocd/       # GitOps & ArgoCD (2 sections)
 |   |-- middleware/
 |   |   |-- auth.js                  # JWT authorization middleware
 |   |   +-- errorHandler.js          # Global JSON error handler

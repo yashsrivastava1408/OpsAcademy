@@ -1,0 +1,122 @@
+{
+  "sections": [
+    {
+      "id": "scaling-basics",
+      "title": "Vertical vs Horizontal Scaling",
+      "content": [
+        {
+          "type": "text",
+          "value": "Imagine you run a pizza delivery store with 1 delivery driver. Traffic spikes on game night. You have two choices: **Scale Vertically** (buy the driver a faster sports car) or **Scale Horizontally** (hire 5 more drivers on bicycles). Buying a faster car has physical limits and costs a fortune. Hiring more drivers scales infinitely!"
+        },
+        {
+          "type": "mermaid",
+          "title": "Vertical vs Horizontal Scaling",
+          "value": "graph TB\n    subgraph VERT [\"Vertical Scaling (Scale UP)\"]\n        V1[\"🖥️ Small Server (2 CPU, 4GB)\"] -->|Upgrade hardware| V2[\"🖥️ Massive Server (64 CPU, 256GB)\"]\n        V2 --> LIMIT[\"⚠️ Physical Hardware & Cost Ceiling\"]\n    end\n    subgraph HORIZ [\"Horizontal Scaling (Scale OUT)\"]\n        H1[\"🖥️ Server 1\"] & H2[\"🖥️ Server 2\"] & H3[\"🖥️ Server 3\"] & H4[\"🖥️ Server 4\"]\n        LB[\"⚖️ Load Balancer\"] --> H1 & H2 & H3 & H4\n    end\n    style VERT fill:#1a2332,stroke:#ef4444,color:#e2e8f0\n    style HORIZ fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Scaling Comparison Matrix",
+          "value": "Feature          Vertical Scaling (Scale Up)    Horizontal Scaling (Scale Out)\n─────────────────────────────────────────────────────────────────────────────\nStrategy         Add more CPU / RAM to 1 machine Add more machines to pool\nDowntime         Usually requires reboot        Zero downtime (add/remove nodes)\nCost             Exponentially expensive        Linear & cost-efficient\nFault Tolerance  Single point of failure (SPOF) High availability (N+1 redundancy)\nLimit            Strict hardware cap            Virtually unlimited"
+        }
+      ],
+      "quiz": {
+        "question": "What is the primary benefit of Horizontal Scaling over Vertical Scaling?",
+        "options": [
+          "Single servers are easier to manage",
+          "High fault tolerance and virtually unlimited elasticity by adding inexpensive commodity nodes",
+          "Vertical scaling is cheaper at scale",
+          "Horizontal scaling eliminates network latency"
+        ],
+        "correctIndex": 1,
+        "explanation": "Horizontal scaling distributes traffic across multiple instances. If one node fails, the load balancer redirects traffic to remaining healthy nodes with zero downtime."
+      }
+    },
+    {
+      "id": "caching-strategies",
+      "title": "Caching Strategies (Redis & Memcached)",
+      "content": [
+        {
+          "type": "text",
+          "value": "Disk read is slow (~10ms). RAM read is blazingly fast (~0.1ms). **Caching** stores frequently queried database results in RAM (using Redis or Memcached) so your database doesn't crash during traffic surges."
+        },
+        {
+          "type": "mermaid",
+          "title": "Cache-Aside Strategy Flow",
+          "value": "sequenceDiagram\n    participant C as Client Request\n    participant API as Web Server\n    participant REDIS as Redis Cache (RAM)\n    participant DB as SQL Database (Disk)\n    C->>API: GET /user/profile/123\n    API->>REDIS: Check key 'user:123'\n    alt Cache Hit (95% of requests)\n        REDIS->>API: Return JSON from RAM (2ms) ✅\n    else Cache Miss (5% of requests)\n        REDIS->>API: Key not found ❌\n        API->>DB: Query SQL on disk (80ms)\n        DB->>API: Return DB record\n        API->>REDIS: Save key 'user:123' with TTL 1 hour\n    end\n    API->>C: Return user data"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Cache Invalidation Rule: 'There are only two hard things in Computer Science: cache invalidation and naming things.' Always set a TTL (Time To Live) on cached keys to prevent stale data."
+        }
+      ],
+      "quiz": {
+        "question": "In the Cache-Aside pattern, what happens when a request experiences a 'Cache Miss'?",
+        "options": [
+          "The server throws a 404 error",
+          "The server queries the database, returns data to user, and writes data to cache for future requests",
+          "The server restarts Redis",
+          "The request is dropped"
+        ],
+        "correctIndex": 1,
+        "explanation": "On a Cache Miss, the application fetches the data directly from the slow database, populates the cache with that data, and returns the response to the caller."
+      }
+    },
+    {
+      "id": "database-scaling",
+      "title": "Database Scaling: Replicas & Sharding",
+      "content": [
+        {
+          "type": "text",
+          "value": "Most web apps do 90% READ operations and 10% WRITE operations. To scale databases:"
+        },
+        {
+          "type": "mermaid",
+          "title": "Database Read Replicas vs Sharding",
+          "value": "graph TB\n    subgraph RR [\"Read Replicas (Scale READS)\"]\n        M1[\"👑 Primary Database\\n(Handles WRITEs)\"] -->|Async Replication| R1[\"📖 Replica 1 (READs)\"]\n        M1 -->|Async Replication| R2[\"📖 Replica 2 (READs)\"]\n    end\n    subgraph SHARD [\"Horizontal Sharding (Scale WRITES & STORAGE)\"]\n        S1[\"DB Shard 1\\nUsers A - M\"] & S2[\"DB Shard 2\\nUsers N - Z\"]\n    end\n    style RR fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style SHARD fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**Read Replicas** — All writes go to the Primary DB. Changes replicate asynchronously to Read Replicas. All SELECT queries hit the replicas.\n\n**Database Sharding** — Splitting a huge table across multiple database servers based on a Shard Key (e.g., User ID % 2)."
+        }
+      ],
+      "quiz": {
+        "question": "Which database pattern is best for handling high write volumes and huge dataset growth beyond a single server disk?",
+        "options": ["Read Replicas", "Database Sharding", "Vertical Scaling", "Single Primary"],
+        "correctIndex": 1,
+        "explanation": "Database Sharding partitions data horizontally across multiple independent servers (shards), allowing you to scale both WRITE capacity and storage capacity."
+      }
+    },
+    {
+      "id": "cap-theorem",
+      "title": "CAP Theorem & Message Queues",
+      "content": [
+        {
+          "type": "text",
+          "value": "The **CAP Theorem** states that a distributed system can only provide TWO of the following three guarantees at the same time:"
+        },
+        {
+          "type": "mermaid",
+          "title": "CAP Theorem Triangle",
+          "value": "graph TD\n    C[\"Consistency (C)\\nEvery node sees same data\"]\n    A[\"Availability (A)\\nEvery request gets a response\"]\n    P[\"Partition Tolerance (P)\\nSystem operates despite network breaks\"]\n    C --- A\n    A --- P\n    P --- C\n    style C fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style A fill:#1a2332,stroke:#10b981,color:#e2e8f0\n    style P fill:#1a2332,stroke:#f59e0b,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "**Message Queues (Kafka / RabbitMQ)** decouple background work. When a user buys a product, the API places a message in the Queue and responds in 20ms. Background workers process email receipts, inventory, and analytics asynchronously."
+        }
+      ],
+      "quiz": {
+        "question": "Why do modern microservices use Message Queues (like RabbitMQ / Kafka)?",
+        "options": [
+          "To format JSON output",
+          "To decouple services and execute heavy background tasks asynchronously without blocking API responses",
+          "To replace databases",
+          "To encrypt passwords"
+        ],
+        "correctIndex": 1,
+        "explanation": "Message queues enable asynchronous communication. The web server enqueues background jobs (sending emails, video processing) and returns a fast response to the user while background workers handle the heavy lifting."
+      }
+    }
+  ]
+}
