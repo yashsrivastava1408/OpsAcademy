@@ -38,8 +38,24 @@ const FEATURES = [
     icon: <Zap size={24} />,
     title: 'Auto-Grading Verification',
     description: 'Automated test suite executing checks inside active sandboxes. Evaluates outputs and returns instant step-by-step verification.',
-    color: 'orange',
   },
+];
+
+const CURRICULUM_COURSES = [
+  { title: 'Linux Fundamentals', category: 'Linux', icon: '🐧', sections: '8 Deep-Dive Modules' },
+  { title: 'Git & GitHub Workflow', category: 'Version Control', icon: '🔀', sections: '7 Deep-Dive Modules' },
+  { title: 'Docker Fundamentals', category: 'Containers', icon: '🐳', sections: '8 Deep-Dive Modules' },
+  { title: 'Kubernetes Orchestration', category: 'Kubernetes', icon: '☸️', sections: '8 Deep-Dive Modules' },
+  { title: 'Networking Fundamentals', category: 'Networking', icon: '🌐', sections: '6 Deep-Dive Modules' },
+  { title: 'CI/CD Pipelines', category: 'CI/CD', icon: '⚡', sections: '6 Deep-Dive Modules' },
+  { title: 'AWS Cloud Essentials', category: 'Cloud', icon: '☁️', sections: '6 Deep-Dive Modules' },
+  { title: 'Monitoring & Observability', category: 'Observability', icon: '📊', sections: '5 Deep-Dive Modules' },
+  { title: 'Terraform & IaC', category: 'Infrastructure', icon: '🏗️', sections: '4 Deep-Dive Modules' },
+  { title: 'System Design & Scalability', category: 'System Design', icon: '⚡', sections: '4 Deep-Dive Modules' },
+  { title: 'DevSecOps & Security', category: 'Security', icon: '🔒', sections: '2 Deep-Dive Modules' },
+  { title: 'Advanced Bash Automation', category: 'Automation', icon: '🐚', sections: '2 Deep-Dive Modules' },
+  { title: 'Python Cloud Automation', category: 'Automation', icon: '🐍', sections: '2 Deep-Dive Modules' },
+  { title: 'GitOps & ArgoCD', category: 'GitOps', icon: '🐙', sections: '2 Deep-Dive Modules' },
 ];
 
 const SECURITY_HIGHLIGHTS = [
@@ -112,8 +128,8 @@ export default function LandingPage() {
             </div>
             <div className="hero-stats animate-fade-in-up" style={{ animationDelay: '300ms' }}>
               <div className="hero-stat">
-                <span className="hero-stat-value">4</span>
-                <span className="hero-stat-label">Core Courses</span>
+                <span className="hero-stat-value">14</span>
+                <span className="hero-stat-label">A-to-Z Courses</span>
               </div>
               <div className="hero-stat-divider"></div>
               <div className="hero-stat">
@@ -171,6 +187,33 @@ export default function LandingPage() {
                 </div>
                 <h3 className="feature-title">{feature.title}</h3>
                 <p className="feature-desc">{feature.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 14 Courses Showcase Section ──────────────────────── */}
+      <section className="curriculum-section">
+        <div className="container">
+          <div className="section-header">
+            <h2 className="section-title">
+              Complete <span className="gradient-text">A-to-Z DevOps Curriculum</span>
+            </h2>
+            <p className="section-subtitle">
+              14 production-grade courses designed for campus placement drives and cloud engineering roles.
+            </p>
+          </div>
+
+          <div className="curriculum-grid stagger-children">
+            {CURRICULUM_COURSES.map((course, i) => (
+              <div key={i} className="curriculum-card glass-card animate-fade-in-up">
+                <div className="curriculum-card-icon">{course.icon}</div>
+                <div className="curriculum-card-info">
+                  <span className="curriculum-cat">{course.category}</span>
+                  <h4 className="curriculum-title">{course.title}</h4>
+                  <span className="curriculum-meta">{course.sections}</span>
+                </div>
               </div>
             ))}
           </div>
