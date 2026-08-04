@@ -15,7 +15,21 @@ import {
 import { unitApi } from '../services/api';
 import './DashboardPage.css';
 
-const CATEGORIES = ['All', 'Linux', 'Containers', 'Web Servers', 'Scripting', 'CI/CD'];
+const CATEGORIES = [
+  'All',
+  'Linux',
+  'Containers',
+  'Version Control',
+  'Networking',
+  'CI/CD',
+  'Cloud',
+  'Observability',
+  'Infrastructure as Code',
+  'System Design',
+  'Security',
+  'Automation',
+  'GitOps',
+];
 
 export default function DashboardPage() {
   const [units, setUnits] = useState([]);
