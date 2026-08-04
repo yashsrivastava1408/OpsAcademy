@@ -298,14 +298,21 @@ export default function LandingPage() {
 
           <div className="curriculum-grid stagger-children">
             {CURRICULUM_COURSES.map((course, i) => (
-              <div key={i} className="curriculum-card glass-card animate-fade-in-up">
-                <div className="curriculum-card-icon">{course.icon}</div>
-                <div className="curriculum-card-info">
+              <Link key={i} to="/dashboard" className="curriculum-card glass-card animate-fade-in-up">
+                <div className="curriculum-card-header">
+                  <div className="curriculum-card-icon">{course.icon}</div>
                   <span className="curriculum-cat">{course.category}</span>
-                  <h4 className="curriculum-title">{course.title}</h4>
-                  <span className="curriculum-meta">{course.sections}</span>
                 </div>
-              </div>
+                <div className="curriculum-card-info">
+                  <h4 className="curriculum-title">{course.title}</h4>
+                  <div className="curriculum-card-footer">
+                    <span className="curriculum-meta">{course.sections}</span>
+                    <span className="curriculum-link-arrow">
+                      <ArrowRight size={14} />
+                    </span>
+                  </div>
+                </div>
+              </Link>
             ))}
           </div>
         </div>
