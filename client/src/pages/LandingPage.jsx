@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Terminal,
@@ -12,8 +13,69 @@ import {
   Lock,
   CheckCircle2,
   Sparkles,
+  Award,
+  BookOpen,
 } from 'lucide-react';
 import './LandingPage.css';
+
+const DEMO_TABS = {
+  bash: {
+    label: 'terminal.sh',
+    lines: [
+      { prompt: true, text: 'mkdir -p /home/student/app' },
+      { prompt: true, text: 'echo "<h1>Hello DevOps!</h1>" > /home/student/app/index.html' },
+      { prompt: true, text: 'nginx -t' },
+      { prompt: false, text: 'nginx: configuration file /etc/nginx/nginx.conf test is successful' },
+      { prompt: true, text: 'curl localhost:80' },
+      { prompt: false, text: '<h1>Hello DevOps!</h1>', highlight: true },
+      { prompt: true, text: '█', cursor: true },
+    ],
+  },
+  docker: {
+    label: 'docker-compose.yml',
+    lines: [
+      { prompt: false, text: 'version: "3.8"' },
+      { prompt: false, text: 'services:' },
+      { prompt: false, text: '  web:' },
+      { prompt: false, text: '    image: nginx:alpine', highlight: true },
+      { prompt: false, text: '    ports:' },
+      { prompt: false, text: '      - "8080:80"' },
+      { prompt: false, text: '  db:' },
+      { prompt: false, text: '    image: postgres:15-alpine' },
+      { prompt: false, text: '    environment:' },
+      { prompt: false, text: '      POSTGRES_PASSWORD: pass', highlight: true },
+    ],
+  },
+  terraform: {
+    label: 'main.tf',
+    lines: [
+      { prompt: false, text: 'resource "aws_instance" "web" {' },
+      { prompt: false, text: '  ami           = "ami-0c55b159cbfafe1f0"' },
+      { prompt: false, text: '  instance_type = "t3.micro"', highlight: true },
+      { prompt: false, text: '  tags = {' },
+      { prompt: false, text: '    Name        = "OpsAcademy-Prod"' },
+      { prompt: false, text: '    Environment = "Production"' },
+      { prompt: false, text: '  }' },
+      { prompt: false, text: '}' },
+    ],
+  },
+  k8s: {
+    label: 'k8s-pod.yaml',
+    lines: [
+      { prompt: false, text: 'apiVersion: apps/v1' },
+      { prompt: false, text: 'kind: Deployment' },
+      { prompt: false, text: 'metadata:' },
+      { prompt: false, text: '  name: web-app' },
+      { prompt: false, text: 'spec:' },
+      { prompt: false, text: '  replicas: 3', highlight: true },
+      { prompt: false, text: '  template:' },
+      { prompt: false, text: '    spec:' },
+      { prompt: false, text: '      containers:' },
+      { prompt: false, text: '      - name: nginx' },
+      { prompt: false, text: '        image: nginx:1.25-alpine' },
+    ],
+  },
+};
 
 const FEATURES = [
   {
@@ -76,20 +138,25 @@ const TECH_STACK = [
   { name: 'Kubernetes', icon: '☸️' },
 ];
 
-const TERMINAL_LINES = [
-  { prompt: true, text: 'mkdir -p /home/student/app' },
-  { prompt: false, text: '' },
-  { prompt: true, text: 'echo \'<h1>Hello DevOps!</h1>\' > /home/student/app/index.html' },
-  { prompt: false, text: '' },
-  { prompt: true, text: 'nginx -t' },
-  { prompt: false, text: 'nginx: the configuration file /etc/nginx/nginx.conf syntax is ok' },
-  { prompt: false, text: 'nginx: configuration file /etc/nginx/nginx.conf test is successful' },
-  { prompt: true, text: 'curl localhost:80' },
-  { prompt: false, text: '<h1>Hello DevOps!</h1>', highlight: true },
-  { prompt: true, text: '█', cursor: true },
-];
+
 
 export default function LandingPage() {
+  const [activeDemoTab, setActiveDemoTab] = useState('bash');
+
+  // Auto-rotate terminal tabs every 3.5 seconds
+  useEffect(() => {
+    const tabKeys = Object.keys(DEMO_TABS);
+    const interval = setInterval(() => {
+      setActiveDemoTab((currentTab) => {
+        const currentIndex = tabKeys.indexOf(currentTab);
+        const nextIndex = (currentIndex + 1) % tabKeys.length;
+        return tabKeys[nextIndex];
+      });
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="landing">
       {/* ── Hero Section ───────────────────────────────────── */}
@@ -152,10 +219,23 @@ export default function LandingPage() {
                   <span className="terminal-dot yellow"></span>
                   <span className="terminal-dot green"></span>
                 </div>
-                <span className="mock-terminal-title">student@opsacademy ~/demo</span>
+                <div className="terminal-tabs">
+                  {Object.keys(DEMO_TABS).map((tabKey) => (
+                    <button
+                      key={tabKey}
+                      className={`terminal-tab-btn ${activeDemoTab === tabKey ? 'active' : ''}`}
+                      onClick={() => setActiveDemoTab(tabKey)}
+                    >
+                      {DEMO_TABS[tabKey].label}
+                    </button>
+                  ))}
+                </div>
+                <div className="terminal-status-pill">
+                  <span className="status-dot"></span> Live PTY
+                </div>
               </div>
               <div className="mock-terminal-body">
-                {TERMINAL_LINES.map((line, i) => (
+                {DEMO_TABS[activeDemoTab].lines.map((line, i) => (
                   <div key={i} className={`mock-line ${line.highlight ? 'highlight' : ''} ${line.cursor ? 'cursor-line' : ''}`}>
                     {line.prompt && <span className="mock-prompt">$ </span>}
                     <span className={line.cursor ? 'blink-cursor' : ''}>{line.text}</span>
@@ -216,6 +296,55 @@ export default function LandingPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 3-Mode Engine Spotlight Section ───────────────────── */}
+      <section className="modes-spotlight-section">
+        <div className="container">
+          <div className="section-header">
+            <h2 className="section-title">
+              A Structured <span className="gradient-text">3-Mode Learning Engine</span>
+            </h2>
+            <p className="section-subtitle">
+              Every course unit features 3 specialized modes to transform novices into placement-ready cloud engineers.
+            </p>
+          </div>
+
+          <div className="modes-grid stagger-children">
+            <div className="mode-spotlight-card glass-card mode-border-cyan animate-fade-in-up">
+              <div className="mode-badge-pill pill-cyan">Mode 1: Learn</div>
+              <div className="mode-card-icon icon-cyan">
+                <BookOpen size={28} />
+              </div>
+              <h3 className="mode-card-title">Interactive Theory & Quizzes</h3>
+              <p className="mode-card-desc">
+                Step-by-step interactive theory with Mermaid.js architecture diagrams, real-world analogies, and concept-check quizzes.
+              </p>
+            </div>
+
+            <div className="mode-spotlight-card glass-card mode-border-green animate-fade-in-up">
+              <div className="mode-badge-pill pill-green">Mode 2: Practice</div>
+              <div className="mode-card-icon icon-green">
+                <Terminal size={28} />
+              </div>
+              <h3 className="mode-card-title">Live Sandboxed Terminal</h3>
+              <p className="mode-card-desc">
+                Real Linux & Docker terminal environment in your browser with automated verification checks and AI mentoring support.
+              </p>
+            </div>
+
+            <div className="mode-spotlight-card glass-card mode-border-orange animate-fade-in-up">
+              <div className="mode-badge-pill pill-orange">Mode 3: Prepare</div>
+              <div className="mode-card-icon icon-orange">
+                <Award size={28} />
+              </div>
+              <h3 className="mode-card-title">Placement Q&A & Flashcards</h3>
+              <p className="mode-card-desc">
+                Interactive 3D flip card decks and top recruiter model answers covering high-frequency campus placement interview scenarios.
+              </p>
+            </div>
           </div>
         </div>
       </section>
