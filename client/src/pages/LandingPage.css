@@ -12,6 +12,20 @@
   padding: 60px 0;
 }
 
+/* ── Cyberpunk Tech Grid Background ────────────────────── */
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(to right, rgba(0, 212, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 212, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 80%);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .hero-bg-orbs {
   position: absolute;
   inset: 0;
@@ -22,33 +36,101 @@
 .orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.3;
+  filter: blur(90px);
+  opacity: 0.35;
 }
 .orb-1 {
   width: 500px;
   height: 500px;
   background: var(--accent-cyan);
-  top: -20%;
-  right: -10%;
-  animation: float 8s ease-in-out infinite;
+  top: -10%;
+  right: -5%;
+  animation: pulse-glow 7s ease-in-out infinite alternate;
 }
 .orb-2 {
-  width: 400px;
-  height: 400px;
+  width: 450px;
+  height: 450px;
   background: var(--accent-purple);
   bottom: -10%;
-  left: -10%;
-  animation: float 10s ease-in-out infinite reverse;
+  left: -5%;
+  animation: pulse-glow 9s ease-in-out infinite alternate-reverse;
 }
 .orb-3 {
-  width: 300px;
-  height: 300px;
+  width: 350px;
+  height: 350px;
   background: var(--accent-pink);
-  top: 50%;
-  left: 50%;
+  top: 40%;
+  left: 45%;
   transform: translate(-50%, -50%);
-  animation: float 12s ease-in-out infinite;
+  animation: pulse-glow 11s ease-in-out infinite alternate;
+}
+
+@keyframes pulse-glow {
+  0% {
+    transform: scale(0.9) translate(0, 0);
+    opacity: 0.25;
+  }
+  100% {
+    transform: scale(1.15) translate(20px, -20px);
+    opacity: 0.45;
+  }
+}
+
+/* ── Floating Tech Badges ─────────────────────────────── */
+.hero-terminal {
+  position: relative;
+  perspective: 1000px;
+}
+
+.floating-badge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.badge-docker {
+  top: -18px;
+  left: -20px;
+  background: rgba(0, 212, 255, 0.15);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  color: var(--accent-cyan);
+}
+
+.badge-k8s {
+  bottom: 20px;
+  right: -25px;
+  background: rgba(124, 58, 237, 0.15);
+  border: 1px solid rgba(124, 58, 237, 0.4);
+  color: var(--accent-purple);
+}
+
+.badge-tf {
+  bottom: -15px;
+  left: 30px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: var(--accent-green);
+}
+
+.animate-float-delayed {
+  animation: float 6s ease-in-out infinite 2s;
+}
+
+/* ── Neon Border Glow for Terminal ────────────────────── */
+.neon-border-glow {
+  position: relative;
+  border: 1px solid rgba(0, 212, 255, 0.3) !important;
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.15), 0 0 60px rgba(124, 58, 237, 0.1) !important;
 }
 
 .hero-content {

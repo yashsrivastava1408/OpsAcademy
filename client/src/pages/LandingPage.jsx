@@ -211,8 +211,19 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="hero-terminal animate-fade-in-up animate-float" style={{ animationDelay: '200ms' }}>
-            <div className="mock-terminal">
+          <div className="hero-terminal animate-fade-in-up" style={{ animationDelay: '200ms' }}>
+            {/* Floating Animated Badges */}
+            <div className="floating-badge badge-docker animate-float">
+              <span>🐳</span> Docker Ready
+            </div>
+            <div className="floating-badge badge-k8s animate-float-delayed">
+              <span>☸️</span> K8s Cluster
+            </div>
+            <div className="floating-badge badge-tf animate-float">
+              <span>🏗️</span> Terraform IaC
+            </div>
+
+            <div className="mock-terminal neon-border-glow">
               <div className="mock-terminal-header">
                 <div className="terminal-dots">
                   <span className="terminal-dot red"></span>
