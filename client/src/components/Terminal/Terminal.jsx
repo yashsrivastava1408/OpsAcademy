@@ -3,11 +3,10 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { getTerminalWsUrl } from '../../services/api';
 import { Wifi, WifiOff, Loader } from 'lucide-react';
 import './Terminal.css';
 
-export default function Terminal({ sessionId, onDisconnect }) {
+export default function Terminal({ sessionId, _onDisconnect }) {
   const termRef = useRef(null);
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -15,48 +14,18 @@ export default function Terminal({ sessionId, onDisconnect }) {
   const [status, setStatus] = useState('disconnected'); // disconnected | connecting | connected
 
   const connectWebSocket = useCallback(() => {
-    if (!sessionId) return;
-
-    setStatus('connecting');
-
-    const wsUrl = getTerminalWsUrl(sessionId);
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setStatus('connected');
-      // Focus xterm terminal for immediate typing
-      if (xtermRef.current) {
-        xtermRef.current.focus();
-      }
-      // Send initial resize
-      if (fitAddonRef.current && xtermRef.current) {
-        const dims = fitAddonRef.current.proposeDimensions();
-        if (dims) {
-          ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
-        }
-      }
-    };
-
-    ws.onmessage = (event) => {
-      if (xtermRef.current) {
-        xtermRef.current.write(event.data);
-      }
-    };
-
-    ws.onclose = () => {
-      setStatus('disconnected');
-      if (onDisconnect) onDisconnect();
-    };
-
-    ws.onerror = (err) => {
-      // Suppress unmount errors during React StrictMode dev re-renders
-      if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
-        console.warn('[Terminal] WebSocket notice:', err);
-      }
-      setStatus('disconnected');
-    };
-  }, [sessionId, onDisconnect]);
+    // Terminal usage blocked by maintenance mode
+    setStatus('disconnected');
+    if (xtermRef.current) {
+      xtermRef.current.clear();
+      xtermRef.current.writeln('\x1b[1;33m[OpsAcademy System Notice]\x1b[0m');
+      xtermRef.current.writeln('--------------------------------------------------');
+      xtermRef.current.writeln('\x1b[1;31mTerminal Execution Locked for Live Cloud Maintenance.\x1b[0m');
+      xtermRef.current.writeln('All theory modules, practice task instructions, hints,');
+      xtermRef.current.writeln('and interview Q&A decks remain 100% active!');
+      xtermRef.current.writeln('--------------------------------------------------');
+    }
+  }, []);
 
   // Initialize xterm.js
   useEffect(() => {
@@ -204,8 +173,7 @@ export default function Terminal({ sessionId, onDisconnect }) {
         <div ref={termRef} style={{ height: '100%', width: '100%' }} />
         {!sessionId && (
           <div className="terminal-loading">
-            <div className="terminal-loading-spinner"></div>
-            <span>Start a lab to open the terminal</span>
+            <span style={{ color: '#f59e0b', fontWeight: 600 }}>🔒 Terminal Usage Blocked (Live Cloud Maintenance)</span>
           </div>
         )}
       </div>
