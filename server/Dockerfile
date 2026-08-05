@@ -2,6 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install native build tools required for node-pty compilation
+RUN apk add --no-cache python3 make g++
+
 # Copy dependency manifests
 COPY package*.json ./
 
