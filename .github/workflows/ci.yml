@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22]
     steps:
       - name: "Checkout Code"
         uses: actions/checkout@v4
@@ -66,7 +66,7 @@ jobs:
         run: cd client && npm install
 
       - name: "Strict Client Linting"
-        run: cd client && npx oxlint || echo "Lint check completed"
+        run: cd client && npx oxlint
 
       - name: "Validate Client Build"
         run: cd client && npm run build
@@ -90,7 +90,7 @@ jobs:
       - name: "Setup Node.js"
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: "Client Dependency Audit"
         run: |

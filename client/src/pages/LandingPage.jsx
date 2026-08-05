@@ -6,6 +6,8 @@ import {
   Brain,
   Cpu,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Zap,
   GitBranch,
   Layers,
@@ -126,20 +128,22 @@ const FEATURES = [
 ];
 
 const CURRICULUM_COURSES = [
-  { title: 'Linux Fundamentals', category: 'Linux', icon: <FaLinux size={22} className="text-amber-400" />, sections: '8 Deep-Dive Modules' },
-  { title: 'Git & GitHub Workflow', category: 'Version Control', icon: <FaGitAlt size={22} className="text-orange-500" />, sections: '7 Deep-Dive Modules' },
-  { title: 'Docker Fundamentals', category: 'Containers', icon: <FaDocker size={22} className="text-cyan-400" />, sections: '8 Deep-Dive Modules' },
-  { title: 'Kubernetes Orchestration', category: 'Kubernetes', icon: <SiKubernetes size={22} className="text-blue-500" />, sections: '8 Deep-Dive Modules' },
-  { title: 'Networking Fundamentals', category: 'Networking', icon: <Globe size={22} className="text-green-400" />, sections: '6 Deep-Dive Modules' },
-  { title: 'CI/CD & Jenkins Pipelines', category: 'CI/CD', icon: <FaJenkins size={22} className="text-red-400" />, sections: '6 Deep-Dive Modules' },
-  { title: 'AWS Cloud Essentials', category: 'Cloud', icon: <FaAws size={22} className="text-amber-500" />, sections: '6 Deep-Dive Modules' },
-  { title: 'Monitoring & Grafana', category: 'Observability', icon: <SiGrafana size={22} className="text-orange-400" />, sections: '5 Deep-Dive Modules' },
-  { title: 'Terraform & IaC', category: 'Infrastructure', icon: <SiTerraform size={22} className="text-purple-400" />, sections: '4 Deep-Dive Modules' },
-  { title: 'System Design & Scalability', category: 'System Design', icon: <Cpu size={22} className="text-cyan-400" />, sections: '4 Deep-Dive Modules' },
-  { title: 'DevSecOps & Security', category: 'Security', icon: <Lock size={22} className="text-emerald-400" />, sections: '2 Deep-Dive Modules' },
-  { title: 'Advanced Bash Automation', category: 'Automation', icon: <Code2 size={22} className="text-cyan-400" />, sections: '2 Deep-Dive Modules' },
-  { title: 'Python Cloud Automation', category: 'Automation', icon: <FaPython size={22} className="text-blue-400" />, sections: '2 Deep-Dive Modules' },
-  { title: 'GitOps & ArgoCD', category: 'GitOps', icon: <SiArgo size={22} className="text-orange-400" />, sections: '2 Deep-Dive Modules' },
+  { id: 'linux-basics', title: 'Linux Fundamentals', category: 'Linux', icon: <FaLinux size={22} className="text-amber-400" />, sections: '8 Deep-Dive Modules', group: 'foundations', desc: 'CLI mastery, file permissions, process management, and systemd automation.' },
+  { id: 'git-basics', title: 'Git & GitHub Workflow', category: 'Version Control', icon: <FaGitAlt size={22} className="text-orange-500" />, sections: '7 Deep-Dive Modules', group: 'foundations', desc: 'Branching strategies, interactive rebasing, merge conflicts, and PR reviews.' },
+  { id: 'docker-basics', title: 'Docker Containers', category: 'Containers', icon: <FaDocker size={22} className="text-cyan-400" />, sections: '8 Deep-Dive Modules', group: 'cloud', desc: 'Multi-stage Dockerfiles, compose stacks, and isolated container networks.' },
+  { id: 'kubernetes-basics', title: 'Kubernetes Orchestration', category: 'Kubernetes', icon: <SiKubernetes size={22} className="text-blue-500" />, sections: '8 Deep-Dive Modules', group: 'cloud', desc: 'Pods, Deployments, ClusterIP, Ingress TLS, ConfigMaps, and Helm Charts.' },
+  { id: 'networking-fundamentals', title: 'Networking Fundamentals', category: 'Networking', icon: <Globe size={22} className="text-green-400" />, sections: '6 Deep-Dive Modules', group: 'foundations', desc: 'TCP/IP 3-way handshake, DNS records, HTTP/S, SSH tunnels, and firewalls.' },
+  { id: 'cicd-jenkins', title: 'CI/CD & Jenkins Pipelines', category: 'CI/CD', icon: <FaJenkins size={22} className="text-red-400" />, sections: '6 Deep-Dive Modules', group: 'cloud', desc: 'Automated build matrices, secret leak scanning, and staging deployment.' },
+  { id: 'aws-cloud-essentials', title: 'AWS Cloud Essentials', category: 'Cloud Architecture', icon: <FaAws size={22} className="text-amber-500" />, sections: '6 Deep-Dive Modules', group: 'cloud', desc: 'VPC subnets, EC2 auto-scaling, S3 IAM policies, RDS, and ALB load balancers.' },
+  { id: 'endpoint-security', title: 'Enterprise Endpoint Security', category: 'EPP • EDR • XDR', icon: <Shield size={22} className="text-cyan-400" />, sections: '5 Enterprise Modules', group: 'security', isNew: true, desc: 'EPP/EDR/XDR architecture, Defender GPO, and CrowdStrike API host isolation.' },
+  { id: 'digital-forensics', title: 'Digital Forensics (DFIR)', category: 'Forensics & IR', icon: <Search size={22} className="text-purple-400" />, sections: '5 Forensic Modules', group: 'security', isNew: true, desc: '5-stage DFIR methodology, Volatility 3 RAM dumps, and NTFS $MFT analysis.' },
+  { id: 'monitoring-observability', title: 'Monitoring & Grafana', category: 'Observability', icon: <SiGrafana size={22} className="text-orange-400" />, sections: '5 Deep-Dive Modules', group: 'cloud', desc: 'Prometheus metrics, PromQL queries, and real-time Grafana dashboards.' },
+  { id: 'terraform-iac', title: 'Terraform & IaC', category: 'Infrastructure', icon: <SiTerraform size={22} className="text-purple-400" />, sections: '4 Deep-Dive Modules', group: 'cloud', desc: 'Declarative HCL, modular state management, and cloud drift detection.' },
+  { id: 'system-design', title: 'System Design & Scalability', category: 'System Design', icon: <Cpu size={22} className="text-cyan-400" />, sections: '4 Deep-Dive Modules', group: 'foundations', desc: 'High availability, load balancing, caching, database sharding, and CAP theorem.' },
+  { id: 'devsecops-security', title: 'DevSecOps & Cloud Security', category: 'Security', icon: <Lock size={22} className="text-emerald-400" />, sections: '4 Deep-Dive Modules', group: 'security', desc: 'Secret scanning, Trivy container audits, OWASP Top 10, and GuardDuty triage.' },
+  { id: 'bash-automation', title: 'Advanced Bash Automation', category: 'Automation', icon: <Code2 size={22} className="text-cyan-400" />, sections: '2 Deep-Dive Modules', group: 'automation', desc: 'Production shell scripts, cron scheduling, awk/sed text processing, and logging.' },
+  { id: 'python-devops-automation', title: 'Python Cloud Automation', category: 'Automation', icon: <FaPython size={22} className="text-blue-400" />, sections: '2 Deep-Dive Modules', group: 'automation', desc: 'Python 3.11 log parsers, boto3 AWS automation, and CLI tooling.' },
+  { id: 'gitops-argocd', title: 'GitOps & ArgoCD', category: 'GitOps', icon: <SiArgo size={22} className="text-orange-400" />, sections: '2 Deep-Dive Modules', group: 'automation', desc: 'Pull-based continuous deployment, Git single source of truth, and rollbacks.' },
 ];
 
 const SECURITY_HIGHLIGHTS = [
@@ -162,6 +166,17 @@ const TECH_STACK = [
 
 export default function LandingPage() {
   const [activeDemoTab, setActiveDemoTab] = useState('bash');
+  const [curriculumGroup, setCurriculumGroup] = useState('all');
+  const [showAllCourses, setShowAllCourses] = useState(false);
+
+  const filteredCourses = CURRICULUM_COURSES.filter(
+    (course) => curriculumGroup === 'all' || course.group === curriculumGroup
+  );
+
+  const displayedCourses =
+    showAllCourses || curriculumGroup !== 'all'
+      ? filteredCourses
+      : filteredCourses.slice(0, 8);
 
   // Auto-rotate terminal tabs every 3.5 seconds
   useEffect(() => {
@@ -194,14 +209,10 @@ export default function LandingPage() {
               AI-Powered DevOps Learning Platform
             </div>
             <h1 className="hero-title animate-fade-in-up">
-              Learn DevOps by <span className="gradient-text">Doing</span>,
-              <br />
-              Not Watching
+              Master Cloud Engineering with <span className="gradient-text">OpsAcademy</span>
             </h1>
             <p className="hero-subtitle animate-fade-in-up" style={{ animationDelay: '100ms' }}>
-              Interactive, browser-based labs with a live Linux terminal.
-              A multi-agent AI mentor guides you without giving away the solution.
-              Master Linux, Docker, Git, and Kubernetes for placement interviews.
+              Interactive browser-based labs with a live Linux terminal, multi-agent AI mentoring, and real-world case studies. Master Linux, Docker, K8s, AWS, and DevSecOps for placement drives.
             </p>
             <div className="hero-actions animate-fade-in-up" style={{ animationDelay: '200ms' }}>
               <Link to="/dashboard" className="btn btn-primary btn-lg">
@@ -297,25 +308,91 @@ export default function LandingPage() {
         <div className="container">
           <div className="section-header">
             <h2 className="section-title">
-              Complete A-to-Z <span className="gradient-text">DevOps Curriculum</span>
+              16 Production-Grade <span className="gradient-text">DevOps & Security Courses</span>
             </h2>
             <p className="section-subtitle">
-              14 production-grade courses designed for campus placement drives and cloud engineering roles.
+              Comprehensive learning units designed for campus placement drives, cloud engineering, and enterprise SOC roles.
             </p>
+
+            {/* Interactive Category Filter Tabs */}
+            <div className="curriculum-filter-tabs">
+              <button
+                className={`curriculum-tab-btn ${curriculumGroup === 'all' ? 'active' : ''}`}
+                onClick={() => setCurriculumGroup('all')}
+              >
+                All Courses ({CURRICULUM_COURSES.length})
+              </button>
+              <button
+                className={`curriculum-tab-btn ${curriculumGroup === 'foundations' ? 'active' : ''}`}
+                onClick={() => setCurriculumGroup('foundations')}
+              >
+                Core Foundations
+              </button>
+              <button
+                className={`curriculum-tab-btn ${curriculumGroup === 'cloud' ? 'active' : ''}`}
+                onClick={() => setCurriculumGroup('cloud')}
+              >
+                Cloud & Containers
+              </button>
+              <button
+                className={`curriculum-tab-btn ${curriculumGroup === 'security' ? 'active' : ''}`}
+                onClick={() => setCurriculumGroup('security')}
+              >
+                Security & DFIR
+              </button>
+              <button
+                className={`curriculum-tab-btn ${curriculumGroup === 'automation' ? 'active' : ''}`}
+                onClick={() => setCurriculumGroup('automation')}
+              >
+                Automation & GitOps
+              </button>
+            </div>
           </div>
 
           <div className="curriculum-grid stagger-children">
-            {CURRICULUM_COURSES.map((course, i) => (
-              <Link to="/dashboard" key={i} className="curriculum-card glass-card">
-                <div className="curriculum-card-icon">{course.icon}</div>
-                <div className="curriculum-card-content">
-                  <span className="curriculum-category">{course.category}</span>
+            {displayedCourses.map((course) => (
+              <Link to={`/unit/${course.id}/learn`} key={course.id} className="curriculum-card glass-card">
+                <div className="curriculum-card-header">
+                  <div className="curriculum-card-icon">{course.icon}</div>
+                  <div className="curriculum-badges">
+                    {course.isNew && <span className="curriculum-badge-new">NEW</span>}
+                    <span className="curriculum-cat">{course.category}</span>
+                  </div>
+                </div>
+                <div className="curriculum-card-info">
                   <h3 className="curriculum-title">{course.title}</h3>
-                  <span className="curriculum-sections">{course.sections}</span>
+                  <p className="curriculum-desc">{course.desc}</p>
+                </div>
+                <div className="curriculum-card-footer">
+                  <span className="curriculum-meta">{course.sections}</span>
+                  <span className="curriculum-action">Explore Unit →</span>
                 </div>
               </Link>
             ))}
           </div>
+
+          {/* Compact Expand / Collapse Control */}
+          {curriculumGroup === 'all' && (
+            <div className="curriculum-expand-container">
+              {!showAllCourses ? (
+                <button
+                  className="btn btn-secondary btn-md curriculum-expand-btn"
+                  onClick={() => setShowAllCourses(true)}
+                >
+                  <span>Show All 16 Courses ({filteredCourses.length - 8} More)</span>
+                  <ChevronDown size={16} />
+                </button>
+              ) : (
+                <button
+                  className="btn btn-ghost btn-sm curriculum-expand-btn"
+                  onClick={() => setShowAllCourses(false)}
+                >
+                  <span>Collapse View</span>
+                  <ChevronUp size={16} />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
