@@ -67,6 +67,60 @@
         "correctIndex": 1,
         "explanation": "'trap' registers handlers for signals (like EXIT, SIGINT, SIGTERM). It guarantees that temporary files, locks, or sockets are cleaned up regardless of how the script ends."
       }
+    },
+    {
+      "id": "argument-parsing",
+      "title": "Argument Parsing ($1, $@, getopts)",
+      "content": [
+        {
+          "type": "text",
+          "value": "Production automation scripts accept command-line flags (e.g. `./deploy.sh -e production -v 1.2.0`). Bash provides built-in positional variables (`$1`, `$2`, `$@`) and the `getopts` built-in tool for robust argument handling."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "getopts Argument Parsing Example",
+          "value": "#!/usr/bin/env bash\nset -euo pipefail\n\nENV=\"staging\"\nVERSION=\"latest\"\n\nwhile getopts \"e:v:h\" opt; do\n  case ${opt} in\n    e) ENV=\"$OPTARG\" ;;\n    v) VERSION=\"$OPTARG\" ;;\n    h) echo \"Usage: $0 [-e env] [-v version]\"; exit 0 ;;\n    \\?) echo \"Invalid option\"; exit 1 ;;\n  esac\ndone\n\necho \"Deploying version $VERSION to environment $ENV...\""
+        }
+      ],
+      "quiz": {
+        "question": "In Bash, what does '$@' represent?",
+        "options": [
+          "The exit code of the last command",
+          "All positional command-line arguments passed to the script",
+          "The Process ID (PID) of the script",
+          "The current user's name"
+        ],
+        "correctIndex": 1,
+        "explanation": "'$@' expands to a list of all positional parameters passed to the script, preserving individual quotes and spaces."
+      }
+    },
+    {
+      "id": "log-disk-monitoring",
+      "title": "Automated Disk & Log Monitoring Script",
+      "content": [
+        {
+          "type": "text",
+          "value": "One of the most common real-world interview coding tasks is: 'Write a script that monitors disk space and sends an alert if usage exceeds 80%.' Here is the production-grade implementation."
+        },
+        {
+          "type": "code",
+          "language": "bash",
+          "title": "Disk Space Monitor Script",
+          "value": "#!/usr/bin/env bash\nset -euo pipefail\n\nTHRESHOLD=80\nEMAIL=\"ops-alerts@company.com\"\n\ndf -H | grep -vE '^Filesystem|tmpfs|cdrom' | awk '{ print $5 \" \" $1 }' | while read -r output; do\n  usep=$(echo \"$output\" | awk '{ print $1}' | cut -d'%' -f1)\n  partition=$(echo \"$output\" | awk '{ print $2 }')\n  \n  if [ \"$usep\" -ge \"$THRESHOLD\" ]; then\n    echo \"[ALERT] Partition '$partition' is at $usep% usage on $(hostname) as of $(date)\"\n  fi\ndone"
+        }
+      ],
+      "quiz": {
+        "question": "How do you extract just the numeric percentage from '85%' in Bash?",
+        "options": [
+          "echo '85%' | cut -d'%' -f1",
+          "echo '85%' | grep '%'",
+          "echo '85%' | wc -l",
+          "echo '85%' | cat"
+        ],
+        "correctIndex": 0,
+        "explanation": "'cut -d\"%\" -f1' splits the text by the '%' delimiter and returns field 1 (the number 85)."
+      }
     }
   ]
 }

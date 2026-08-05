@@ -1,16 +1,16 @@
 {
   "id": "devsecops-security",
   "title": "DevSecOps & Cloud Security",
-  "description": "Integrate security into CI/CD pipelines. Learn SAST/DAST, Container Vulnerability Scanning (Trivy), Secrets Management (Vault), OWASP Top 10 API Security, and Zero Trust.",
+  "description": "Integrate security into CI/CD pipelines. Learn SAST/DAST, Container Vulnerability Scanning (Trivy), OWASP Top 10 API Security, SBOMs, Secrets Management (Vault), and Zero Trust.",
   "difficulty": "intermediate",
-  "duration": "50 min",
+  "duration": "55 min",
   "category": "Security",
   "prerequisites": ["docker-basics", "cicd-pipelines"],
   "objectives": [
-    "Implement SAST (Static Application Security Testing) and DAST",
+    "Implement SAST and DAST security gates in CI/CD",
     "Scan Docker images for CVEs using Trivy",
-    "Prevent secrets leakage in Git repositories",
-    "Understand OWASP Top 10 API Security risks",
+    "Prevent BOLA & OWASP Top 10 API Security risks",
+    "Generate Software Bill of Materials (SBOM) for supply chain security",
     "Apply Zero Trust Security Architecture"
   ],
   "modes": {

@@ -70,6 +70,68 @@
         "correctIndex": 1,
         "explanation": "Zero Trust assumes the internal network is already hostile. Every user, device, and service-to-service call must be explicitly authenticated and authorized."
       }
+    },
+    {
+      "id": "owasp-top-10-api",
+      "title": "OWASP Top 10 API Security Risks",
+      "content": [
+        {
+          "type": "text",
+          "value": "APIs are the primary gateway to your application's data. **OWASP (Open Worldwide Application Security Project)** publishes the top 10 security vulnerabilities found in modern APIs. Every cloud engineer must know how to prevent them."
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "title": "Top API Vulnerabilities Cheat Sheet",
+          "value": "Vulnerability                       Risk Explanation & Mitigation\n─────────────────────────────────────────────────────────────────────────────\nAPI1: BOLA (Broken Object Level Auth) User A modifies URL /api/user/102 to access User B's data.\n                                    Fix: Always check token userId == URL parameter ID!\nAPI2: Broken Authentication          Weak JWT verification or missing expiration times.\n                                    Fix: Enforce strict RSA-256 JWT signature verification.\nAPI3: Broken Object Property Level  Exposing sensitive fields (passwords/SSNs) in JSON responses.\n                                    Fix: DTO sanitization — strip private fields before returning.\nAPI4: Unrestricted Resource Consum.  Missing rate limits allows DDoS attack on database.\n                                    Fix: Enforce Redis rate limiting (e.g. 100 req/min)."
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "BOLA (Broken Object Level Authorization) is the #1 most exploited API flaw in tech companies. Never trust URL parameters (e.g. GET /api/orders/55) without verifying that the logged-in user actually owns order #55."
+        }
+      ],
+      "quiz": {
+        "question": "What is BOLA (Broken Object Level Authorization) in API security?",
+        "options": [
+          "A type of database index",
+          "When an API endpoint accesses a database object by ID without verifying if the requesting user owns that object",
+          "A firewall rule",
+          "An SSL certificate error"
+        ],
+        "correctIndex": 1,
+        "explanation": "BOLA occurs when an API fails to verify whether a user is authorized to access a specific resource ID (e.g., changing the ID in the URL to view another user's invoice)."
+      }
+    },
+    {
+      "id": "sbom-supply-chain",
+      "title": "Software Supply Chain & SBOM",
+      "content": [
+        {
+          "type": "text",
+          "value": "Modern applications are built like Lego blocks — 80%+ of your code comes from open-source npm/pip packages and Docker base images. **Software Supply Chain Security** ensures that third-party packages don't contain malicious backdoor code (like the infamous Log4j vulnerability)."
+        },
+        {
+          "type": "mermaid",
+          "title": "SBOM & Supply Chain Validation",
+          "value": "graph LR\n    A[\"📦 Dependencies (npm/pip)\"] --> B[\"📋 Generate SBOM\\n(Software Bill of Materials)\"]\n    B --> C[\"🔒 Sign Image with Cosign\"]\n    C --> D[\"🛡️ Kubernetes Admission Controller\"]\n    D -->|Verified Signature| E[\"🚀 Deploy to Cluster\"]\n    style A fill:#1a2332,stroke:#00d4ff,color:#e2e8f0\n    style B fill:#1a2332,stroke:#f59e0b,color:#e2e8f0\n    style C fill:#1a2332,stroke:#10b981,color:#e2e8f0"
+        },
+        {
+          "type": "text",
+          "value": "An **SBOM (Software Bill of Materials)** is an ingredients list for software. Just like a food label lists ingredients, an SBOM lists every open-source package, version, and license included in your container."
+        }
+      ],
+      "quiz": {
+        "question": "What is an SBOM (Software Bill of Materials)?",
+        "options": [
+          "A cloud invoice from AWS",
+          "An exact ingredients list of all open-source libraries, packages, and dependencies inside your application container",
+          "A list of database passwords",
+          "A network diagram"
+        ],
+        "correctIndex": 1,
+        "explanation": "An SBOM is a machine-readable inventory of software components and dependencies used in an application. It helps security teams rapidly identify if a new vulnerability affects their codebase."
+      }
     }
   ]
 }
