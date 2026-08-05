@@ -1,0 +1,30 @@
+{
+  "unitId": "endpoint-security",
+  "title": "Interview Flashcards & Exam Questions: Endpoint Security",
+  "flashcards": [
+    {
+      "id": 1,
+      "question": "What is the key functional difference between EPP and EDR?",
+      "answer": "EPP (Endpoint Protection Platform) focuses on PREVENTING file-based and known malware using signatures, heuristics, and device control before execution. EDR (Endpoint Detection & Response) focuses on CONTINUOUS DETECTING and INVESTIGATING suspicious activity via behavioral analysis, process tree reconstruction, and automated host isolation after execution.",
+      "category": "Architecture"
+    },
+    {
+      "id": 2,
+      "question": "Why is signature-only traditional antivirus insufficient against modern attacks?",
+      "answer": "Traditional AV relies on known file hashes/signatures. Modern attacks use fileless malware (running entirely in memory via PowerShell or WMI), zero-day exploits, and encrypted payloads that lack existing signatures.",
+      "category": "Threat Vectors"
+    },
+    {
+      "id": 3,
+      "question": "What is Agent Tamper Protection and why is it mandatory?",
+      "answer": "Tamper Protection prevents malicious processes or rogue local administrators from stopping the EDR agent service, modifying registry keys, or disabling real-time scanning during an active breach.",
+      "category": "Hardening"
+    },
+    {
+      "id": 4,
+      "question": "Explain XDR (Extended Detection and Response) and how it expands on EDR.",
+      "answer": "EDR collects telemetry strictly from endpoints. XDR correlates telemetry across multiple security layers — endpoints, network firewalls, cloud workloads, email gateways, and identity providers (Azure AD) — to trace full multi-stage attack chains.",
+      "category": "Enterprise SOC"
+    }
+  ]
+}

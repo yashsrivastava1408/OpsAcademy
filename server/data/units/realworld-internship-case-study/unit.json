@@ -1,0 +1,16 @@
+{
+  "id": "realworld-internship-case-study",
+  "title": "Enterprise DevOps: GitOps, Change-Aware CI/CD & K8s Incident Post-Mortem",
+  "description": "A real-world engineering case study covering zero-K8s local dev contracts, change-aware Jenkins CI pipelines, ArgoCD GitOps reconciliation, and production K8s NetworkPolicy debugging.",
+  "category": "GitOps",
+  "difficulty": "advanced",
+  "duration": "60 min",
+  "objectives": [
+    "Design zero-Kubernetes reproducible local development with Makefile & Docker Compose",
+    "Implement change-aware CI pipelines with security scanning and build matrix skipping",
+    "Configure GitOps CD reconciliation with ArgoCD, Harbor, and Kustomize overlays",
+    "Troubleshoot stuck Init:1/2 containers and K8s NetworkPolicy label mismatches"
+  ],
+  "featured": true,
+  "isCaseStudy": true
+}

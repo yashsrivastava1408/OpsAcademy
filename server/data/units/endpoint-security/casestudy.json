@@ -1,0 +1,62 @@
+{
+  "unitId": "endpoint-security",
+  "title": "Real-World Enterprise Case Studies: Endpoint Security & Incident Response",
+  "caseStudies": [
+    {
+      "id": "case-1",
+      "title": "Case Study 1: Ransomware Containment at Regional Hospital Network",
+      "industry": "Healthcare",
+      "scale": "500+ Endpoints (Workstations, Medical Devices)",
+      "problem": "Ransomware outbreak targeted electronic health records (EHR), threatening HIPAA compliance and patient care delivery.",
+      "tools": ["CrowdStrike Falcon", "Microsoft Defender", "BitLocker Encryption"],
+      "solution": [
+        "Deployed EDR agents across all workstation and medical device endpoints",
+        "Enabled behavioral ransomware detection with automatic host isolation (<3 seconds)",
+        "Configured BitLocker XTS-AES 256-bit encryption with recovery keys backed up to Azure AD",
+        "Enforced strict USB device control policies to block unauthorized flash drives"
+      ],
+      "outcomes": [
+        "Blocked active ransomware during early file encryption phase",
+        "Zero patient data lost; 100% HIPAA audit compliance maintained",
+        "Automated isolation limited lateral blast radius to exactly 1 endpoint"
+      ]
+    },
+    {
+      "id": "case-2",
+      "title": "Case Study 2: APT Detection & Lateral Movement Block at Global Bank",
+      "industry": "Financial Services",
+      "scale": "10,000+ Endpoints",
+      "problem": "Nation-state APT group attempted stealthy credential dumping and lateral movement via encoded PowerShell scripts.",
+      "tools": ["SentinelOne Singularity EDR", "Microsoft Sentinel SIEM", "MITRE ATT&CK Framework"],
+      "solution": [
+        "SOC analysts flagged anomalous encoded PowerShell execution in EDR timeline",
+        "Traced process execution tree back to compromised web server entrypoint",
+        "Correlated telemetry with threat intelligence IOC database to identify APT actor",
+        "Simultaneously contained all 12 compromised endpoints via automated SOAR workflow"
+      ],
+      "outcomes": [
+        "Detected APT in 3 days (vs. 200+ days industry average)",
+        "Prevented estimated $50M+ financial data breach & regulatory penalties",
+        "Zero data exfiltration across all 10,000+ global banking endpoints"
+      ]
+    },
+    {
+      "id": "case-3",
+      "title": "Case Study 3: Zero-Trust Endpoint Compliance for Global SaaS Workforce",
+      "industry": "SaaS / Cloud Software",
+      "scale": "1,000+ Remote Workers across 30 Countries",
+      "problem": "Remote employees accessing cloud production infrastructure from personal and unmanaged laptops.",
+      "tools": ["Microsoft Intune", "Azure AD Conditional Access", "Defender for Endpoint"],
+      "solution": [
+        "Mandated Intune device enrollment for all remote employee laptops",
+        "Configured Azure AD Conditional Access policy: Block logins unless device passes EPP/EDR compliance check",
+        "Enforced automated OS patch verification and full-disk BitLocker compliance"
+      ],
+      "outcomes": [
+        "Achieved 100% endpoint compliance visibility across 30 countries",
+        "Blocked non-compliant logins automatically without IT admin manual intervention",
+        "Passed SOC 2 Type II audit with zero unmanaged endpoint findings"
+      ]
+    }
+  ]
+}

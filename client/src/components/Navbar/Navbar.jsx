@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Terminal, LayoutDashboard, Award, ShieldCheck, ExternalLink } from 'lucide-react';
+import { Terminal, LayoutDashboard, Compass, Sparkles, ExternalLink } from 'lucide-react';
 import { getProgress } from '../../services/progressService';
 import CertificateModal from '../CertificateModal/CertificateModal';
 import './Navbar.css';
@@ -44,21 +44,22 @@ export default function Navbar() {
                 Dashboard
               </Link>
             </li>
+            <li>
+              <Link to="/roadmap" className={`navbar-link ${isActive('/roadmap')}`}>
+                <Compass size={16} />
+                DevOps Roadmap
+              </Link>
+            </li>
+            <li>
+              <Link to="/casestudies" className={`navbar-link ${isActive('/casestudies')}`}>
+                <Sparkles size={16} className="text-cyan" />
+                Case Studies
+              </Link>
+            </li>
           </ul>
 
           {/* Right Actions */}
           <div className="navbar-actions">
-            {/* Placement Readiness Badge */}
-            <div className="navbar-status score-badge" title="DevOps Placement Readiness Score">
-              <ShieldCheck size={14} className="score-icon" />
-              <span>Readiness: {progress.score}%</span>
-            </div>
-
-            {/* Certificate Button */}
-            <button className="btn btn-secondary btn-sm" onClick={() => setShowCert(true)}>
-              <Award size={14} /> Certificate
-            </button>
-
             <a
               href="https://github.com"
               target="_blank"

@@ -4,6 +4,16 @@
       "id": "fc-py1",
       "front": "What is boto3 and how is it used in DevOps?",
       "back": "boto3 is the AWS SDK for Python. It allows writing scripts/Lambda functions to create EC2 instances, manage S3 buckets, audit IAM roles, and handle cloud events automatically."
+    },
+    {
+      "id": "fc-py2",
+      "front": "What is the difference between `subprocess.run()` and `os.system()` in Python?",
+      "back": "**`os.system()`**: Executes command in subshell, returns only status code (0/1). Outdated and insecure against injection.\n\n**`subprocess.run()`**: Modern recommended way. Captures stdout/stderr, supports timeout, check return codes, and takes arguments as safe lists."
+    },
+    {
+      "id": "fc-py3",
+      "front": "How do you handle exceptions in Python file and network scripts?",
+      "back": "Use `try-except-finally` blocks or context managers (`with open(...) as f:`).\n\nContext managers ensure files and sockets are closed automatically even if an exception occurs mid-execution."
     }
   ],
   "interviewQuestions": [
@@ -13,6 +23,13 @@
       "difficulty": "intermediate",
       "modelAnswer": "import boto3\n\nec2 = boto3.client('ec2')\neips = ec2.describe_addresses()\n\nfor eip in eips['Addresses']:\n    if 'AssociationId' not in eip:\n        print(f\"Releasing unattached EIP: {eip['PublicIp']}\")\n        ec2.release_address(AllocationId=eip['AllocationId'])",
       "keyPoints": ["boto3 ec2 client", "describe_addresses API call", "Checking AssociationId existence", "release_address execution"]
+    },
+    {
+      "id": "iq-py2",
+      "question": "Write a Python script to parse a web server access.log file using regular expressions and output IP addresses with 5xx server error counts.",
+      "difficulty": "intermediate",
+      "modelAnswer": "import re\nfrom collections import Counter\n\nlog_pattern = re.compile(r'^(\\d+\\.\\d+\\.\\d+\\.\\d+).*\" \\b5\\d{2}\\b')\nfailed_ips = Counter()\n\nwith open('/var/log/nginx/access.log', 'r') as log_file:\n    for line in log_file:\n        match = log_pattern.search(line)\n        if match:\n            failed_ips[match.group(1)] += 1\n\nfor ip, count in failed_ips.most_common(10):\n    print(f\"{ip}: {count} server errors\")",
+      "keyPoints": ["re.compile for regex matching", "collections.Counter for counting", "with open context manager for safe file reading", "Line-by-line streaming memory efficiency"]
     }
   ]
 }

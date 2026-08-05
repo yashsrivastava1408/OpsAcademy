@@ -1,0 +1,36 @@
+{
+  "unitId": "realworld-internship-case-study",
+  "title": "Interview Q&A: Enterprise DevOps, GitOps & Production Incident Debugging",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "How do you structure local development so engineers can run apps without needing a full Kubernetes or Vault cluster locally?",
+      "answer": "We establish a Local Dev Contract using a single Makefile entrypoint (`make dev`) and Docker Compose. Secrets are managed locally via gitignored `secrets.yaml` copied from `secrets.template.yaml`. Local Dockerfiles (`Dockerfile.local`) build binaries inside containers to avoid host dependency issues, bypassing heavy cluster tools like ArgoCD, Vault, or cert-manager on developer laptops.",
+      "category": "Architecture"
+    },
+    {
+      "id": "q2",
+      "question": "What is a change-aware CI pipeline and why is it superior to rebuilding everything on every commit?",
+      "answer": "A change-aware CI pipeline compares the current commit against target branches to identify modified file paths. It sets flags like `IS_APP_CHANGE`, `IS_INFRA_CHANGE`, `IS_DB_CHANGE`, and `IS_DOC_CHANGE`. It skips unnecessary heavy builds/tests (e.g., docs-only changes skip Rust compiles) while ensuring global safety checks (secret leak scans and vulnerability audits) always run.",
+      "category": "CI/CD"
+    },
+    {
+      "id": "q3",
+      "question": "How do you debug an Init:1/2 container stuck waiting for Redis or DB connection in Kubernetes?",
+      "answer": "1. Check if DB/Redis pods are healthy (`kubectl get pods`).\n2. Verify DNS resolution from inside the cluster (`nslookup redis-service`).\n3. Inspect NetworkPolicies: DNS resolution working does NOT mean traffic is allowed! Check if NetworkPolicy ingress/egress selectors match namespace labels (`kubernetes.io/metadata.name: namespace-name`).\n4. Check Readiness/Liveness probes on application pods to ensure traffic isn't routed before DB connections initialize.",
+      "category": "Troubleshooting"
+    },
+    {
+      "id": "q4",
+      "question": "Why should NGINX run as an Ingress Controller inside Kubernetes rather than outside on a host VM?",
+      "answer": "Running NGINX inside K8s enables native pod auto-discovery, zero-downtime rolling updates, automatic TLS certificate management via cert-manager (Let's Encrypt), and seamless GitOps integration through ArgoCD. Outside NGINX requires manual static IP maintenance and configuration reload scripts whenever pods scale.",
+      "category": "Kubernetes"
+    },
+    {
+      "id": "q5",
+      "question": "What is the difference between Docker build path and Docker build context?",
+      "answer": "The Dockerfile path (`-f path/to/Dockerfile`) tells Docker where the build instructions are located. The Docker build context (`docker build .`) tells Docker where to look for files referenced by `COPY` or `ADD`. If your Dockerfile is in `Backend/src/service/Dockerfile` but copies shared files from `Backend/src/shared/`, the build context must be set to `Backend/src`.",
+      "category": "Docker"
+    }
+  ]
+}

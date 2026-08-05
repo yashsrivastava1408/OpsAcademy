@@ -1,0 +1,28 @@
+{
+  "unitId": "realworld-internship-case-study",
+  "title": "Real-World Production Incident Post-Mortem & Architecture Debrief",
+  "authorRole": "DevOps / SRE Engineering Case Study",
+  "anonymizedDomain": "Enterprise SaaS Security & Cloud Infrastructure",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "1. Production Scenario & Infrastructure Goal",
+      "content": "A high-growth SaaS enterprise with 96-core bare-metal servers required a production-grade infrastructure modernization. The goal was to establish a zero-Kubernetes reproducible local development workflow for developers, a change-aware Jenkins CI pipeline, and an automated GitOps continuous deployment pipeline via ArgoCD, Harbor, and HashiCorp Vault."
+    },
+    {
+      "id": "local-contract",
+      "title": "2. Local Dev Architecture (Makefile + Docker Compose)",
+      "content": "Instead of forcing developers to run heavy Kubernetes clusters locally, we instituted the **Local Dev Contract**:\n- **Single Entrypoint**: `make dev` builds multi-stage local Docker images (`Dockerfile.local`) and launches microservices in Docker Compose.\n- **Secret Isolation**: `secrets.template.yaml` is committed with fake placeholders. Developers copy it to `secrets.yaml` which is strictly gitignored.\n- **No Local Overhead**: Vault, cert-manager, and ArgoCD are bypassed locally to ensure developers can spin up the stack in under 60 seconds."
+    },
+    {
+      "id": "ci-cd-pipeline",
+      "title": "3. Change-Aware CI/CD Architecture (Jenkins + ArgoCD)",
+      "content": "To prevent slow 40-minute builds on every commit, we built a **Change-Aware CI Pipeline**:\n- **Path Detection**: Jenkins compares `git diff` against `develop`/`main` to flag changed services.\n- **Global Safety Gates**: Runs secret leak scanning and Cargo vulnerability audits regardless of changed paths.\n- **GitOps CD Rollouts**: On release tags (`v1.2.0`), images are pushed to Harbor, Kustomize overlay image tags are updated, and ArgoCD automatically reconciles K8s clusters with self-healing and zero-downtime rolling updates."
+    },
+    {
+      "id": "post-mortem",
+      "title": "4. Incident Post-Mortem: Stuck Init:1/2 & NetworkPolicy Debugging",
+      "content": "During production rollout, `encryption-server` pods were stuck at `Init:1/2` waiting for Redis connectivity.\n- **Diagnosis**: DNS resolved `redis-service` correctly, but NetworkPolicy silently dropped traffic.\n- **Root Cause**: `NetworkPolicy` used `name: encryption` instead of K8s standard `kubernetes.io/metadata.name: encryption`.\n- **Fix**: Updated `namespaceSelector` label matching and added HTTP `/health` readiness probes (`initialDelaySeconds: 20`, `periodSeconds: 5`) to ensure pods pass health checks before ArgoCD marks deployments as `Healthy`."
+    }
+  ]
+}

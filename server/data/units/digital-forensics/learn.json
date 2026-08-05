@@ -1,0 +1,21 @@
+{
+  "unitId": "digital-forensics",
+  "title": "Digital Forensics & Evidence Preservation Methodology",
+  "modules": [
+    {
+      "id": "module-1",
+      "title": "1. Scientific Forensic Process & Chain of Custody",
+      "content": "### What is Digital Forensics?\n\nDigital forensics is the scientific process of preserving, identifying, extracting, documenting, and interpreting digital evidence so it can be used in legal proceedings, internal corporate investigations, or incident response.\n\nAccording to IBM's Cost of a Data Breach Report 2023, organizations with forensic-ready incident response teams contained breaches **54 days faster** — saving an average of **$1.49 million** per incident.\n\n#### 5-Stage Scientific Methodology:\n1. **Identification**: Locate all potential physical and cloud evidence sources.\n2. **Preservation**: Protect original media with hardware write blockers and SHA-256 hashing.\n3. **Acquisition**: Create byte-for-byte bitstream disk images (`.raw`, `.E01`) and RAM dumps (`.raw`, `.vmem`).\n4. **Analysis**: Reconstruct timeline, extract registry artifacts, and analyze unallocated space.\n5. **Reporting**: Produce court-admissible, reproducible forensic reports."
+    },
+    {
+      "id": "module-2",
+      "title": "2. Memory Forensics with Volatility Framework",
+      "content": "### RAM Volatility Analysis\n\nVolatile memory contains crucial ephemeral evidence: active process trees, injected DLLs, unencrypted network sockets, and plaintext passwords.\n\n#### Volatility 3 Command Reference:\n- **List Running Processes**: `vol -f memory.raw windows.pslist`\n- **Detect Hidden/Injected Processes**: `vol -f memory.raw windows.pstree`\n- **Extract Process Memory**: `vol -f memory.raw windows.dumpfiles --pid 1420`\n- **Inspect Active Sockets**: `vol -f memory.raw windows.netscan`"
+    },
+    {
+      "id": "module-3",
+      "title": "3. Disk Artifacts & Timeline Reconstruction",
+      "content": "### Windows & Linux Forensic Artifacts\n\n- **Master File Table ($MFT)**: Metadata for every file on NTFS partitions.\n- **Windows Registry**: User activity, auto-run persistence keys, recent documents.\n- **Event Logs (`.evtx`)**: Security Event ID 4624 (Logon Success), 4625 (Logon Failed), 7045 (New Service Installed).\n- **Prefetch (`.pf`)**: Proves execution timestamp and frequency of executable applications."
+    }
+  ]
+}

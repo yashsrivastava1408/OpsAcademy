@@ -1,0 +1,26 @@
+{
+  "unitId": "endpoint-security",
+  "title": "Enterprise Endpoint Security Architecture: EPP, EDR & XDR",
+  "modules": [
+    {
+      "id": "module-1",
+      "title": "1. What is Endpoint Security & Why It Exists",
+      "content": "### What is Endpoint Security?\n\nEndpoint security is the process of protecting network endpoints — desktops, laptops, mobile devices, servers, and IoT devices — from malicious threats and cyberattacks. It combines preventative protection (**EPP**) with continuous detection and response capabilities (**EDR**).\n\nAccording to IBM's Cost of a Data Breach Report 2023, the average data breach cost reached **$4.45 million** — a 15% increase over three years.\n\n#### Why Endpoint Security Exists:\n- **Expanding Attack Surface**: Remote work and cloud adoption mean devices are no longer perimeter-protected by traditional firewalls.\n- **Sophisticated Threats**: Fileless malware, zero-days, and ransomware bypass legacy antivirus.\n- **Zero-Trust Architecture**: Every device must be continuously verified; trust is never assumed.\n- **Compliance Mandates**: GDPR, HIPAA, and PCI-DSS mandate endpoint audit trails and encryption."
+    },
+    {
+      "id": "module-2",
+      "title": "2. Subdomains: EPP vs EDR vs XDR",
+      "content": "### The Endpoint Security Family\n\n| Capability | Primary Goal | Detection Method | Response Action | Leading Vendors |\n| :--- | :--- | :--- | :--- | :--- |\n| **EPP (Prevention)** | Block malware before execution | AV signatures + ML heuristics | Block file, quarantine | Microsoft Defender, Sophos |\n| **EDR (Detection)** | Continuous telemetry & investigation | Behavioral analysis, process trees | Isolate host, kill process | CrowdStrike Falcon, SentinelOne |\n| **XDR (Extended)** | Cross-layer attack correlation | Endpoint + Network + Cloud + Email | Automated cross-domain containment | Palo Alto Cortex XDR, M365 Defender |\n\n#### Core Capabilities Matrix:\n- **Antivirus / NGAV**: Real-time file scanning & signature updates.\n- **Behavioral Analysis**: Machine learning models detecting fileless malware.\n- **Application & Device Control**: Whitelisting approved apps and blocking unauthorized USB drives.\n- **Automated Isolation**: Immediately cutting network access to infected hosts in <5 seconds."
+    },
+    {
+      "id": "module-3",
+      "title": "3. Internal Architecture & Agent Mechanics",
+      "content": "### Three-Tier Enterprise Architecture\n\n```text\nAgent on Endpoint (Kernel Driver) ──> Local Engine (Behavioral Decision) ──> Cloud Management Console (Threat Intel Enrichment)\n```\n\n1. **Endpoint Agent**: Operates at the OS kernel level to intercept system calls, process creation, registry changes, and network sockets.\n2. **Local Engine**: Analyzes activity in real-time. If offline, local rules continue to protect the endpoint using cached heuristics.\n3. **Cloud Console**: Aggregates telemetry across millions of endpoints, enriches detections with global threat intelligence, and feeds SIEM/SOAR platforms."
+    },
+    {
+      "id": "module-4",
+      "title": "4. Enterprise Tooling Comparison & Deployment",
+      "content": "### Platform Comparison & GPO/Intune Deployment\n\n| Platform | Category | Core Strengths | Best Fit |\n| :--- | :--- | :--- | :--- |\n| **Microsoft Defender for Endpoint** | EPP + EDR | Native Windows integration, M365 ecosystem | Microsoft 365 & Azure AD enterprises |\n| **CrowdStrike Falcon** | EPP + EDR | Ultra-lightweight agent (<1% CPU), top threat intel | Enterprises wanting best-in-class EDR |\n| **SentinelOne Singularity** | EPP + EDR | Autonomous AI response & 1-click file rollback | Mid-market & autonomous SOC |\n| **Cortex XDR** | XDR | Cross-layer network & endpoint correlation | Palo Alto Networks ecosystem |\n\n#### GPO / PowerShell Onboarding Script:\n```powershell\n# Onboard Defender for Endpoint\nExpand-Archive -Path 'C:\\Deploy\\DefenderATP.zip' -DestinationPath 'C:\\Deploy\\ATP'\ncd C:\\Deploy\\ATP\n.\\WindowsDefenderATP-Onboarding.ps1\nGet-Service -Name 'Sense' | Select-Object Status\n```"
+    }
+  ]
+}

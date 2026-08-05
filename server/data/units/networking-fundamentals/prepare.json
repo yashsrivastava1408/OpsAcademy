@@ -24,6 +24,11 @@
       "id": "fc-n5",
       "front": "What is the difference between L4 and L7 load balancing?",
       "back": "**L4 (Transport)**: Routes based on IP + port. Fast, protocol-agnostic. Can't inspect HTTP content.\n\n**L7 (Application)**: Routes based on HTTP headers, URL paths, cookies. Can do path-based routing (/api → backend, / → frontend). Slightly slower but much smarter.\n\nExamples: AWS NLB = L4, AWS ALB = L7"
+    },
+    {
+      "id": "fc-n6",
+      "front": "What is SSH Port Forwarding (SSH Tunneling)?",
+      "back": "**Local Port Forwarding (`ssh -L 8080:db.internal:5432 user@bastion`)**: Accesses a remote private service through a bastion host as if it's on localhost:8080.\n\n**Remote Port Forwarding (`ssh -R 9000:localhost:3000 user@remote`)**: Exposes your local web server to a remote server."
     }
   ],
   "interviewQuestions": [
@@ -40,6 +45,13 @@
       "difficulty": "intermediate",
       "modelAnswer": "A **Firewall** is a security tool that filters traffic based on rules — it decides what's allowed in and what's blocked. It operates like a security guard checking IDs. Firewalls use rules based on source/destination IP, ports, and protocols.\n\nA **Load Balancer** is a traffic distribution tool — it accepts incoming requests and distributes them across multiple backend servers. It's like a receptionist directing visitors to available staff members.\n\nKey differences:\n- Firewall: Security (allow/deny). Load Balancer: Performance (distribute).\n- Firewall: Inspects packets. Load Balancer: Routes requests.\n- They often work together: Firewall filters malicious traffic, then the load balancer distributes the remaining clean traffic across servers.\n\nIn cloud: AWS Security Groups = Firewall, AWS ALB/NLB = Load Balancer.",
       "keyPoints": ["Firewall = security filtering", "Load Balancer = traffic distribution", "They work together in practice", "Cloud equivalents: Security Groups + ALB/NLB"]
+    },
+    {
+      "id": "iq-n3",
+      "question": "Explain key DNS record types: A, AAAA, CNAME, MX, and TXT.",
+      "difficulty": "beginner",
+      "modelAnswer": "- **A Record**: Maps a domain name to an IPv4 address (e.g., example.com → 93.184.216.34).\n- **AAAA Record**: Maps a domain name to an IPv6 address.\n- **CNAME (Canonical Name)**: Alias pointing one domain to another (e.g., www.example.com → example.com).\n- **MX Record**: Specifies mail servers responsible for receiving email for the domain.\n- **TXT Record**: Holds arbitrary text data, commonly used for SPF/DKIM email verification and domain ownership validation.",
+      "keyPoints": ["A = IPv4 mapping", "AAAA = IPv6 mapping", "CNAME = domain alias", "MX = email servers", "TXT = SPF/DKIM security verification"]
     }
   ]
 }

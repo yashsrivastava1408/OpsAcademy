@@ -72,8 +72,8 @@ router.get('/:unitId', (req, res, next) => {
 router.get('/:unitId/:mode', (req, res, next) => {
   try {
     const { unitId, mode } = req.params;
-    if (!['learn', 'practice', 'prepare'].includes(mode)) {
-      return res.status(400).json({ success: false, error: 'Mode must be one of: learn, practice, prepare' });
+    if (!['learn', 'practice', 'prepare', 'casestudy'].includes(mode)) {
+      return res.status(400).json({ success: false, error: 'Mode must be one of: learn, practice, prepare, casestudy' });
     }
 
     const contentPath = path.join(UNITS_DIR, unitId, `${mode}.json`);

@@ -8,13 +8,13 @@
 /* ── CSS Custom Properties ────────────────────────────────── */
 :root {
   /* Background palette */
-  --bg-primary: #0a0e1a;
-  --bg-secondary: #0f1629;
-  --bg-tertiary: #151d35;
-  --bg-card: rgba(15, 22, 41, 0.75);
-  --bg-card-hover: rgba(21, 29, 53, 0.9);
-  --bg-glass: rgba(15, 22, 41, 0.45);
-  --bg-input: rgba(15, 22, 41, 0.7);
+  --bg-primary: #04060c;
+  --bg-secondary: #080d1a;
+  --bg-tertiary: #0e1426;
+  --bg-card: rgba(10, 16, 32, 0.85);
+  --bg-card-hover: rgba(14, 22, 42, 0.95);
+  --bg-glass: rgba(8, 13, 26, 0.6);
+  --bg-input: rgba(10, 16, 32, 0.8);
 
   /* Accent palette */
   --accent-cyan: #00d4ff;

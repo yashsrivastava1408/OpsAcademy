@@ -22,7 +22,7 @@
 
 | Feature | Description |
 |---|---|
-| **8 A-to-Z DevOps Courses** | Comprehensive curriculum covering Linux, Git, Docker, Kubernetes, Networking, CI/CD, AWS Cloud, and Monitoring |
+| **14 A-to-Z DevOps Courses** | Comprehensive curriculum covering Linux, Git, Docker, Kubernetes, Networking, CI/CD, AWS Cloud, Monitoring, Terraform IaC, System Design, DevSecOps, Bash, Python, and GitOps |
 | **3-Mode Learning System** | Learn (theory & concept quizzes), Practice (live terminal lab), and Prepare (flashcards & placement Q&A) for every unit |
 | **Mermaid.js Diagram Engine** | Client-side interactive vector diagrams (flowcharts, sequence diagrams, architecture maps) with dark-theme styling |
 | **Live Terminal** | Real Linux shell in the browser via `xterm.js` + WebSocket streaming with <50ms latency |
@@ -207,14 +207,17 @@ graph TB
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/opsacademy.git
-cd opsacademy
+git clone https://github.com/yashsrivastava1408/OpsAcademy.git
+cd OpsAcademy
 
 # Install server dependencies
 cd server && npm install
 
 # Install client dependencies
 cd ../client && npm install
+
+# (Optional) Install Python AI Hub dependencies
+cd ../ai-hub && pip install -r requirements.txt
 ```
 
 ### 2. Configure Environment
@@ -228,13 +231,22 @@ cp server/.env.example server/.env
 ### 3. Run Development Servers
 
 ```bash
-# Terminal 1 - Start the API Gateway
+# Option A: Start individual microservices
+
+# Terminal 1 - API Gateway
 cd server && npm run dev
 # Server running at http://localhost:4000 (PTY mode)
 
-# Terminal 2 - Start the React Client
+# Terminal 2 - React Client
 cd client && npm run dev
 # Client running at http://localhost:5173
+
+# Terminal 3 (Optional) - Python AI Agent Hub
+cd ai-hub && python app.py
+# AI Hub running at http://localhost:5005
+
+# Option B: Run entire stack via Docker Compose
+docker-compose up --build
 ```
 
 ### 4. Open in Browser
@@ -253,7 +265,9 @@ opsacademy/
 |   |   |   |-- Navbar/              # Navigation bar with mode status
 |   |   |   |-- Terminal/            # xterm.js WebSocket terminal
 |   |   |   |-- Quiz/                # Multiple-choice concept check component
-|   |   |   +-- Flashcard/           # Interactive 3D flip card component
+|   |   |   |-- Flashcard/           # Interactive 3D flip card component
+|   |   |   |-- MentorChat/          # AI Mentor chat component
+|   |   |   +-- CertificateModal/    # Course completion certificate modal
 |   |   |-- pages/
 |   |   |   |-- LandingPage.jsx      # Hero + features + architecture
 |   |   |   |-- DashboardPage.jsx    # Unit catalog with 3-mode buttons
@@ -264,6 +278,7 @@ opsacademy/
 |   |   |   +-- api.js               # Axios client + WS URL helper
 |   |   |-- App.jsx                  # Router setup
 |   |   +-- index.css                # Design system (CSS custom properties)
+|   |-- Dockerfile                   # Client Docker container spec
 |   |-- index.html                   # SEO-optimized HTML shell
 |   +-- package.json
 |
@@ -293,6 +308,7 @@ opsacademy/
 |   |   |-- sandboxRoutes.js         # Sandbox lifecycle REST API
 |   |   |-- unitRoutes.js            # Learning units & mode content API
 |   |   |-- labRoutes.js             # Sandbox test verification API
+|   |   |-- agentRoutes.js           # AI Agent Hub proxy API
 |   |   +-- authRoutes.js            # Register, login, profile API
 |   |-- services/
 |   |   |-- ptyService.js            # PTY sandbox engine (node-pty)
@@ -300,13 +316,33 @@ opsacademy/
 |   |   |-- sandboxManager.js        # Pluggable facade (mode switching)
 |   |   |-- terminalService.js       # WebSocket terminal stream handler
 |   |   +-- reaperService.js         # Auto-cleanup for stale sandboxes
+|   |-- Dockerfile                   # Server Docker container spec
 |   |-- server.js                    # Express + WS bootstrap
 |   |-- .env.example                 # Environment template
 |   +-- package.json
 |
-|-- ai-hub/                          # Python AI Agent Hub (Phase 3)
-|-- docker/                          # Dockerfiles (Phase 4)
-|-- k8s/                             # Kubernetes manifests (Phase 4)
+|-- ai-hub/                          # Python AI Agent Hub (Flask + LangGraph)
+|   |-- agents/                      # Multi-Agent implementations
+|   |   |-- abuse_scanner.py         # Isolation Forest & regex security scanner
+|   |   |-- lab_assessor.py          # Lab state evaluation agent
+|   |   |-- doc_retriever.py         # RAG retriever agent (Qdrant)
+|   |   +-- mentor.py                # Context-aware AI mentoring agent
+|   |-- app.py                       # Flask REST API server
+|   |-- pipeline.py                  # LangGraph multi-agent orchestration workflow
+|   |-- config.py                    # Environment configuration
+|   |-- requirements.txt             # Python dependencies
+|   +-- Dockerfile                   # AI Hub Docker container spec
+|
+|-- k8s/                             # Kubernetes manifests
+|   |-- server.yaml                  # Gateway deployment & service
+|   |-- ai-hub.yaml                  # AI Hub deployment & service
+|   |-- configmap.yaml               # Shared cluster configuration
+|   |-- ingress.yaml                 # Nginx Ingress routing
+|   +-- namespace.yaml               # Isolated K8s namespace
+|
+|-- docker-compose.yml               # Multi-container local orchestration
+|-- render.yaml                      # Render Blueprint IaC specification
+|-- OpsAcademy_Master_Plan.md        # Technical design & roadmap document
 |-- .gitignore
 +-- README.md
 ```
@@ -341,6 +377,13 @@ opsacademy/
 | `POST` | `/api/auth/register` | Register a new user |
 | `POST` | `/api/auth/login` | Authenticate user and receive JWT |
 | `GET` | `/api/auth/me` | Fetch authenticated user profile |
+
+### AI Hub & Agent Mentoring
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/agent/hint` | Request contextual AI mentor hint (or gateway fallback) |
+| `POST` | `/api/agent/scan` | Analyze command against security & anti-abuse pipeline |
 
 ### WebSocket
 

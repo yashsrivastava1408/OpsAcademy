@@ -1,0 +1,24 @@
+{
+  "unitId": "digital-forensics",
+  "title": "Interview Flashcards & GCFA Exam Prep: Digital Forensics",
+  "flashcards": [
+    {
+      "id": 1,
+      "question": "What is Chain of Custody and why is it essential in court?",
+      "answer": "Chain of Custody is the chronological paper trail or electronic log showing the seizure, custody, control, transfer, analysis, and disposition of digital evidence. Without a clear chain of custody, evidence can be ruled inadmissible in court due to potential tampering.",
+      "category": "Legal Admissibility"
+    },
+    {
+      "id": 2,
+      "question": "Why is a hardware write-blocker mandatory during disk acquisition?",
+      "answer": "Connecting a storage drive directly to an OS allows the OS to alter timestamps, write system metadata, or modify files. A hardware write-blocker prevents any write signals from reaching the evidence disk, guaranteeing a 100% byte-exact duplicate.",
+      "category": "Acquisition"
+    },
+    {
+      "id": 3,
+      "question": "What Windows Event IDs are most critical during breach investigation?",
+      "answer": "Event ID 4624 (Logon Success), Event ID 4625 (Logon Failed), Event ID 4720 (User Account Created), Event ID 7045 (New Service Installed - common for malware persistence), and Event ID 1102 (Audit Log Cleared).",
+      "category": "Artifact Analysis"
+    }
+  ]
+}

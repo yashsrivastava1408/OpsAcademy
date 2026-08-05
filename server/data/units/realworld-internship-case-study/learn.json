@@ -1,0 +1,26 @@
+{
+  "unitId": "realworld-internship-case-study",
+  "title": "Enterprise DevOps: Local Dev Contract, GitOps & Change-Aware CI/CD",
+  "modules": [
+    {
+      "id": "module-1",
+      "title": "1. Local Development Contract (Zero-K8s Repro)",
+      "content": "### The Local Dev Contract\n\n**Goal**: A developer should clone the repo and run `make dev` to get the microservice stack running locally using Docker and local secrets without needing a local Kubernetes cluster, Vault, or cert-manager.\n\n```text\nDeveloper Laptop\n├── Docker (containers: auth-server, encryption-server, sdk-backend, postgres, redis)\n├── Backend/local/secrets/secrets.yaml (GITIGNORED)\n└── Makefile (single entrypoint: make dev / make dev-down / make dev-clean)\n```\n\n#### Key Rules & Principles:\n1. **Environment Specific**: All local setup lives in `develop` branch or `Backend/local/` folder.\n2. **Local Secrets**: `secrets.template.yaml` is committed with fake placeholders. Developers copy it to `secrets.yaml` which is strictly `.gitignored`.\n3. **Multi-Stage Builds**: Local Dockerfiles (`Dockerfile.local`) build Rust inside Docker to ensure reproducible local builds on any OS without relying on CI binaries."
+    },
+    {
+      "id": "module-2",
+      "title": "2. Change-Aware Jenkins CI Pipeline",
+      "content": "### Intelligent CI Pipeline Architecture\n\nInstead of blindly rebuilding every service on every commit, an enterprise CI pipeline compares the current commit against the target branch and dynamically detects changes.\n\n```text\nGit Event Push → Checkout SCM → Change Detection → Global Safety Gates → Dynamic Build Matrix → Lint & Test → Build Docker\n```\n\n#### 1. Change Detection Flags:\n- `IS_APP_CHANGE`: Triggers unit tests and Rust clippy linting.\n- `IS_INFRA_CHANGE`: Triggers K8s YAML & Terraform syntax/policy checks.\n- `IS_DB_CHANGE`: Validates migration files and scans for destructive SQL (`DROP TABLE`, `TRUNCATE`).\n- `IS_DOC_CHANGE`: Skips heavy builds and marks as low-risk.\n\n#### 2. Global Safety Gates (Always On):\n- **Secret Leak Scan**: Ensures no API keys or tokens are hardcoded in Git history.\n- **Dependency Vulnerability Scan**: Scans dependency lockfiles against known CVE databases."
+    },
+    {
+      "id": "module-3",
+      "title": "3. GitOps Continuous Deployment (ArgoCD + Kustomize)",
+      "content": "### Continuous Deployment Architecture\n\n```text\nGitOps Repo (GitLab) ──(ArgoCD Polls)──> ArgoCD Reconciler ──(Applies Manifests)──> K8s Cluster ──(Pulls Image)──> Harbor Registry\n```\n\n#### Workflow Components:\n- **GitLab**: Stores desired state (manifests & overlays).\n- **ArgoCD**: Pull-based GitOps engine. Detects drift between Git desired state and K8s actual state.\n- **Harbor**: Immutable enterprise container image registry (`harbor.domain.me/app:v1.2.0`).\n- **Kustomize Overlays**:\n  - `overlays/dev`: 1 replica, auto-sync enabled.\n  - `overlays/staging`: 2 replicas, auto-sync or manual approval.\n  - `overlays/prod`: 3 replicas, high availability, manual approval required."
+    },
+    {
+      "id": "module-4",
+      "title": "4. On-Prem Architecture & Ingress Strategy",
+      "content": "### NGINX Inside K8s vs Outside K8s\n\nRunning NGINX as an **Ingress Controller inside Kubernetes** acts as a single entrypoint for all HTTP/S microservices:\n\n| Feature | Inside K8s (Ingress) | Outside K8s (Host NGINX) |\n| :--- | :--- | :--- |\n| **Pod Auto-Discovery** | ✅ YES (built-in) | ❌ NO (manual static IP config) |\n| **GitOps Integration** | ✅ YES (ArgoCD sync) | ❌ NO |\n| **Cert-Manager (Auto SSL)**| ✅ YES | ❌ NO (manual SSL renewals) |\n| **High Availability** | ✅ YES | ❌ NO (complex setup) |\n| **Zero-Downtime Rollouts**| ✅ YES | ❌ Difficult |\n\n### Proxmox VE Virtualization Layer:\n- **Master Node**: Control plane components.\n- **Worker Nodes**: Workload execution (apps, DBs, ingress, monitoring)."
+    }
+  ]
+}

@@ -15,7 +15,28 @@ import {
   Sparkles,
   Award,
   BookOpen,
+  Compass,
+  Globe,
+  Code2,
+  Activity,
+  Search,
 } from 'lucide-react';
+import {
+  FaAws,
+  FaJenkins,
+  FaDocker,
+  FaLinux,
+  FaGitAlt,
+  FaPython,
+  FaReact,
+  FaNodeJs,
+} from 'react-icons/fa6';
+import {
+  SiKubernetes,
+  SiGrafana,
+  SiTerraform,
+  SiArgo,
+} from 'react-icons/si';
 import './LandingPage.css';
 
 const DEMO_TABS = {
@@ -100,24 +121,25 @@ const FEATURES = [
     icon: <Zap size={24} />,
     title: 'Auto-Grading Verification',
     description: 'Automated test suite executing checks inside active sandboxes. Evaluates outputs and returns instant step-by-step verification.',
+    color: 'orange',
   },
 ];
 
 const CURRICULUM_COURSES = [
-  { title: 'Linux Fundamentals', category: 'Linux', icon: '🐧', sections: '8 Deep-Dive Modules' },
-  { title: 'Git & GitHub Workflow', category: 'Version Control', icon: '🔀', sections: '7 Deep-Dive Modules' },
-  { title: 'Docker Fundamentals', category: 'Containers', icon: '🐳', sections: '8 Deep-Dive Modules' },
-  { title: 'Kubernetes Orchestration', category: 'Kubernetes', icon: '☸️', sections: '8 Deep-Dive Modules' },
-  { title: 'Networking Fundamentals', category: 'Networking', icon: '🌐', sections: '6 Deep-Dive Modules' },
-  { title: 'CI/CD Pipelines', category: 'CI/CD', icon: '⚡', sections: '6 Deep-Dive Modules' },
-  { title: 'AWS Cloud Essentials', category: 'Cloud', icon: '☁️', sections: '6 Deep-Dive Modules' },
-  { title: 'Monitoring & Observability', category: 'Observability', icon: '📊', sections: '5 Deep-Dive Modules' },
-  { title: 'Terraform & IaC', category: 'Infrastructure', icon: '🏗️', sections: '4 Deep-Dive Modules' },
-  { title: 'System Design & Scalability', category: 'System Design', icon: '⚡', sections: '4 Deep-Dive Modules' },
-  { title: 'DevSecOps & Security', category: 'Security', icon: '🔒', sections: '2 Deep-Dive Modules' },
-  { title: 'Advanced Bash Automation', category: 'Automation', icon: '🐚', sections: '2 Deep-Dive Modules' },
-  { title: 'Python Cloud Automation', category: 'Automation', icon: '🐍', sections: '2 Deep-Dive Modules' },
-  { title: 'GitOps & ArgoCD', category: 'GitOps', icon: '🐙', sections: '2 Deep-Dive Modules' },
+  { title: 'Linux Fundamentals', category: 'Linux', icon: <FaLinux size={22} className="text-amber-400" />, sections: '8 Deep-Dive Modules' },
+  { title: 'Git & GitHub Workflow', category: 'Version Control', icon: <FaGitAlt size={22} className="text-orange-500" />, sections: '7 Deep-Dive Modules' },
+  { title: 'Docker Fundamentals', category: 'Containers', icon: <FaDocker size={22} className="text-cyan-400" />, sections: '8 Deep-Dive Modules' },
+  { title: 'Kubernetes Orchestration', category: 'Kubernetes', icon: <SiKubernetes size={22} className="text-blue-500" />, sections: '8 Deep-Dive Modules' },
+  { title: 'Networking Fundamentals', category: 'Networking', icon: <Globe size={22} className="text-green-400" />, sections: '6 Deep-Dive Modules' },
+  { title: 'CI/CD & Jenkins Pipelines', category: 'CI/CD', icon: <FaJenkins size={22} className="text-red-400" />, sections: '6 Deep-Dive Modules' },
+  { title: 'AWS Cloud Essentials', category: 'Cloud', icon: <FaAws size={22} className="text-amber-500" />, sections: '6 Deep-Dive Modules' },
+  { title: 'Monitoring & Grafana', category: 'Observability', icon: <SiGrafana size={22} className="text-orange-400" />, sections: '5 Deep-Dive Modules' },
+  { title: 'Terraform & IaC', category: 'Infrastructure', icon: <SiTerraform size={22} className="text-purple-400" />, sections: '4 Deep-Dive Modules' },
+  { title: 'System Design & Scalability', category: 'System Design', icon: <Cpu size={22} className="text-cyan-400" />, sections: '4 Deep-Dive Modules' },
+  { title: 'DevSecOps & Security', category: 'Security', icon: <Lock size={22} className="text-emerald-400" />, sections: '2 Deep-Dive Modules' },
+  { title: 'Advanced Bash Automation', category: 'Automation', icon: <Code2 size={22} className="text-cyan-400" />, sections: '2 Deep-Dive Modules' },
+  { title: 'Python Cloud Automation', category: 'Automation', icon: <FaPython size={22} className="text-blue-400" />, sections: '2 Deep-Dive Modules' },
+  { title: 'GitOps & ArgoCD', category: 'GitOps', icon: <SiArgo size={22} className="text-orange-400" />, sections: '2 Deep-Dive Modules' },
 ];
 
 const SECURITY_HIGHLIGHTS = [
@@ -128,17 +150,15 @@ const SECURITY_HIGHLIGHTS = [
 ];
 
 const TECH_STACK = [
-  { name: 'React 19', icon: '⚛️' },
-  { name: 'Node.js', icon: '🟢' },
-  { name: 'Docker', icon: '🐳' },
-  { name: 'Python', icon: '🐍' },
-  { name: 'LangGraph', icon: '🧠' },
-  { name: 'WebSocket', icon: '🔌' },
-  { name: 'Qdrant RAG', icon: '🔍' },
-  { name: 'Kubernetes', icon: '☸️' },
+  { name: 'React 19', icon: <FaReact size={22} className="text-cyan-400" /> },
+  { name: 'Node.js', icon: <FaNodeJs size={22} className="text-green-500" /> },
+  { name: 'Docker', icon: <FaDocker size={22} className="text-cyan-400" /> },
+  { name: 'Python', icon: <FaPython size={22} className="text-yellow-400" /> },
+  { name: 'LangGraph', icon: <Brain size={22} className="text-purple-400" /> },
+  { name: 'WebSocket', icon: <Activity size={22} className="text-cyan-400" /> },
+  { name: 'Qdrant RAG', icon: <Search size={22} className="text-purple-400" /> },
+  { name: 'Kubernetes', icon: <SiKubernetes size={22} className="text-blue-500" /> },
 ];
-
-
 
 export default function LandingPage() {
   const [activeDemoTab, setActiveDemoTab] = useState('bash');
@@ -188,39 +208,24 @@ export default function LandingPage() {
                 Start Learning
                 <ArrowRight size={18} />
               </Link>
-              <a href="#features" className="btn btn-secondary btn-lg">
-                Explore Platform
+              <Link to="/roadmap" className="btn btn-secondary btn-lg">
+                <Compass size={18} />
+                DevOps Roadmap
                 <ChevronRight size={18} />
-              </a>
-            </div>
-            <div className="hero-stats animate-fade-in-up" style={{ animationDelay: '300ms' }}>
-              <div className="hero-stat">
-                <span className="hero-stat-value">14</span>
-                <span className="hero-stat-label">A-to-Z Courses</span>
-              </div>
-              <div className="hero-stat-divider"></div>
-              <div className="hero-stat">
-                <span className="hero-stat-value">&lt;50ms</span>
-                <span className="hero-stat-label">Terminal Latency</span>
-              </div>
-              <div className="hero-stat-divider"></div>
-              <div className="hero-stat">
-                <span className="hero-stat-value">100%</span>
-                <span className="hero-stat-label">Sandboxed</span>
-              </div>
+              </Link>
             </div>
           </div>
 
           <div className="hero-terminal animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-            {/* Floating Animated Badges */}
+            {/* Floating Animated Badges with REAL Official Tech Brand Icons */}
             <div className="floating-badge badge-docker animate-float">
-              <span>🐳</span> Docker Ready
+              <FaDocker size={18} className="text-cyan-400" /> Docker Ready
             </div>
             <div className="floating-badge badge-k8s animate-float-delayed">
-              <span>☸️</span> K8s Cluster
+              <SiKubernetes size={18} className="text-blue-500" /> K8s Cluster
             </div>
             <div className="floating-badge badge-tf animate-float">
-              <span>🏗️</span> Terraform IaC
+              <SiTerraform size={18} className="text-purple-400" /> Terraform IaC
             </div>
 
             <div className="mock-terminal neon-border-glow">
@@ -241,15 +246,18 @@ export default function LandingPage() {
                     </button>
                   ))}
                 </div>
-                <div className="terminal-status-pill">
-                  <span className="status-dot"></span> Live PTY
+                <div className="terminal-live-badge">
+                  <span className="live-dot"></span> Live PTY
                 </div>
               </div>
+
               <div className="mock-terminal-body">
                 {DEMO_TABS[activeDemoTab].lines.map((line, i) => (
-                  <div key={i} className={`mock-line ${line.highlight ? 'highlight' : ''} ${line.cursor ? 'cursor-line' : ''}`}>
-                    {line.prompt && <span className="mock-prompt">$ </span>}
-                    <span className={line.cursor ? 'blink-cursor' : ''}>{line.text}</span>
+                  <div key={i} className="terminal-line">
+                    {line.prompt && <span className="term-prompt">$ </span>}
+                    <span className={line.highlight ? 'term-highlight' : line.cursor ? 'term-cursor' : 'term-output'}>
+                      {line.text}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -258,8 +266,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Features Section ───────────────────────────────── */}
-      <section className="features" id="features">
+      {/* ── Features Section ────────────────────────────────── */}
+      <section id="features" className="features-section">
         <div className="container">
           <div className="section-header">
             <h2 className="section-title">
@@ -272,8 +280,8 @@ export default function LandingPage() {
 
           <div className="features-grid stagger-children">
             {FEATURES.map((feature, i) => (
-              <div key={i} className="feature-card glass-card animate-fade-in-up">
-                <div className={`feature-icon icon-${feature.color}`}>
+              <div key={i} className="feature-card glass-card">
+                <div className={`feature-icon-wrapper feature-icon-${feature.color}`}>
                   {feature.icon}
                 </div>
                 <h3 className="feature-title">{feature.title}</h3>
@@ -284,12 +292,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── 14 Courses Showcase Section ──────────────────────── */}
-      <section className="curriculum-section">
+      {/* ── Curriculum Catalog Showcase ─────────────────────── */}
+      <section className="curriculum-showcase">
         <div className="container">
           <div className="section-header">
             <h2 className="section-title">
-              Complete <span className="gradient-text">A-to-Z DevOps Curriculum</span>
+              Complete A-to-Z <span className="gradient-text">DevOps Curriculum</span>
             </h2>
             <p className="section-subtitle">
               14 production-grade courses designed for campus placement drives and cloud engineering roles.
@@ -298,19 +306,12 @@ export default function LandingPage() {
 
           <div className="curriculum-grid stagger-children">
             {CURRICULUM_COURSES.map((course, i) => (
-              <Link key={i} to="/dashboard" className="curriculum-card glass-card animate-fade-in-up">
-                <div className="curriculum-card-header">
-                  <div className="curriculum-card-icon">{course.icon}</div>
-                  <span className="curriculum-cat">{course.category}</span>
-                </div>
-                <div className="curriculum-card-info">
-                  <h4 className="curriculum-title">{course.title}</h4>
-                  <div className="curriculum-card-footer">
-                    <span className="curriculum-meta">{course.sections}</span>
-                    <span className="curriculum-link-arrow">
-                      <ArrowRight size={14} />
-                    </span>
-                  </div>
+              <Link to="/dashboard" key={i} className="curriculum-card glass-card">
+                <div className="curriculum-card-icon">{course.icon}</div>
+                <div className="curriculum-card-content">
+                  <span className="curriculum-category">{course.category}</span>
+                  <h3 className="curriculum-title">{course.title}</h3>
+                  <span className="curriculum-sections">{course.sections}</span>
                 </div>
               </Link>
             ))}
@@ -470,12 +471,12 @@ export default function LandingPage() {
 
       {/* ── Footer ─────────────────────────────────────────── */}
       <footer className="footer">
-        <div className="container footer-inner">
+        <div className="container footer-content">
           <div className="footer-brand">
-            <Terminal size={16} />
+            <Terminal size={18} />
             <span>OpsAcademy</span>
           </div>
-          <p className="footer-text">
+          <p className="footer-copy">
             Built with ❤️ for DevOps learners. Powered by AI.
           </p>
         </div>

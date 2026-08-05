@@ -9,7 +9,6 @@ import {
   Lightbulb,
   Terminal,
   Loader,
-  ChevronRight,
   Copy,
   Check,
 } from 'lucide-react';
@@ -48,6 +47,218 @@ function MermaidBlock({ chart, title }) {
       />
     </div>
   );
+}
+
+/**
+ * Helper to parse inline bold markdown: **bold text**
+ */
+function parseInline(text) {
+  if (!text) return '';
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={idx}>{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
+/**
+ * Advanced Markdown String Parser (Headings, Code Blocks, Tables, Lists)
+ */
+function renderMarkdownString(markdownText, handleCopyCode, copiedIdx, unitId) {
+  if (!markdownText) return null;
+
+  const blocks = [];
+  const lines = markdownText.split('\n');
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // 1. Code block
+    if (line.trim().startsWith('```')) {
+      const lang = line.trim().replace('```', '');
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      blocks.push({
+        type: 'code',
+        language: lang || 'bash',
+        value: codeLines.join('\n'),
+      });
+      continue;
+    }
+
+    // 2. Markdown Table
+    if (line.trim().startsWith('|')) {
+      const tableLines = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        tableLines.push(lines[i].trim());
+        i++;
+      }
+
+      // Filter out separator line | :--- | :--- |
+      const rows = tableLines
+        .filter((l) => !l.match(/^\|[\s:-]+\|/))
+        .map((l) =>
+          l
+            .split('|')
+            .slice(1, -1)
+            .map((cell) => cell.trim())
+        );
+
+      if (rows.length > 0) {
+        const header = rows[0];
+        const body = rows.slice(1);
+        blocks.push({
+          type: 'table',
+          header,
+          body,
+        });
+      }
+      continue;
+    }
+
+    // 3. Headings
+    if (line.startsWith('### ')) {
+      blocks.push({ type: 'h3', value: line.replace('### ', '').trim() });
+      i++;
+      continue;
+    }
+    if (line.startsWith('#### ')) {
+      blocks.push({ type: 'h4', value: line.replace('#### ', '').trim() });
+      i++;
+      continue;
+    }
+
+    // 4. Bullet point lists
+    if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+      const listItems = [];
+      while (
+        i < lines.length &&
+        (lines[i].trim().startsWith('- ') || lines[i].trim().startsWith('* '))
+      ) {
+        listItems.push(lines[i].trim().replace(/^[-*]\s+/, ''));
+        i++;
+      }
+      blocks.push({ type: 'list', items: listItems });
+      continue;
+    }
+
+    // 5. Blank line
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+
+    // 6. Regular Paragraph
+    const paraLines = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !lines[i].trim().startsWith('```') &&
+      !lines[i].trim().startsWith('|') &&
+      !lines[i].startsWith('###') &&
+      !lines[i].trim().startsWith('- ') &&
+      !lines[i].trim().startsWith('* ')
+    ) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    blocks.push({ type: 'paragraph', value: paraLines.join(' ') });
+  }
+
+  return blocks.map((block, idx) => {
+    const key = `md-block-${idx}`;
+    switch (block.type) {
+      case 'h3':
+        return (
+          <h3 key={key} className="learn-subheading-3">
+            {parseInline(block.value)}
+          </h3>
+        );
+      case 'h4':
+        return (
+          <h4 key={key} className="learn-subheading-4">
+            {parseInline(block.value)}
+          </h4>
+        );
+      case 'paragraph':
+        return (
+          <p key={key} className="learn-paragraph">
+            {parseInline(block.value)}
+          </p>
+        );
+      case 'list':
+        return (
+          <ul key={key} className="learn-bullet-list">
+            {block.items.map((item, itemIdx) => (
+              <li key={itemIdx}>{parseInline(item)}</li>
+            ))}
+          </ul>
+        );
+      case 'code':
+        return (
+          <div key={key} className="learn-code-block glass-card">
+            <div className="code-header">
+              <span>{block.language ? `${block.language.toUpperCase()} Script / Config` : 'Shell / Configuration'}</span>
+              <div className="code-header-actions">
+                <button
+                  className="btn btn-ghost btn-sm code-copy-btn"
+                  onClick={() => handleCopyCode(block.value, idx)}
+                >
+                  {copiedIdx === idx ? (
+                    <>
+                      <Check size={14} className="copied-icon" /> Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={14} /> Copy
+                    </>
+                  )}
+                </button>
+                <Link to={`/unit/${unitId}/practice`} className="btn btn-secondary btn-sm code-run-btn">
+                  <Terminal size={12} /> Run in Shell
+                </Link>
+              </div>
+            </div>
+            <pre>
+              <code>{block.value}</code>
+            </pre>
+          </div>
+        );
+      case 'table':
+        return (
+          <div key={key} className="learn-table-wrapper glass-card">
+            <table className="learn-table">
+              <thead>
+                <tr>
+                  {block.header.map((col, cIdx) => (
+                    <th key={cIdx}>{parseInline(col)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {block.body.map((row, rIdx) => (
+                  <tr key={rIdx}>
+                    {row.map((cell, cIdx) => (
+                      <td key={cIdx}>{parseInline(cell)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      default:
+        return null;
+    }
+  });
 }
 
 export default function LearnPage() {
@@ -107,11 +318,15 @@ export default function LearnPage() {
           unitApi.getMode(unitId, 'learn'),
         ]);
 
-        setMeta(metaRes.data.data);
-        setContent(contentRes.data.data);
+        const metaData = metaRes.data.data;
+        const contentData = contentRes.data.data;
 
-        if (contentRes.data.data.sections?.length > 0) {
-          setActiveSection(contentRes.data.data.sections[0].id);
+        setMeta(metaData);
+        setContent(contentData);
+
+        const sectionsList = contentData.sections || contentData.modules || [];
+        if (sectionsList.length > 0) {
+          setActiveSection(sectionsList[0].id);
         }
       } catch (err) {
         console.error('Failed to load learn content:', err);
@@ -163,12 +378,14 @@ export default function LearnPage() {
     );
   }
 
+  const sectionsList = content.sections || content.modules || [];
+
   const renderContentBlock = (block, idx) => {
     switch (block.type) {
       case 'text':
         return (
           <p key={idx} className="learn-paragraph">
-            {block.value}
+            {parseInline(block.value)}
           </p>
         );
 
@@ -213,7 +430,7 @@ export default function LearnPage() {
         return (
           <div key={idx} className={`learn-callout ${block.style}`}>
             {icons[block.style] || icons.info}
-            <div className="callout-content">{block.value}</div>
+            <div className="callout-content">{parseInline(block.value)}</div>
           </div>
         );
       }
@@ -232,6 +449,16 @@ export default function LearnPage() {
       default:
         return null;
     }
+  };
+
+  const renderSectionContent = (sectionContent) => {
+    if (Array.isArray(sectionContent)) {
+      return sectionContent.map((block, idx) => renderContentBlock(block, idx));
+    }
+    if (typeof sectionContent === 'string') {
+      return renderMarkdownString(sectionContent, handleCopyCode, copiedIdx, unitId);
+    }
+    return null;
   };
 
   return (
@@ -263,7 +490,7 @@ export default function LearnPage() {
         <aside className="learn-sidebar">
           <h3>Table of Contents</h3>
           <nav className="toc-nav">
-            {content.sections.map((sec) => (
+            {sectionsList.map((sec) => (
               <a
                 key={sec.id}
                 href={`#${sec.id}`}
@@ -279,11 +506,11 @@ export default function LearnPage() {
 
         {/* Lesson Body */}
         <main className="learn-body">
-          {content.sections.map((section) => (
+          {sectionsList.map((section) => (
             <section key={section.id} id={section.id} className="learn-section">
               <h2 className="section-heading">{section.title}</h2>
               <div className="section-blocks">
-                {section.content.map((block, idx) => renderContentBlock(block, idx))}
+                {renderSectionContent(section.content)}
               </div>
 
               {/* Embedded Quiz */}
@@ -298,7 +525,7 @@ export default function LearnPage() {
               <p>Apply what you just learned in a live interactive sandbox terminal.</p>
             </div>
             <Link to={`/unit/${unitId}/practice`} className="btn btn-primary btn-lg">
-              Start Practice Lab <ChevronRight size={18} />
+              Launch Practice Lab
             </Link>
           </div>
         </main>

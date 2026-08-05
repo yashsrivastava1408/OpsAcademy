@@ -1,0 +1,27 @@
+{
+  "unitId": "digital-forensics",
+  "title": "Practice Lab: Memory Analysis, Hashing & Timeline Forensic Reconstruction",
+  "steps": [
+    {
+      "step": 1,
+      "title": "Verify Evidence SHA-256 Hash Integrity",
+      "instruction": "Compute the SHA-256 cryptographic hash of evidence file 'evidence_mem.raw' using sha256sum to ensure zero alteration.",
+      "hint": "Run sha256sum evidence_mem.raw in the terminal.",
+      "command": "sha256sum /tmp/evidence_mem.raw"
+    },
+    {
+      "step": 2,
+      "title": "Analyze Memory Dump with Volatility 3",
+      "instruction": "Run Volatility to inspect process tree and identify suspicious PowerShell child processes in the memory dump.",
+      "hint": "Use vol -f /tmp/evidence_mem.raw windows.pstree.",
+      "command": "python3 -m volatility3 -f /tmp/evidence_mem.raw windows.pstree"
+    },
+    {
+      "step": 3,
+      "title": "Network Sockets Forensic Scan",
+      "instruction": "Extract active TCP/UDP network connections from memory to locate C2 server communication sockets.",
+      "hint": "Run windows.netscan plugin.",
+      "command": "python3 -m volatility3 -f /tmp/evidence_mem.raw windows.netscan"
+    }
+  ]
+}

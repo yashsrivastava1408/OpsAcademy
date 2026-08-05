@@ -36,8 +36,8 @@
 .orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.35;
+  filter: blur(110px);
+  opacity: 0.45;
 }
 .orb-1 {
   width: 500px;

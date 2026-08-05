@@ -1,0 +1,16 @@
+{
+  "id": "endpoint-security",
+  "title": "Enterprise Endpoint Security: EPP, EDR & XDR Defense",
+  "description": "Comprehensive enterprise learning module covering EPP prevention, EDR continuous telemetry, XDR cross-layer correlation, Defender GPO rollout, CrowdStrike auto-isolation, and Intune BitLocker enforcement.",
+  "category": "Security",
+  "difficulty": "advanced",
+  "duration": "75 min",
+  "objectives": [
+    "Differentiate EPP prevention, EDR detection/response, and XDR cross-layer correlation",
+    "Deploy Microsoft Defender for Endpoint via PowerShell and Group Policy (GPO)",
+    "Configure CrowdStrike Falcon automatic ransomware containment & host isolation policies",
+    "Enforce BitLocker full-disk encryption and Azure AD recovery key backup via Intune"
+  ],
+  "featured": true,
+  "isSecurityMasterclass": true
+}

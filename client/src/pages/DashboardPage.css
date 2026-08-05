@@ -7,6 +7,11 @@
   min-height: calc(100vh - 64px);
 }
 
+.dashboard .container {
+  max-width: 1720px;
+  padding: 0 32px;
+}
+
 /* ── Stats Bar ────────────────────────────────────────────── */
 .dashboard-stats {
   display: grid;
@@ -50,6 +55,87 @@
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+/* ── Case Study Featured Card ─────────────────────────────── */
+.case-study-card {
+  border: 1px solid rgba(0, 212, 255, 0.4) !important;
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.15) !important;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.9)) !important;
+}
+
+.case-study-card:hover {
+  box-shadow: 0 0 40px rgba(0, 212, 255, 0.3) !important;
+}
+
+.badge-case-study {
+  background: rgba(0, 212, 255, 0.15);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  color: #00d4ff;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+/* ── Featured Hero Case Study Banner ────────────────────────── */
+.featured-case-study-hero {
+  margin-bottom: 2.5rem;
+  padding: 2.2rem;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.92) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  border-radius: 20px;
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 212, 255, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+
+.featured-case-study-hero::before {
+  content: '';
+  position: absolute;
+  top: -40%;
+  right: -10%;
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(0, 212, 255, 0.18) 0%, rgba(124, 58, 237, 0.1) 60%, transparent 80%);
+  pointer-events: none;
+}
+
+.badge-case-study-glow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.85rem;
+  background: rgba(0, 212, 255, 0.15);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  border-radius: 100px;
+  color: #00d4ff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-bottom: 1rem;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);
+}
+
+.hero-case-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.3;
+  margin: 0 0 0.75rem 0;
+}
+
+.hero-case-desc {
+  color: #94a3b8;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  max-width: 900px;
+  margin: 0 0 1.5rem 0;
+}
+
+.hero-case-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 /* ── Filters ──────────────────────────────────────────────── */
@@ -146,8 +232,8 @@
 /* ── Lab Cards ────────────────────────────────────────────── */
 .labs-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 24px;
 }
 
 .lab-card {
@@ -266,13 +352,24 @@
 }
 
 .mode-btn.mode-prepare {
-  background: var(--accent-orange-dim);
-  color: var(--accent-orange);
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  background: var(--accent-purple-dim);
+  color: var(--accent-purple);
+  border: 1px solid rgba(124, 58, 237, 0.2);
 }
 .mode-btn.mode-prepare:hover {
-  background: rgba(245, 158, 11, 0.25);
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.2);
+  background: rgba(124, 58, 237, 0.25);
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.2);
+}
+
+.mode-btn.mode-casestudy {
+  background: rgba(0, 212, 255, 0.18);
+  color: #00d4ff;
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  font-weight: 700;
+}
+.mode-btn.mode-casestudy:hover {
+  background: rgba(0, 212, 255, 0.3);
+  box-shadow: 0 0 14px rgba(0, 212, 255, 0.35);
 }
 
 .dashboard-loading {
@@ -326,3 +423,151 @@
     align-items: flex-start;
   }
 }
+
+/* ── Dashboard Section Banners ────────────────────────────── */
+.dashboard-section {
+  margin-bottom: 48px;
+}
+
+.section-header-banner {
+  margin-bottom: 24px;
+}
+
+.section-header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.section-badge-glow {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  background: rgba(0, 212, 255, 0.15);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  color: var(--accent-cyan, #00d4ff);
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 100px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
+}
+
+/* ── Side-by-Side Dual Workspace Layout ────────────────────── */
+.workspace-split-container {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  align-items: start;
+  width: 100%;
+}
+
+.workspace-left-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.workspace-right-panel {
+  position: sticky;
+  top: 84px;
+  width: 360px;
+  max-width: 100%;
+}
+
+.catalog-panel-header {
+  margin-bottom: 20px;
+}
+
+.catalog-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.badge-catalog {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 100px;
+  text-transform: uppercase;
+}
+
+.clear-week-filter {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 4px 10px;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-week-filter:hover {
+  background: #ef4444;
+  color: #fff;
+}
+
+.catalog-panel-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #fff;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unit-count-badge {
+  font-size: 1rem;
+  color: var(--accent-cyan, #00d4ff);
+  font-family: var(--font-mono);
+}
+
+.unit-card-highlighted {
+  border-color: rgba(0, 212, 255, 0.6) !important;
+  box-shadow: 0 0 24px rgba(0, 212, 255, 0.25) !important;
+  transform: translateY(-3px);
+}
+
+@media (max-width: 1024px) {
+  .workspace-split-container {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-left-panel {
+    position: static;
+  }
+}
+
+
+.section-title-gradient {
+  font-size: 1.6rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+}
+
+.section-subtitle {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.95rem;
+  margin: 0;
+  max-width: 750px;
+  line-height: 1.5;
+}
+
+

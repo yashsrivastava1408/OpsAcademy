@@ -1,0 +1,27 @@
+{
+  "unitId": "realworld-internship-case-study",
+  "title": "Practice Lab: Local Dev Contract & K8s NetworkPolicy Debugging",
+  "steps": [
+    {
+      "step": 1,
+      "title": "Create Local Dev Makefile Entrypoint",
+      "instruction": "Create a Makefile with targets for `dev` (runs `docker compose up -d`), `dev-down` (`docker compose down`), and `dev-logs` (`docker compose logs -f`).",
+      "hint": "Use docker compose -f Backend/local/docker-compose.yml up -d in your Makefile target.",
+      "command": "make dev"
+    },
+    {
+      "step": 2,
+      "title": "Setup Gitignored Secret Template",
+      "instruction": "Copy secrets.template.yaml to secrets.yaml inside Backend/local/secrets/ and add Backend/local/secrets/secrets.yaml to .gitignore.",
+      "hint": "Add 'Backend/local/secrets/secrets.yaml' to .gitignore.",
+      "command": "grep 'secrets.yaml' .gitignore"
+    },
+    {
+      "step": 3,
+      "title": "Debug NetworkPolicy Label Mismatch",
+      "instruction": "Pods are stuck at Init:1/2 because NetworkPolicy uses 'name: encryption' instead of 'kubernetes.io/metadata.name: encryption'. Fix the label selector.",
+      "hint": "Inspect the namespace metadata label using kubectl get ns encryption --show-labels.",
+      "command": "kubectl apply -f Backend/k8s/base/network-policy.yaml"
+    }
+  ]
+}

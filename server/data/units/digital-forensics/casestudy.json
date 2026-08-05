@@ -1,0 +1,23 @@
+{
+  "unitId": "digital-forensics",
+  "title": "Real-World Incident Forensics Post-Mortem",
+  "caseStudies": [
+    {
+      "id": "case-dfir-1",
+      "title": "Case Study: Corporate Espionage & Memory Dump Forensic Investigation",
+      "industry": "High-Tech Manufacturing",
+      "scale": "5,000 Employees",
+      "problem": "Unusual data exfiltration detected over encrypted HTTPS connection to unlisted IP address.",
+      "tools": ["Volatility 3 Framework", "Autopsy 4", "FTK Imager"],
+      "solution": [
+        "Acquired raw RAM image from suspicious workstation before rebooting",
+        "Ran Volatility process tree plugin to reveal rogue DLL injected into lsass.exe process",
+        "Reconstructed file access timeline from $MFT and Windows Registry artifacts"
+      ],
+      "outcomes": [
+        "Identified insider threat attempting to exfiltrate proprietary CAD blueprints",
+        "Produced court-ready SHA-256 verified forensic report resulting in employee termination & legal prosecution"
+      ]
+    }
+  ]
+}

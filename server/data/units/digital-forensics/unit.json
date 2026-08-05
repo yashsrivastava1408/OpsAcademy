@@ -1,0 +1,16 @@
+{
+  "id": "digital-forensics",
+  "title": "Digital Forensics & Incident Response (DFIR) Masterclass",
+  "description": "Scientific digital evidence preservation, chain of custody, Volatility memory analysis, Autopsy disk artifacts, Wireshark network forensics, and court-admissible reporting.",
+  "category": "Security",
+  "difficulty": "advanced",
+  "duration": "90 min",
+  "objectives": [
+    "Master the 5-stage scientific forensic methodology (Preservation, Acquisition, Analysis, Reporting)",
+    "Perform RAM memory analysis using Volatility framework to extract malicious process trees",
+    "Analyze disk images and file system artifacts (MFT, Registry, Event Logs) using Autopsy",
+    "Maintain legally admissible chain of custody and SHA-256 cryptographic hash integrity"
+  ],
+  "featured": true,
+  "isSecurityMasterclass": true
+}

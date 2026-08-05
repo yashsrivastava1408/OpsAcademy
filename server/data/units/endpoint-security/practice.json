@@ -1,0 +1,27 @@
+{
+  "unitId": "endpoint-security",
+  "title": "Practice Lab: Defender GPO Deployment, CrowdStrike API & BitLocker",
+  "steps": [
+    {
+      "step": 1,
+      "title": "Onboard Microsoft Defender for Endpoint",
+      "instruction": "Execute PowerShell commands to verify Defender services ('WinDefend' and 'Sense') and verify real-time cloud protection status.",
+      "hint": "Run Get-Service -Name WinDefend, Sense and Get-MpPreference in PowerShell.",
+      "command": "powershell -Command \"Get-Service -Name WinDefend, Sense\""
+    },
+    {
+      "step": 2,
+      "title": "Configure CrowdStrike Falcon Host Auto-Isolation API",
+      "instruction": "Simulate calling CrowdStrike Falcon REST API to automatically isolate a compromised host upon detecting critical ransomware behavior.",
+      "hint": "Send POST request to CrowdStrike device action endpoint /devices/entities/host-actions/v1.",
+      "command": "curl -X POST https://api.crowdstrike.com/devices/entities/host-actions/v1 -d '{\"action_name\":\"contain\"}'"
+    },
+    {
+      "step": 3,
+      "title": "Verify BitLocker XTS-AES Encryption via Intune",
+      "instruction": "Check BitLocker drive encryption status on OS volume C: and ensure recovery keys are backed up to Active Directory / Azure AD.",
+      "hint": "Run Get-BitLockerVolume -MountPoint C: and Assert-BitLockerKeyProtector.",
+      "command": "powershell -Command \"Get-BitLockerVolume -MountPoint C:\""
+    }
+  ]
+}
