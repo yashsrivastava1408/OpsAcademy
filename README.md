@@ -453,25 +453,6 @@ graph LR
 
 ---
 
-## Roadmap
-
-- [x] **Phase 1** — Terminal streaming core (WebSocket + xterm.js + PTY/Docker)
-- [x] **Phase 1** — React frontend (Landing, Dashboard, Lab pages)
-- [x] **Phase 1** — Dual-mode sandbox engine
-- [x] **Phase 2** — 3-Mode Learning System (Learn, Practice, Prepare)
-- [x] **Phase 2** — Automated lab verification engine
-- [x] **Phase 2** — JWT authentication API & bcrypt hashing
-- [x] **Phase 2** — Auto-reaper background cleanup service
-- [x] **Phase 3** — Student Placement Toolkit (Readiness score & progress engine)
-- [x] **Phase 3** — Course content expansion (Git & Kubernetes units)
-- [x] **Phase 3** — Shareable completion certificate generator
-- [x] **Phase 4** — Python AI Agent Hub (Flask + LangGraph multi-agent graph)
-- [x] **Phase 4** — RAG with Qdrant vector DB
-- [x] **Phase 4** — Anti-abuse ML detection (Isolation Forest)
-- [x] **Phase 5** — Docker Compose & Kubernetes production manifests
-- [x] **Phase 5** — Production deployment to Vercel + Render
-
----
 
 ## Engineering Highlights
 
