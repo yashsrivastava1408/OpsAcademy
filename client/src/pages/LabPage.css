@@ -280,8 +280,48 @@
 /* ── Terminal Panel ───────────────────────────────────────── */
 .lab-terminal {
   display: flex;
+  flex-direction: column;
   padding: 12px;
   min-height: 0;
+}
+
+.sandbox-coming-soon-banner {
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  background: rgba(13, 17, 23, 0.85);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.cs-badge-pill {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--accent-orange);
+  background: var(--accent-orange-dim);
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  display: inline-flex;
+  align-self: flex-start;
+}
+
+.sandbox-coming-soon-banner h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  line-height: 1.2;
+}
+
+.sandbox-coming-soon-banner p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
 }
 
 .lab-terminal .terminal-container {

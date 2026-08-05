@@ -351,6 +351,19 @@
   box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
 }
 
+.mode-soon-pill {
+  font-size: 0.6rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  background: var(--accent-orange-dim);
+  color: var(--accent-orange);
+  padding: 1px 5px;
+  border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  margin-left: 2px;
+}
+
 .mode-btn.mode-prepare {
   background: var(--accent-purple-dim);
   color: var(--accent-purple);
