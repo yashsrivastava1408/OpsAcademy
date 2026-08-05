@@ -52,6 +52,7 @@ const FALLBACK_UNITS = [
 
 export default function DashboardPage() {
   const [units, setUnits] = useState(FALLBACK_UNITS);
+  const [_loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');

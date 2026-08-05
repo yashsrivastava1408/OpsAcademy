@@ -22,7 +22,20 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: config.clientUrl,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    // Allow localhost, any vercel.app domain, and configured CLIENT_URL
+    if (
+      origin.includes('localhost') ||
+      origin.includes('vercel.app') ||
+      origin.includes('onrender.com') ||
+      origin === config.clientUrl
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
   credentials: true,
 }));
 app.use(express.json());
