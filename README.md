@@ -32,13 +32,10 @@ OpsAcademy eliminates passive video consumption by enforcing a three-mode hands-
 
 | **Platform Dashboard** | **Course Catalog & 3-Mode Engine** |
 | :---: | :---: |
-| ![OpsAcademy Dashboard](docs/images/dashboard.png) | ![Course Catalog](docs/images/course-catalogue.png) |
+| ![OpsAcademy Dashboard](<img width="1710" height="981" alt="Screenshot 2026-08-11 at 2 56 32 AM" src="https://github.com/user-attachments/assets/80c0f1a8-cdc2-4196-8b42-5e093dd64225" />
+) | ![Course Catalog](<img width="1710" height="976" alt="Screenshot 2026-08-11 at 2 56 43 AM" src="https://github.com/user-attachments/assets/15d5d276-3435-4250-a21a-5ba4905c0a66" />
+) |
 | *Real-time Learning Progress & Hands-on Terminal Analytics* | *14 Comprehensive DevOps & Cloud Placement Paths* |
-
-| **Interactive Terminal & AI Mentor** | **Placement Flashcards & Interview Mode** |
-| :---: | :---: |
-| ![Web Terminal & AI Mentor](docs/images/web-terminal.png) | ![Placement Interview Prep](docs/images/placement-prep.png) |
-| *Sub-50ms Low-Latency Web Terminal with AI Guidance* | *Interactive Recruiter Cards & High-Scoring Answer Keys* |
 
 ---
 
