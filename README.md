@@ -5,7 +5,30 @@
 
 ---
 
-## 💥 The Problem
+## Table of Contents
+- [📸 Screenshots & Demo](#-screenshots--demo)
+- [The Problem & Solution](#-the-problem)
+- [The Student Journey](#-the-student-journey)
+- [Quantified Engineering Metrics](#-quantified-engineering-metrics)
+- [Architecture & Tech Stack](#%EF%B8%8F-architecture--tech-stack)
+- [14 Production-Grade Courses](#-14-production-grade-courses)
+- [Quick Start](#-quick-start-local-development)
+
+---
+
+## 📸 Screenshots & Demo
+
+| **Platform Dashboard** | **Course Catalogue & 3-Mode Engine** |
+| :---: | :---: |
+| ![OpsAcademy Dashboard](docs/images/dashboard.png) | ![Course Catalogue](docs/images/course-catalogue.png) |
+| *Real-time Learning Progress & Hands-on Terminal Analytics* | *14 Comprehensive DevOps & Cloud Placement Paths* |
+
+| **Interactive Terminal & AI Mentor** | **Placement Flashcards & Interview Mode** |
+| :---: | :---: |
+| ![Web Terminal & AI Mentor](docs/images/web-terminal.png) | ![Placement Interview Prep](docs/images/placement-prep.png) |
+| *<50ms Low-Latency Web Terminal with AI Guidance* | *3D Recruiter Flip Cards & High-Scoring Answer Keys* |
+
+---
 Most engineering students get trapped in **"Tutorial Hell"** — watching 20-hour video courses without executing commands. When placed in front of a live Linux terminal or asked real-world architecture questions during placement interviews, **they freeze**.
 
 ## 💡 The Solution
