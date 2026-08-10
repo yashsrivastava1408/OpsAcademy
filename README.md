@@ -1,168 +1,222 @@
-# 🚀 OpsAcademy — AI-Powered DevOps Learning Platform
+# OpsAcademy: Interactive DevOps & Cloud Engineering Learning Platform
 
-> **Learn DevOps by Doing, Not Watching.**  
-> An interactive, browser-based learning platform that bridges the gap between watching video tutorials and cracking real-world DevOps placement interviews.
+An interactive, browser-based learning ecosystem designed to bridge the gap between theoretical knowledge and real-world DevOps execution. OpsAcademy integrates hands-on web terminal sandboxes, multi-agent AI mentoring, and placement-focused interview preparation.
 
 ---
 
 ## Table of Contents
-- [📸 Screenshots & Demo](#-screenshots--demo)
-- [The Problem & Solution](#-the-problem)
-- [The Student Journey](#-the-student-journey)
-- [Quantified Engineering Metrics](#-quantified-engineering-metrics)
-- [Architecture & Tech Stack](#%EF%B8%8F-architecture--tech-stack)
-- [14 Production-Grade Courses](#-14-production-grade-courses)
-- [Quick Start](#-quick-start-local-development)
+- [Executive Overview](#executive-overview)
+- [Screenshots & Demo](#screenshots--demo)
+- [System Architecture](#system-architecture)
+- [Multi-Agent AI Mentoring & Terminal Sequence](#multi-agent-ai-mentoring--terminal-sequence)
+- [Student Learning Journey](#student-learning-journey)
+- [Quantified Engineering Metrics](#quantified-engineering-metrics)
+- [Production Course Catalog](#production-course-catalog)
+- [Technology Stack](#technology-stack)
+- [Local Installation & Development](#local-installation--development)
+- [License & Authorship](#license--authorship)
 
 ---
 
-## 📸 Screenshots & Demo
+## Executive Overview
 
-| **Platform Dashboard** | **Course Catalogue & 3-Mode Engine** |
+OpsAcademy eliminates passive video consumption by enforcing a three-mode hands-on execution methodology:
+
+1. **Learn Mode**: Concept breakdown featuring architecture diagrams, system analogies, and interactive vector visualizations.
+2. **Practice Mode**: Step-by-step terminal execution in an isolated sandbox with real-time verification guidelines and contextual AI assistance.
+3. **Prepare Mode**: Flashcard decks, recruiter evaluation rubrics, and model answer keys tailored for Cloud and DevOps placement interviews.
+
+---
+
+## Screenshots & Demo
+
+| **Platform Dashboard** | **Course Catalog & 3-Mode Engine** |
 | :---: | :---: |
-| ![OpsAcademy Dashboard](docs/images/dashboard.png) | ![Course Catalogue](docs/images/course-catalogue.png) |
+| ![OpsAcademy Dashboard](docs/images/dashboard.png) | ![Course Catalog](docs/images/course-catalogue.png) |
 | *Real-time Learning Progress & Hands-on Terminal Analytics* | *14 Comprehensive DevOps & Cloud Placement Paths* |
 
 | **Interactive Terminal & AI Mentor** | **Placement Flashcards & Interview Mode** |
 | :---: | :---: |
 | ![Web Terminal & AI Mentor](docs/images/web-terminal.png) | ![Placement Interview Prep](docs/images/placement-prep.png) |
-| *<50ms Low-Latency Web Terminal with AI Guidance* | *3D Recruiter Flip Cards & High-Scoring Answer Keys* |
-
----
-Most engineering students get trapped in **"Tutorial Hell"** — watching 20-hour video courses without executing commands. When placed in front of a live Linux terminal or asked real-world architecture questions during placement interviews, **they freeze**.
-
-## 💡 The Solution
-OpsAcademy replaces passive video consumption with an interactive **3-Mode Learning Engine**:
-1. 📖 **Learn Mode**: Interactive theory with real-world analogies & live Mermaid.js vector architecture diagrams.
-2. 💻 **Practice Mode**: Step-by-step terminal instructions with automated verification guidelines & AI mentoring.
-3. 🎯 **Prepare Mode**: Interactive 3D flip card decks and top recruiter model answer keys for campus placement drives.
+| *Sub-50ms Low-Latency Web Terminal with AI Guidance* | *Interactive Recruiter Cards & High-Scoring Answer Keys* |
 
 ---
 
-## 🗺️ The Student Journey
+## System Architecture
 
-```mermaid
-graph LR
-    A["🎓 Student Opens OpsAcademy"] --> B["📚 Chooses Course (e.g., Docker)"]
-    B --> C["📖 Mode 1: Reads Theory & Mermaid Diagrams"]
-    C --> D["🧩 Takes AI Concept Check Quiz"]
-    D --> E["💻 Mode 2: Opens Practice Instructions"]
-    E --> F["🤖 Asks AI Mentor for Contextual Hints"]
-    F --> G["🏆 Mode 3: Attempts Placement Flashcards"]
-    G --> H["✅ Progress Tracked & Placement Ready!"]
-    
-    style A fill:#0d1117,stroke:#00d4ff,color:#e2e8f0
-    style C fill:#0d1117,stroke:#7c3aed,color:#e2e8f0
-    style E fill:#0d1117,stroke:#f59e0b,color:#e2e8f0
-    style G fill:#0d1117,stroke:#10b981,color:#e2e8f0
-```
-
----
-
-## 📊 Quantified Engineering Metrics
-
-| Metric | Achievement | Impact |
-|---|---|---|
-| **Terminal Latency** | **<50ms** | Real-time WebSocket streaming (`xterm.js` → `node-pty`) |
-| **Idle Infrastructure Cost** | **~90% Reduction** | Background Auto-Reaper service cleans up stale sandboxes |
-| **Course Catalog** | **14 Courses** | Complete A-to-Z placement coverage (Linux → GitOps) |
-| **AI Mentor Retrieval** | **Contextual RAG** | LangGraph multi-agent pipeline + Qdrant Vector DB |
-
----
-
-## 🛠️ Architecture & Tech Stack
+OpsAcademy is built using a decoupled microservices architecture comprising a React frontend, a Node.js API Gateway managing PTY sandboxes and WebSockets, a Python Multi-Agent AI Hub, and persistent database layers.
 
 ```mermaid
 graph TB
-    subgraph Frontend["Client Layer"]
-        UI["React 19 + Vite"]
-        XT["xterm.js Terminal"]
+    subgraph Client["Client Layer"]
+        UI["React 19 SPA"]
+        TERM["xterm.js Web Terminal"]
     end
 
-    subgraph Backend["API Gateway"]
-        API["Node.js / Express"]
-        REAPER["Auto-Reaper Sweeper"]
-        PTY["PTY / Docker Engine"]
+    subgraph Gateway["API Gateway Layer"]
+        EXPRESS["Express.js Server"]
+        PTY["node-pty Terminal Process"]
+        SWEEPER["Auto-Reaper Cleanup Service"]
+        JWT["JWT Auth & Rate Limiter"]
     end
 
-    subgraph AI["AI Agent Hub"]
-        FLASK["Python / Flask"]
-        LG["LangGraph RAG Agent"]
+    subgraph AIHub["Intelligence Layer"]
+        FLASK["Python Flask Service"]
+        LANGGRAPH["LangGraph Multi-Agent RAG"]
+        FOREST["Isolation Forest Anomaly Detection"]
     end
 
-    subgraph Persistence["Database Layer"]
-        MONGO[("MongoDB Atlas")]
-        QDRANT[("Qdrant Vector DB")]
+    subgraph Data["Persistence Layer"]
+        MONGO[("MongoDB Atlas (User & Course State)")]
+        QDRANT[("Qdrant Cloud (Vector RAG Index)")]
     end
 
-    Frontend -->|HTTPS & WSS| Backend
-    Backend -->|REST API| AI
-    Backend -->|Mongoose| MONGO
-    AI -->|Vector Search| QDRANT
-    Backend -->|Spawn| PTY
+    Client -->|HTTPS / WSS| Gateway
+    Gateway -->|REST API| AIHub
+    Gateway -->|Mongoose ORM| MONGO
+    AIHub -->|Vector Search| QDRANT
+    Gateway -->|Spawn Process| PTY
+    SWEEPER -->|Reap Stale Sandboxes| PTY
 
-    style Frontend fill:#0d1117,stroke:#00d4ff,color:#e2e8f0
-    style Backend fill:#0d1117,stroke:#7c3aed,color:#e2e8f0
-    style AI fill:#0d1117,stroke:#f59e0b,color:#e2e8f0
-    style Persistence fill:#0d1117,stroke:#10b981,color:#e2e8f0
+    style Client fill:#0f172a,stroke:#0284c7,color:#f8fafc
+    style Gateway fill:#0f172a,stroke:#6366f1,color:#f8fafc
+    style AIHub fill:#0f172a,stroke:#d97706,color:#f8fafc
+    style Data fill:#0f172a,stroke:#059669,color:#f8fafc
 ```
 
+---
+
+## Multi-Agent AI Mentoring & Terminal Sequence
+
+The sequence diagram below illustrates the end-to-end execution flow when a student interacts with the web terminal and requests AI assistance.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Student as Student
+    participant Web as React Web Client
+    participant API as Node.js Gateway
+    participant PTY as node-pty Sandbox
+    participant AI as Python AI Hub (LangGraph)
+    participant Qdrant as Qdrant Vector DB
+
+    Student->>Web: Input Terminal Command
+    Web->>API: Send WebSocket frame (WSS)
+    API->>PTY: Write to pseudo-terminal stream
+    PTY-->>API: Stream stdout / stderr
+    API-->>Web: Stream output to xterm.js (<50ms)
+
+    opt Student Requests AI Assistance
+        Student->>Web: Click "Ask AI Mentor"
+        Web->>API: POST /api/ai/hint (Context + Error Log)
+        API->>AI: POST /api/intelligence/query
+        AI->>Qdrant: Semantic similarity search (Documentation & Solution)
+        Qdrant-->>AI: Return top-k relevant embeddings
+        AI->>AI: LangGraph evaluates error context & generates hint
+        AI-->>API: Return contextual guidance
+        API-->>Web: Display AI Hint in UI Panel
+    end
+```
+
+---
+
+## Student Learning Journey
+
+```mermaid
+flowchart TD
+    Start["Student Accesses OpsAcademy"] --> Auth["Authenticate via JWT / OAuth"]
+    Auth --> SelectCourse["Select Course Path (e.g., Docker Orchestration)"]
+    
+    SelectCourse --> Mode1["Learn Mode: Read Theory & View Architecture Diagrams"]
+    Mode1 --> Quiz["Pass Concept Check Quiz"]
+    
+    Quiz --> Mode2["Practice Mode: Spawn Interactive Sandbox Terminal"]
+    Mode2 --> TerminalExec["Execute Hands-on Commands in xterm.js"]
+    TerminalExec --> AIHelp{"Need Assistance?"}
+    AIHelp -- Yes --> AskAI["AI Mentor RAG Pipeline Provides Contextual Hint"]
+    AskAI --> TerminalExec
+    AIHelp -- No --> VerifyCmd["Automated Command Verification Passed"]
+    
+    VerifyCmd --> Mode3["Prepare Mode: Placement Interview Flashcards"]
+    Mode3 --> TrackProgress["Update MongoDB Progress Metrics"]
+    TrackProgress --> Complete["Placement Ready"]
+
+    style Start fill:#0f172a,stroke:#0284c7,color:#f8fafc
+    style Mode1 fill:#0f172a,stroke:#6366f1,color:#f8fafc
+    style Mode2 fill:#0f172a,stroke:#d97706,color:#f8fafc
+    style Mode3 fill:#0f172a,stroke:#059669,color:#f8fafc
+    style Complete fill:#0f172a,stroke:#10b981,color:#f8fafc
+```
+
+---
+
+## Quantified Engineering Metrics
+
+| Metric | Target / Benchmark | Implementation Detail |
+| :--- | :--- | :--- |
+| **Terminal Latency** | **<50ms** | Binary WebSocket streaming via `xterm.js` and `node-pty`. |
+| **Idle Resource Efficiency** | **~90% Savings** | Background Auto-Reaper service reaps inactive pseudo-terminals. |
+| **Curriculum Coverage** | **14 Paths** | Structured progression covering Linux, Kubernetes, Terraform, and GitOps. |
+| **AI Retrieval Latency** | **<400ms** | Cached Qdrant vector retrieval combined with LangGraph agent routing. |
+
+---
+
+## Production Course Catalog
+
+1. **Linux Fundamentals**: Kernel concepts, process management, file permissions, and shell navigation.
+2. **Git & GitHub Workflow**: Branching strategies, interactive rebasing, merge conflict resolution, and PR workflows.
+3. **Docker Containers**: Containerization mechanics, image optimization, multi-stage builds, and compose networking.
+4. **Kubernetes Orchestration**: Pods, Deployments, Services, Ingress Controllers, ConfigMaps, and Secrets.
+5. **Networking Fundamentals**: TCP/IP stack, DNS resolution, HTTP/S protocols, CIDR subnetting, and firewalls.
+6. **CI/CD Pipelines**: Automated workflows using GitHub Actions, artifact management, and release tagging.
+7. **AWS Cloud Essentials**: EC2, S3, IAM policies, VPC networking, and Security Groups.
+8. **Monitoring & Observability**: Prometheus metrics collection, Grafana dashboard visualization, and Alertmanager.
+9. **Terraform Infrastructure as Code**: Declarative provisioning, HCL syntax, state management, and module design.
+10. **System Design & High Availability**: Load balancing, auto-scaling, disaster recovery, and fault tolerance.
+11. **DevSecOps & Security**: Container vulnerability scanning, OWASP API security, and SBOM generation.
+12. **Advanced Bash Scripting**: Automation scripts, error trapping, parsing CLI flags, and cron jobs.
+13. **Python Cloud Automation**: Scripting AWS infrastructure management using `boto3` and REST SDKs.
+14. **GitOps & ArgoCD**: Declarative continuous delivery, cluster state synchronization, and automated rollbacks.
+
+---
+
+## Technology Stack
+
 - **Frontend**: React 19, Vite, xterm.js, Vanilla CSS Glassmorphism
-- **API Gateway**: Node.js, Express, `node-pty`, WebSockets, JWT, Mongoose
-- **AI Agent Hub**: Python, Flask, LangGraph Multi-Agent RAG, Isolation Forest ML
-- **Databases**: MongoDB Atlas (User Data & Progress), Qdrant Cloud (Vector RAG Embeddings)
+- **API Gateway**: Node.js, Express, `node-pty`, WebSockets, JWT Authentication, Mongoose ORM
+- **Intelligence Layer**: Python, Flask, LangGraph Multi-Agent RAG, Isolation Forest Anomaly Detection
+- **Database Systems**: MongoDB Atlas (User State & Course Progress), Qdrant Cloud (Vector RAG Index)
 
 ---
 
-## 🌟 14 Production-Grade Courses
+## Local Installation & Development
 
-- 🐧 **Linux Fundamentals**
-- 🐙 **Git & GitHub Workflow**
-- 🐳 **Docker Containers**
-- ☸️ **Kubernetes Orchestration**
-- 🌐 **Networking Fundamentals**
-- ⚙️ **CI/CD Pipelines (GitHub Actions)**
-- ☁️ **AWS Cloud Essentials**
-- 📊 **Monitoring & Observability (Prometheus/Grafana)**
-- 🏗️ **Terraform & Infrastructure as Code**
-- 📐 **System Design & High Availability**
-- 🛡️ **DevSecOps, OWASP API Security & SBOMs**
-- 📜 **Advanced Bash Scripting & Automation**
-- 🐍 **Python Cloud Automation (boto3)**
-- 🐙 **GitOps & ArgoCD**
-
----
-
-## 🚀 Quick Start (Local Development)
-
-### 1. Clone the repository
+### 1. Repository Clone
 ```bash
 git clone https://github.com/yashsrivastava1408/OpsAcademy.git
 cd OpsAcademy
 ```
 
-### 2. Install & Start Frontend
+### 2. Client Setup
 ```bash
 cd client
 npm install
 npm run dev
 ```
 
-### 3. Start Backend API Gateway
+### 3. API Gateway Setup
 ```bash
 cd ../server
 npm install
 npm start
 ```
 
-Open `http://localhost:5173` in your browser!
+Access the client interface locally at `http://localhost:5173`.
 
 ---
 
-## 📜 License & Author
-
-Built with ❤️ for DevOps & Cloud engineering students preparing for campus placement drives.
+## License & Authorship
 
 - **Author**: Yash Srivastava
-- **Live Demo**: [https://ops-academy-chi.vercel.app](https://ops-academy-chi.vercel.app)
+- **Live Platform**: [https://ops-academy-chi.vercel.app](https://ops-academy-chi.vercel.app)
 - **License**: MIT
