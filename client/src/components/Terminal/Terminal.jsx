@@ -3,10 +3,11 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { Wifi, WifiOff, Loader } from 'lucide-react';
+import { Wifi, WifiOff, Loader, Play } from 'lucide-react';
+import { getTerminalWsUrl } from '../../services/api';
 import './Terminal.css';
 
-export default function Terminal({ sessionId, _onDisconnect }) {
+export default function Terminal({ sessionId, onDisconnect, onStartLab }) {
   const termRef = useRef(null);
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -14,18 +15,48 @@ export default function Terminal({ sessionId, _onDisconnect }) {
   const [status, setStatus] = useState('disconnected'); // disconnected | connecting | connected
 
   const connectWebSocket = useCallback(() => {
-    // Terminal usage blocked by maintenance mode
-    setStatus('disconnected');
+    if (!sessionId) return;
+
+    setStatus('connecting');
+    const wsUrl = getTerminalWsUrl(sessionId);
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
     if (xtermRef.current) {
       xtermRef.current.clear();
-      xtermRef.current.writeln('\x1b[1;33m[OpsAcademy System Notice]\x1b[0m');
-      xtermRef.current.writeln('--------------------------------------------------');
-      xtermRef.current.writeln('\x1b[1;31mTerminal Execution Locked for Live Cloud Maintenance.\x1b[0m');
-      xtermRef.current.writeln('All theory modules, practice task instructions, hints,');
-      xtermRef.current.writeln('and interview Q&A decks remain 100% active!');
-      xtermRef.current.writeln('--------------------------------------------------');
+      xtermRef.current.writeln('\x1b[1;36m[OpsAcademy Sandbox Gateway]\x1b[0m');
+      xtermRef.current.writeln('\x1b[90mConnecting to live container sandbox...\x1b[0m');
     }
-  }, []);
+
+    ws.onopen = () => {
+      setStatus('connected');
+      if (xtermRef.current) {
+        xtermRef.current.clear();
+      }
+      if (fitAddonRef.current) {
+        const dims = fitAddonRef.current.proposeDimensions();
+        if (dims) {
+          ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+        }
+      }
+    };
+
+    ws.onmessage = (event) => {
+      if (xtermRef.current) {
+        xtermRef.current.write(event.data);
+      }
+    };
+
+    ws.onerror = (err) => {
+      console.error('[Terminal WS Error]', err);
+      setStatus('disconnected');
+    };
+
+    ws.onclose = () => {
+      setStatus('disconnected');
+      if (onDisconnect) onDisconnect();
+    };
+  }, [sessionId, onDisconnect]);
 
   // Initialize xterm.js
   useEffect(() => {
@@ -96,7 +127,6 @@ export default function Terminal({ sessionId, _onDisconnect }) {
 
     window.addEventListener('resize', handleResize);
 
-    // ResizeObserver for container changes
     const observer = new ResizeObserver(() => {
       requestAnimationFrame(() => fitAddon.fit());
     });
@@ -116,6 +146,8 @@ export default function Terminal({ sessionId, _onDisconnect }) {
   useEffect(() => {
     if (sessionId) {
       connectWebSocket();
+    } else {
+      setStatus('disconnected');
     }
 
     return () => {
@@ -125,11 +157,7 @@ export default function Terminal({ sessionId, _onDisconnect }) {
         ws.onerror = null;
         ws.onclose = null;
         ws.onmessage = null;
-        if (ws.readyState === WebSocket.CONNECTING) {
-          ws.onopen = () => {
-            try { ws.close(); } catch { /* ignore */ }
-          };
-        } else if (ws.readyState === WebSocket.OPEN) {
+        if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
           try { ws.close(); } catch { /* ignore */ }
         }
         wsRef.current = null;
@@ -173,7 +201,15 @@ export default function Terminal({ sessionId, _onDisconnect }) {
         <div ref={termRef} style={{ height: '100%', width: '100%' }} />
         {!sessionId && (
           <div className="terminal-loading">
-            <span style={{ color: '#f59e0b', fontWeight: 600 }}>🔒 Terminal Usage Blocked (Live Cloud Maintenance)</span>
+            {onStartLab ? (
+              <button className="btn btn-primary btn-md" onClick={onStartLab}>
+                <Play size={16} /> Click "Start Lab" to Initialize Live Shell
+              </button>
+            ) : (
+              <span style={{ color: '#38bdf8', fontWeight: 600 }}>
+                ⚡ Click "Start Lab" above to connect to live interactive sandbox
+              </span>
+            )}
           </div>
         )}
       </div>

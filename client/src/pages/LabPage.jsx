@@ -292,7 +292,7 @@ export default function LabPage() {
 
         {/* Terminal Panel */}
         <div className="lab-terminal">
-          <Terminal sessionId={sessionId} onDisconnect={() => setSessionId(null)} />
+          <Terminal sessionId={sessionId} onDisconnect={() => setSessionId(null)} onStartLab={startLab} />
         </div>
       </div>
 
