@@ -53,10 +53,14 @@ graph TB
         JWT["JWT Auth & Rate Limiter"]
     end
 
-    subgraph AIHub["Intelligence Layer"]
-        FLASK["Python Flask Service"]
-        LANGGRAPH["LangGraph Multi-Agent RAG"]
-        FOREST["Isolation Forest Anomaly Detection"]
+    subgraph AIHub["Intelligence Layer (6-Agent Pipeline)"]
+        FLASK["Python Flask Microservice"]
+        AGENT0["Agent 0: Anti-Abuse De-obfuscator & ML"]
+        AGENT1["Agent 1: Error Context Assessor"]
+        AGENT15["Agent 1.5: Container Live Inspector"]
+        AGENT2["Agent 2: TF-IDF Vector RAG Retriever"]
+        AGENT3["Agent 3: Tiered 3-Level Socratic Mentor"]
+        AGENT4["Agent 4: Automated Lab Objective Grader"]
     end
 
     subgraph Data["Persistence Layer"]
@@ -151,9 +155,11 @@ flowchart TD
 | **Terminal Latency** | **<50ms** | Binary WebSocket streaming via `xterm.js` and `node-pty` / `dockerode`. |
 | **Sandbox Boot Latency** | **<50ms Instant Claim** | Pre-warmed standby pool (`sandboxPoolService.js`) eliminates 3s cold container boot. |
 | **Idle Resource Efficiency** | **~90% RAM Savings** | Background Auto-Reaper service reaps inactive sandboxes (>15m idle / 30m max runtime). |
+| **Security Payload Inspection** | **De-obfuscated ML** | Base64/Hex payload de-anonymization + Isolation Forest ML threat detection. |
+| **Socratic AI Guidance** | **3-Tier Hints** | Progressive hint structure (Tier 1 Nudge -> Tier 2 Diagnostic -> Tier 3 Syntax). |
 | **Concurrency Telemetry** | **Real-Time Monitoring** | Live execution metrics and standby pool buffer status on `/api/sandbox/metrics`. |
 | **Curriculum Coverage** | **14 Paths** | Structured progression covering Linux, Kubernetes, Terraform, and GitOps. |
-| **AI Retrieval Latency** | **<400ms** | Cached Qdrant vector retrieval combined with LangGraph agent routing. |
+| **AI Retrieval Latency** | **<400ms** | TF-IDF vector similarity search combined with 6-agent RAG routing. |
 
 ---
 
@@ -179,8 +185,8 @@ flowchart TD
 ## Technology Stack
 
 - **Frontend**: React 19, Vite, xterm.js, Vanilla CSS Glassmorphism
-- **API Gateway**: Node.js, Express, `node-pty`, WebSockets, JWT Authentication, Mongoose ORM
-- **Intelligence Layer**: Python, Flask, LangGraph Multi-Agent RAG, Isolation Forest Anomaly Detection
+- **API Gateway**: Node.js, Express, `sandboxPoolService`, `node-pty` / `dockerode`, WebSockets, JWT Auth, Mongoose ORM
+- **Intelligence Layer**: Python, Flask, 6-Agent Cooperative RAG Pipeline, Isolation Forest ML, Base64 De-obfuscator, TF-IDF Vector Engine
 - **Database Systems**: MongoDB Atlas (User State & Course Progress), Qdrant Cloud (Vector RAG Index)
 
 ---
