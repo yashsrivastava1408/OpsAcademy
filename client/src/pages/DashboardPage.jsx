@@ -228,11 +228,10 @@ export default function DashboardPage() {
                   <Link
                     to={`/unit/${unit.id}/practice`}
                     className="mode-btn mode-practice"
-                    title="Practice Lab Terminal — Live Cloud Sandbox Coming Soon"
+                    title="Launch Interactive Terminal Practice Lab"
                   >
                     <Terminal size={14} />
                     <span>Practice</span>
-                    <span className="mode-soon-pill">Soon</span>
                   </Link>
                   <Link
                     to={`/unit/${unit.id}/prepare`}

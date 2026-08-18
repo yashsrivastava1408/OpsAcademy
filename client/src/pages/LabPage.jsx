@@ -292,13 +292,6 @@ export default function LabPage() {
 
         {/* Terminal Panel */}
         <div className="lab-terminal">
-          <div className="sandbox-coming-soon-banner glass-card">
-            <div className="cs-badge-pill">⚡ LIVE CLOUD SANDBOX • COMING SOON</div>
-            <h3>Interactive Terminal Sandbox Coming Soon</h3>
-            <p>
-              We are scaling our multi-region Kubernetes cloud container infrastructure for live deployment. All step-by-step instructions, commands, tasks, and hints on the left are 100% active for your practice!
-            </p>
-          </div>
           <Terminal sessionId={sessionId} onDisconnect={() => setSessionId(null)} />
         </div>
       </div>
