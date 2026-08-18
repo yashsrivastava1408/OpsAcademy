@@ -36,7 +36,7 @@ OpsAcademy eliminates passive video consumption by enforcing a three-mode hands-
 
 ## System Architecture
 
-OpsAcademy is built using a decoupled microservices architecture comprising a React frontend, a Node.js API Gateway managing PTY sandboxes and WebSockets, a Python Multi-Agent AI Hub, and persistent database layers.
+OpsAcademy is built using a decoupled microservices architecture comprising a React frontend, a Node.js API Gateway managing pre-warmed sandbox pools (PTY & Docker container engines via WebSockets), a Python Multi-Agent AI Hub, and persistent database layers.
 
 ```mermaid
 graph TB
@@ -47,8 +47,9 @@ graph TB
 
     subgraph Gateway["API Gateway Layer"]
         EXPRESS["Express.js Server"]
-        PTY["node-pty Terminal Process"]
-        SWEEPER["Auto-Reaper Cleanup Service"]
+        POOL["Pre-Warmed Sandbox Pool Service"]
+        PTY["node-pty / Dockerode Engine"]
+        SWEEPER["Activity & Inactivity Auto-Reaper"]
         JWT["JWT Auth & Rate Limiter"]
     end
 
@@ -67,8 +68,9 @@ graph TB
     Gateway -->|REST API| AIHub
     Gateway -->|Mongoose ORM| MONGO
     AIHub -->|Vector Search| QDRANT
-    Gateway -->|Spawn Process| PTY
-    SWEEPER -->|Reap Stale Sandboxes| PTY
+    Gateway -->|Acquire Instant Sandbox <50ms| POOL
+    POOL -->|Spawn / Attach| PTY
+    SWEEPER -->|Reap Inactive Sandboxes >15m| PTY
 
     style Client fill:#0f172a,stroke:#0284c7,color:#f8fafc
     style Gateway fill:#0f172a,stroke:#6366f1,color:#f8fafc
@@ -146,8 +148,10 @@ flowchart TD
 
 | Metric | Target / Benchmark | Implementation Detail |
 | :--- | :--- | :--- |
-| **Terminal Latency** | **<50ms** | Binary WebSocket streaming via `xterm.js` and `node-pty`. |
-| **Idle Resource Efficiency** | **~90% Savings** | Background Auto-Reaper service reaps inactive pseudo-terminals. |
+| **Terminal Latency** | **<50ms** | Binary WebSocket streaming via `xterm.js` and `node-pty` / `dockerode`. |
+| **Sandbox Boot Latency** | **<50ms Instant Claim** | Pre-warmed standby pool (`sandboxPoolService.js`) eliminates 3s cold container boot. |
+| **Idle Resource Efficiency** | **~90% RAM Savings** | Background Auto-Reaper service reaps inactive sandboxes (>15m idle / 30m max runtime). |
+| **Concurrency Telemetry** | **Real-Time Monitoring** | Live execution metrics and standby pool buffer status on `/api/sandbox/metrics`. |
 | **Curriculum Coverage** | **14 Paths** | Structured progression covering Linux, Kubernetes, Terraform, and GitOps. |
 | **AI Retrieval Latency** | **<400ms** | Cached Qdrant vector retrieval combined with LangGraph agent routing. |
 

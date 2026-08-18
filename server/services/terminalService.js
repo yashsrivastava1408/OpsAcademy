@@ -94,6 +94,7 @@ function handlePtyConnection(ws, sessionId) {
 
   // Browser WebSocket → PTY stdin
   ws.on('message', (msg) => {
+    sandboxManager.touchSession(sessionId);
     const message = msg.toString();
     
     // Check if it's a control message (JSON)
@@ -148,6 +149,7 @@ async function handleDockerConnection(ws, sessionId) {
 
   // Browser WebSocket → Container stdin
   ws.on('message', (msg) => {
+    sandboxManager.touchSession(sessionId);
     const message = msg.toString();
     
     try {

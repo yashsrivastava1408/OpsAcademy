@@ -6,6 +6,7 @@
  */
 
 const config = require('../config');
+const sandboxPoolService = require('./sandboxPoolService');
 
 // Lazy-load the appropriate service based on mode
 let engine;
@@ -21,14 +22,43 @@ function getEngine() {
     console.log('[SandboxManager] Using PTY mode 💻');
   }
 
+  // Bind pool engine reference
+  sandboxPoolService.setEngine(engine);
+
   return engine;
 }
 
 /**
- * Create a new sandbox session
+ * Initialize pre-warmed pool on manager startup
+ */
+async function initPool() {
+  const eng = getEngine();
+  await sandboxPoolService.initializePool(eng);
+}
+
+/**
+ * Create a new sandbox session (via pool or fallback)
  */
 async function createSandbox(sessionId, userId, labId) {
-  return getEngine().createSandbox(sessionId, userId, labId);
+  const eng = getEngine();
+  const result = await sandboxPoolService.acquireSandbox(
+    sessionId,
+    userId,
+    labId,
+    (sId, uId, lId) => eng.createSandbox(sId, uId, lId)
+  );
+
+  return result.session;
+}
+
+/**
+ * Update session last-active timestamp
+ */
+function touchSession(sessionId) {
+  const eng = getEngine();
+  if (eng.touchSession) {
+    eng.touchSession(sessionId);
+  }
 }
 
 /**
@@ -89,6 +119,18 @@ function getMode() {
   return config.sandboxMode;
 }
 
+/**
+ * Get pre-warmed pool metrics
+ */
+function getPoolStats() {
+  return sandboxPoolService.getPoolStats();
+}
+
+// Auto-initialize pool asynchronously
+setImmediate(() => {
+  initPool().catch((err) => console.warn('[SandboxManager] Pool init warning:', err.message));
+});
+
 module.exports = {
   createSandbox,
   destroySandbox,
@@ -99,4 +141,7 @@ module.exports = {
   getContainerStream,
   resizeSandbox,
   getMode,
+  touchSession,
+  getPoolStats,
+  initPool,
 };

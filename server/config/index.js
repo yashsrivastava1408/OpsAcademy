@@ -35,6 +35,9 @@ const config = {
     maxMemoryMB: 256,
     maxCpuCores: 0.5,
     maxSessionMinutes: 30,
+    maxInactivityMinutes: 15,
+    poolSize: parseInt(process.env.SANDBOX_POOL_SIZE, 10) || 3,
+    enablePool: process.env.ENABLE_SANDBOX_POOL !== 'false',
     reaperIntervalMs: 5 * 60 * 1000, // 5 minutes
     sandboxesDir: path.join(__dirname, '..', 'sandboxes'),
     defaultShell: os.platform() === 'darwin' ? '/bin/zsh' : '/bin/sh',

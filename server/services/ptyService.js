@@ -50,6 +50,7 @@ function createSandbox(sessionId, userId, labId) {
   const session = {
     pty: ptyProcess,
     createdAt: Date.now(),
+    lastActiveAt: Date.now(),
     userId,
     labId,
     cwd: studentHome,
@@ -60,6 +61,16 @@ function createSandbox(sessionId, userId, labId) {
 
   console.log(`[PTY] Created sandbox ${sessionId} for user ${userId} (lab: ${labId})`);
   return session;
+}
+
+/**
+ * Update last active timestamp on session activity
+ */
+function touchSession(sessionId) {
+  const session = activeSessions.get(sessionId);
+  if (session) {
+    session.lastActiveAt = Date.now();
+  }
 }
 
 /**
@@ -95,12 +106,15 @@ function getSandbox(sessionId) {
   const session = activeSessions.get(sessionId);
   if (!session) return null;
   
+  const now = Date.now();
   return {
     sessionId,
     userId: session.userId,
     labId: session.labId,
     createdAt: session.createdAt,
-    uptime: Date.now() - session.createdAt,
+    lastActiveAt: session.lastActiveAt || session.createdAt,
+    idleMs: now - (session.lastActiveAt || session.createdAt),
+    uptime: now - session.createdAt,
     mode: 'pty',
   };
 }
@@ -128,13 +142,16 @@ function resizeSandbox(sessionId, cols, rows) {
  */
 function listSandboxes() {
   const list = [];
+  const now = Date.now();
   for (const [sessionId, session] of activeSessions) {
     list.push({
       sessionId,
       userId: session.userId,
       labId: session.labId,
       createdAt: session.createdAt,
-      uptime: Date.now() - session.createdAt,
+      lastActiveAt: session.lastActiveAt || session.createdAt,
+      idleMs: now - (session.lastActiveAt || session.createdAt),
+      uptime: now - session.createdAt,
       mode: 'pty',
     });
   }
@@ -150,6 +167,7 @@ function execInSandbox(sessionId, command) {
     const session = activeSessions.get(sessionId);
     if (!session) return reject(new Error('Sandbox not found'));
 
+    session.lastActiveAt = Date.now();
     const { exec } = require('child_process');
     exec(command, { 
       cwd: session.cwd,
@@ -176,4 +194,5 @@ module.exports = {
   resizeSandbox,
   listSandboxes,
   execInSandbox,
+  touchSession,
 };

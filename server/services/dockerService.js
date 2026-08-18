@@ -64,6 +64,7 @@ async function createSandbox(sessionId, userId, labId) {
     containerId: container.id,
     container,
     createdAt: Date.now(),
+    lastActiveAt: Date.now(),
     userId,
     labId,
   };
@@ -71,6 +72,16 @@ async function createSandbox(sessionId, userId, labId) {
   activeSessions.set(sessionId, session);
   console.log(`[Docker] Created container ${container.id.slice(0, 12)} for session ${sessionId}`);
   return session;
+}
+
+/**
+ * Touch session activity timestamp
+ */
+function touchSession(sessionId) {
+  const session = activeSessions.get(sessionId);
+  if (session) {
+    session.lastActiveAt = Date.now();
+  }
 }
 
 /**
@@ -100,12 +111,15 @@ function getSandbox(sessionId) {
   const session = activeSessions.get(sessionId);
   if (!session) return null;
 
+  const now = Date.now();
   return {
     sessionId,
     userId: session.userId,
     labId: session.labId,
     createdAt: session.createdAt,
-    uptime: Date.now() - session.createdAt,
+    lastActiveAt: session.lastActiveAt || session.createdAt,
+    idleMs: now - (session.lastActiveAt || session.createdAt),
+    uptime: now - session.createdAt,
     containerId: session.containerId,
     mode: 'docker',
   };
@@ -151,13 +165,16 @@ async function resizeSandbox(sessionId, cols, rows) {
  */
 function listSandboxes() {
   const list = [];
+  const now = Date.now();
   for (const [sessionId, session] of activeSessions) {
     list.push({
       sessionId,
       userId: session.userId,
       labId: session.labId,
       createdAt: session.createdAt,
-      uptime: Date.now() - session.createdAt,
+      lastActiveAt: session.lastActiveAt || session.createdAt,
+      idleMs: now - (session.lastActiveAt || session.createdAt),
+      uptime: now - session.createdAt,
       containerId: session.containerId,
       mode: 'docker',
     });
@@ -173,6 +190,7 @@ async function execInSandbox(sessionId, command) {
   const session = activeSessions.get(sessionId);
   if (!session) throw new Error('Sandbox not found');
 
+  session.lastActiveAt = Date.now();
   const container = docker.getContainer(session.containerId);
   const exec = await container.exec({
     Cmd: ['/bin/sh', '-c', command],
@@ -209,4 +227,5 @@ module.exports = {
   resizeSandbox,
   listSandboxes,
   execInSandbox,
+  touchSession,
 };

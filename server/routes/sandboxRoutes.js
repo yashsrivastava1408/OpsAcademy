@@ -76,6 +76,43 @@ router.get('/:sessionId/status', (req, res) => {
 });
 
 /**
+ * GET /api/sandbox/metrics
+ * Get sandbox pool and execution telemetry metrics
+ */
+router.get('/metrics', (req, res) => {
+  const sandboxes = sandboxManager.listSandboxes();
+  const poolStats = sandboxManager.getPoolStats();
+
+  res.json({
+    success: true,
+    data: {
+      mode: sandboxManager.getMode(),
+      activeSessions: sandboxes.length,
+      sandboxes,
+      pool: poolStats,
+      timestamp: new Date().toISOString(),
+    },
+  });
+});
+
+/**
+ * POST /api/sandbox/pool/refill
+ * Manually trigger pool replenishment
+ */
+router.post('/pool/refill', async (req, res, next) => {
+  try {
+    await sandboxManager.initPool();
+    res.json({
+      success: true,
+      message: 'Pool replenishment triggered',
+      pool: sandboxManager.getPoolStats(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/sandbox
  * List all active sandboxes
  */

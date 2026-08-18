@@ -19,13 +19,21 @@ function startReaper() {
     try {
       const activeSandboxes = sandboxManager.listSandboxes();
       const maxAgeMs = config.sandbox.maxSessionMinutes * 60 * 1000;
+      const maxIdleMs = (config.sandbox.maxInactivityMinutes || 15) * 60 * 1000;
       const now = Date.now();
 
       let reapedCount = 0;
 
       for (const sb of activeSandboxes) {
-        if (now - sb.createdAt > maxAgeMs) {
-          console.log(`[Reaper] Reaping stale sandbox ${sb.sessionId} (age: ${Math.round(sb.uptime / 60000)}m)`);
+        const ageMs = now - sb.createdAt;
+        const idleMs = sb.idleMs || (now - (sb.lastActiveAt || sb.createdAt));
+
+        const isExceededMaxAge = ageMs > maxAgeMs;
+        const isExceededIdle = idleMs > maxIdleMs;
+
+        if (isExceededMaxAge || isExceededIdle) {
+          const reason = isExceededMaxAge ? `max age (${Math.round(ageMs / 60000)}m)` : `idle timeout (${Math.round(idleMs / 60000)}m)`;
+          console.log(`[Reaper] Reaping stale sandbox ${sb.sessionId} due to ${reason}`);
           sandboxManager.destroySandbox(sb.sessionId);
           reapedCount++;
         }
