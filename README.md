@@ -156,6 +156,10 @@ flowchart TD
 | **Sandbox Boot Latency** | **<50ms Instant Claim** | Pre-warmed standby pool (`sandboxPoolService.js`) eliminates 3s cold container boot. |
 | **Idle Resource Efficiency** | **~90% RAM Savings** | Background Auto-Reaper service reaps inactive sandboxes (>15m idle / 30m max runtime). |
 | **Security Payload Inspection** | **De-obfuscated ML** | Base64/Hex payload de-anonymization + Isolation Forest ML threat detection. |
+| **Container Network Security** | **Subnet Isolation** | Dynamic per-session private bridge networks (`student-net-${sessionId}`). |
+| **Certificate Verification** | **SHA-256 Signed** | Public cryptographic hash validation API (`/api/certificates/verify/:certHash`). |
+| **DevOps Telemetry Inspector** | **Live System Tree** | Real-time container file tree, active process PIDs, and listening port badges. |
+| **Agentic Knowledge Engine** | **20,000+ Skills** | Indexed `agentic-awesome-skills` repository for 6-agent Python RAG retrieval. |
 | **Socratic AI Guidance** | **3-Tier Hints** | Progressive hint structure (Tier 1 Nudge -> Tier 2 Diagnostic -> Tier 3 Syntax). |
 | **Concurrency Telemetry** | **Real-Time Monitoring** | Live execution metrics and standby pool buffer status on `/api/sandbox/metrics`. |
 | **Curriculum Coverage** | **14 Paths** | Structured progression covering Linux, Kubernetes, Terraform, and GitOps. |
@@ -184,9 +188,10 @@ flowchart TD
 
 ## Technology Stack
 
-- **Frontend**: React 19, Vite, xterm.js, Vanilla CSS Glassmorphism
-- **API Gateway**: Node.js, Express, `sandboxPoolService`, `node-pty` / `dockerode`, WebSockets, JWT Auth, Mongoose ORM
-- **Intelligence Layer**: Python, Flask, 6-Agent Cooperative RAG Pipeline, Isolation Forest ML, Base64 De-obfuscator, TF-IDF Vector Engine
+- **Frontend**: React 19, Vite, xterm.js, Vanilla CSS Glassmorphism, Responsive UI/UX
+- **API Gateway**: Node.js, Express, `sandboxPoolService`, `node-pty` / `dockerode`, SHA-256 Certificate API, WebSockets, JWT Auth, Mongoose ORM
+- **Intelligence Layer**: Python, Flask, 6-Agent Cooperative RAG Pipeline, `agentic-awesome-skills` Knowledge Base, Isolation Forest ML, Base64 De-obfuscator, TF-IDF Vector Engine
+- **CI/CD & Testing**: GitHub Actions (`.github/workflows/ci.yml`), Jest API Unit Tests
 - **Database Systems**: MongoDB Atlas (User State & Course Progress), Qdrant Cloud (Vector RAG Index)
 
 ---
