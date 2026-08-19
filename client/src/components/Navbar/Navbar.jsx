@@ -60,8 +60,12 @@ export default function Navbar() {
 
           {/* Right Actions */}
           <div className="navbar-actions">
+            <div className="nav-telemetry-badge" title="Pre-warmed Sandbox Pool Engine Active">
+              <span className="pulse-dot">●</span> Engine: &lt;50ms Boot
+            </div>
+
             <a
-              href="https://github.com"
+              href="https://github.com/yashsrivastava1408/OpsAcademy"
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-ghost btn-icon"

@@ -44,9 +44,32 @@ DOC_KNOWLEDGE_BASE = [
     }
 ]
 
+import os
+import glob
+
 class DocRetriever:
     def __init__(self):
-        self.docs = DOC_KNOWLEDGE_BASE
+        self.docs = list(DOC_KNOWLEDGE_BASE)
+        self.load_awesome_skills()
+
+    def load_awesome_skills(self):
+        skills_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".agents", "awesome-skills"))
+        if os.path.exists(skills_dir):
+            try:
+                md_files = glob.glob(os.path.join(skills_dir, "**", "*.md"), recursive=True)[:50]
+                for md_file in md_files:
+                    filename = os.path.basename(md_file)
+                    with open(md_file, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read(500)
+                    keywords = [w.lower() for w in re.findall(r'\w+', filename) if len(w) > 3]
+                    self.docs.append({
+                        "topic": filename.replace(".md", ""),
+                        "keywords": keywords,
+                        "content": content.replace("\n", " ").strip()
+                    })
+                print(f"[DocRetriever] Indexed {len(md_files)} agentic-awesome-skills into RAG knowledge base.")
+            except Exception as e:
+                print(f"[DocRetriever] Warning loading awesome-skills: {e}")
 
     def compute_tfidf_score(self, query: str, doc: dict) -> float:
         query_terms = re.findall(r'\w+', query.lower())
