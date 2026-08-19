@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import Terminal from '../components/Terminal/Terminal';
 import MentorChat from '../components/MentorChat/MentorChat';
+import DevOpsInspector from '../components/DevOpsInspector/DevOpsInspector';
 import { sandboxApi, unitApi, labApi } from '../services/api';
 import { markUnitCompleted } from '../services/progressService';
 import './LabPage.css';
@@ -36,6 +37,8 @@ export default function LabPage() {
   const [verifyResult, setVerifyResult] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [showMentor, setShowMentor] = useState(false);
+  const [showInspector, setShowInspector] = useState(true);
+  const [commandHistory, setCommandHistory] = useState(['ls -la', 'pwd']);
 
   useEffect(() => {
     async function loadData() {
@@ -240,6 +243,14 @@ export default function LabPage() {
           </Link>
 
           <button
+            className={`btn btn-sm ${showInspector ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setShowInspector(!showInspector)}
+            title="Toggle Live DevOps File & Process Inspector"
+          >
+            <Activity size={14} /> Inspector
+          </button>
+
+          <button
             className={`btn btn-sm ${showMentor ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setShowMentor(!showMentor)}
           >
@@ -282,7 +293,7 @@ export default function LabPage() {
         </div>
       </div>
 
-      {/* ── Split Pane: Instructions | Terminal ──────────── */}
+      {/* ── Split Pane: Instructions | Terminal | Inspector ──── */}
       <div className="lab-workspace">
         {/* Instructions Panel */}
         <div className="lab-instructions">
@@ -363,6 +374,19 @@ export default function LabPage() {
         <div className="lab-terminal">
           <Terminal sessionId={sessionId} onDisconnect={() => setSessionId(null)} onStartLab={startLab} />
         </div>
+
+        {/* Live DevOps File & Telemetry Inspector Side Panel */}
+        {showInspector && (
+          <DevOpsInspector
+            sessionId={sessionId}
+            unitId={unitId}
+            commandHistory={commandHistory}
+            onRunCommand={(cmd) => {
+              // Append to history and trigger
+              setCommandHistory((prev) => [...prev, cmd]);
+            }}
+          />
+        )}
       </div>
 
       {/* ── Verify Result Overlay ────────────────────────── */}

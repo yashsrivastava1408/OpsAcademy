@@ -41,6 +41,9 @@ export const sandboxApi = {
   status: (sessionId) =>
     api.get(`/sandbox/${sessionId}/status`),
 
+  getTelemetry: (sessionId) =>
+    api.get(`/sandbox/${sessionId}/telemetry`),
+
   list: () =>
     api.get('/sandbox'),
 };

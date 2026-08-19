@@ -1,0 +1,348 @@
+.devops-inspector {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  height: 100%;
+}
+
+/* ── Placement Quick Tip Card ────────────────────────────── */
+.inspector-tip-card {
+  padding: 10px 12px;
+  background: rgba(0, 212, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+}
+
+.tip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.tip-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tip-icon {
+  color: var(--accent-cyan);
+}
+
+.tip-toggle-btn {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.tip-question {
+  margin-top: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.tip-answer {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--radius-sm);
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  display: flex;
+  gap: 6px;
+}
+
+.answer-check {
+  color: var(--accent-green);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ── Tabs Header ────────────────────────────────────────── */
+.inspector-tabs {
+  display: flex;
+  align-items: center;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px;
+}
+
+.tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.73rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  background: var(--bg-secondary);
+  color: var(--accent-cyan);
+}
+
+.count-pill {
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.count-pill.green {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--accent-green);
+}
+
+.refresh-btn {
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.refresh-btn:hover {
+  color: var(--accent-cyan);
+}
+
+/* ── Tab Body ───────────────────────────────────────────── */
+.inspector-body {
+  flex: 1;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.empty-inspector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 10px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-inspector p {
+  font-size: 0.78rem;
+  margin-top: 8px;
+}
+
+.hint-text {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Tree view */
+.tree-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.file-tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.tree-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tree-item.depth-1 { padding-left: 14px; }
+.tree-item.depth-2 { padding-left: 26px; }
+.tree-item.depth-3 { padding-left: 38px; }
+
+.folder-icon { color: var(--accent-yellow); }
+.file-icon { color: var(--accent-cyan); }
+.item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.inspect-file-btn {
+  padding: 2px 4px;
+  opacity: 0.6;
+}
+
+.inspect-file-btn:hover { opacity: 1; color: var(--accent-cyan); }
+
+/* Sys / Ports tab */
+.section-block {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+
+.block-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.ports-flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.port-badge {
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--accent-green);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.none-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.processes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.process-card {
+  padding: 6px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+}
+
+.proc-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.proc-pid { color: var(--accent-cyan); }
+
+.proc-cmd {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+/* History Tab */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-sm);
+
+}
+
+.history-cmd {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 210px;
+}
+
+.run-cmd-btn {
+  font-size: 0.68rem;
+  color: var(--accent-cyan);
+}
+
+/* File preview modal */
+.file-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-preview-card {
+  width: 450px;
+  max-width: 90vw;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.preview-body {
+  padding: 12px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--accent-cyan);
+}
+
+.mt-3 { margin-top: 12px; }
