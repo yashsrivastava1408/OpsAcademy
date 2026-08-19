@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Folder,
   FileText,
@@ -6,13 +6,15 @@ import {
   History,
   Play,
   HelpCircle,
-  ChevronRight,
-  ChevronDown,
   RefreshCw,
   Cpu,
   Radio,
   Eye,
   CheckCircle2,
+  GripHorizontal,
+  Minus,
+  Maximize2,
+  X,
 } from 'lucide-react';
 import { sandboxApi } from '../../services/api';
 import './DevOpsInspector.css';
@@ -36,12 +38,24 @@ const RECRUITER_QUICK_TIPS = {
   },
 };
 
-export default function DevOpsInspector({ sessionId, unitId = 'default', commandHistory = [], onRunCommand }) {
+export default function DevOpsInspector({
+  sessionId,
+  unitId = 'default',
+  commandHistory = [],
+  onRunCommand,
+  onClose,
+}) {
   const [activeTab, setActiveTab] = useState('files'); // files | sys | cmds
   const [showAnswer, setShowAnswer] = useState(false);
   const [telemetry, setTelemetry] = useState({ fileTree: [], processes: [], ports: [] });
   const [loading, setLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
+  const [isMinimized, setIsMinimized] = useState(false);
+
+  // Draggable State
+  const [pos, setPos] = useState({ x: window.innerWidth - 370, y: 90 });
+  const isDragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0 });
 
   const tipData = RECRUITER_QUICK_TIPS[unitId] || RECRUITER_QUICK_TIPS.default;
 
@@ -66,17 +80,84 @@ export default function DevOpsInspector({ sessionId, unitId = 'default', command
     return () => clearInterval(interval);
   }, [sessionId]);
 
+  // Drag listeners
+  const handleMouseDown = (e) => {
+    isDragging.current = true;
+    dragStart.current = {
+      x: e.clientX - pos.x,
+      y: e.clientY - pos.y,
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging.current) return;
+    const newX = Math.max(10, Math.min(window.innerWidth - 350, e.clientX - dragStart.current.x));
+    const newY = Math.max(10, Math.min(window.innerHeight - 100, e.clientY - dragStart.current.y));
+    setPos({ x: newX, y: newY });
+  };
+
+  const handleMouseUp = () => {
+    isDragging.current = false;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+  };
+
+  if (isMinimized) {
+    return (
+      <div
+        className="inspector-minimized-pill glass-card animate-scale-in"
+        style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+        onClick={() => setIsMinimized(false)}
+      >
+        <Activity size={14} className="pulse-icon" />
+        <span>DevOps Inspector</span>
+        <button className="pill-expand-btn" title="Expand Card">
+          <Maximize2 size={12} />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <aside className="devops-inspector glass-card">
+    <aside
+      className="devops-inspector floating-inspector glass-card animate-scale-in"
+      style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+    >
+      {/* ── Draggable Title Drag Handle ───────────────────────── */}
+      <div className="inspector-drag-handle" onMouseDown={handleMouseDown}>
+        <GripHorizontal size={14} className="drag-grip" />
+        <span className="drag-label">DevOps System Inspector</span>
+        <div className="drag-controls">
+          <button
+            className="btn btn-ghost btn-xs ctrl-btn"
+            onClick={() => setIsMinimized(true)}
+            title="Minimize Card"
+          >
+            <Minus size={13} />
+          </button>
+          {onClose && (
+            <button
+              className="btn btn-ghost btn-xs ctrl-btn"
+              onClick={onClose}
+              title="Close Inspector"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* ── Recruiter Placement Quick-Tip Banner ───────────────── */}
       <div className="inspector-tip-card">
         <div className="tip-header" onClick={() => setShowAnswer(!showAnswer)}>
           <div className="tip-title">
-            <HelpCircle size={14} className="tip-icon" />
+            <HelpCircle size={13} className="tip-icon" />
             <span>Placement Interview Quick-Tip</span>
           </div>
           <button className="btn btn-ghost btn-xs tip-toggle-btn">
-            {showAnswer ? 'Hide Answer' : 'Reveal Answer'}
+            {showAnswer ? 'Hide' : 'Answer'}
           </button>
         </div>
         <p className="tip-question">{tipData.question}</p>
@@ -137,7 +218,7 @@ export default function DevOpsInspector({ sessionId, unitId = 'default', command
 
             {telemetry.fileTree.length === 0 ? (
               <div className="empty-inspector">
-                <Folder size={24} />
+                <Folder size={22} />
                 <p>No files created yet.</p>
                 <span className="hint-text">Run <code>mkdir app</code> or <code>touch index.html</code> in shell</span>
               </div>
@@ -173,7 +254,6 @@ export default function DevOpsInspector({ sessionId, unitId = 'default', command
         {/* TAB 2: Running Processes & Listening Ports */}
         {activeTab === 'sys' && (
           <div className="tab-content animate-fade-in">
-            {/* Listening Ports Section */}
             <div className="section-block">
               <div className="block-title">
                 <Radio size={12} />
@@ -192,7 +272,6 @@ export default function DevOpsInspector({ sessionId, unitId = 'default', command
               )}
             </div>
 
-            {/* Active Processes Section */}
             <div className="section-block mt-3">
               <div className="block-title">
                 <Cpu size={12} />
@@ -217,12 +296,12 @@ export default function DevOpsInspector({ sessionId, unitId = 'default', command
           </div>
         )}
 
-        {/* TAB 3: Recent Command History with 1-Click Re-run */}
+        {/* TAB 3: Recent Command History */}
         {activeTab === 'cmds' && (
           <div className="tab-content animate-fade-in">
             {commandHistory.length === 0 ? (
               <div className="empty-inspector">
-                <History size={24} />
+                <History size={22} />
                 <p>No recent commands.</p>
                 <span className="hint-text">Type commands in the shell to populate history</span>
               </div>
