@@ -99,8 +99,51 @@ export default function LabPage() {
     }
   };
 
+  const [verifiedSteps, setVerifiedSteps] = useState({});
+
+  const verifyStep = async (stepNumber) => {
+    if (!sessionId) {
+      alert("Please click 'Start Lab' first to launch the interactive sandbox!");
+      return;
+    }
+    setIsVerifying(true);
+    setVerifyResult({ status: 'checking' });
+
+    try {
+      const res = await labApi.verify(unitId, sessionId, stepNumber);
+      const data = res.data;
+      const stepPassed = data.allPassed || (data.results && data.results.every((r) => r.passed));
+
+      if (stepPassed) {
+        setVerifiedSteps((prev) => ({ ...prev, [stepNumber]: true }));
+        setVerifyResult({
+          status: 'pass',
+          stepNumber,
+          xpEarned: data.xpEarned || 25,
+          score: data.score || 100,
+          details: data.results,
+        });
+      } else {
+        setVerifiedSteps((prev) => ({ ...prev, [stepNumber]: false }));
+        setVerifyResult({
+          status: 'fail',
+          stepNumber,
+          details: data.results,
+        });
+      }
+    } catch (err) {
+      console.error('Step verification error:', err);
+      setVerifyResult({ status: 'fail', details: [{ error: err.message }] });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const runVerification = async () => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      alert("Please click 'Start Lab' first to launch the interactive sandbox!");
+      return;
+    }
     setIsVerifying(true);
     setVerifyResult({ status: 'checking' });
 
@@ -110,9 +153,22 @@ export default function LabPage() {
 
       if (data.allPassed) {
         markUnitCompleted(unitId);
-        setVerifyResult({ status: 'pass', details: data.results });
+        const allMap = {};
+        (practiceData?.steps || []).forEach((s) => { allMap[s.step] = true; });
+        setVerifiedSteps(allMap);
+
+        setVerifyResult({
+          status: 'pass',
+          xpEarned: data.xpEarned || 100,
+          score: data.score || 100,
+          details: data.results,
+        });
       } else {
-        setVerifyResult({ status: 'fail', details: data.results });
+        setVerifyResult({
+          status: 'fail',
+          score: data.score || 0,
+          details: data.results,
+        });
       }
     } catch (err) {
       console.error('Verification error:', err);
@@ -241,15 +297,17 @@ export default function LabPage() {
                 key={stepObj.step}
                 className={`instruction-item ${
                   expandedSteps[stepObj.step] !== false ? 'expanded' : ''
-                }`}
+                } ${verifiedSteps[stepObj.step] ? 'step-verified' : ''}`}
               >
                 <button
                   className="instruction-header-btn"
                   onClick={() => toggleStep(stepObj.step)}
                 >
-                  <div className="instruction-step-badge">{stepObj.step}</div>
+                  <div className={`instruction-step-badge ${verifiedSteps[stepObj.step] ? 'verified' : ''}`}>
+                    {verifiedSteps[stepObj.step] ? '✓' : stepObj.step}
+                  </div>
                   <span className="instruction-title">{stepObj.title}</span>
-                  {expandedSteps[stepObj.step] === false ? (
+                  {expandedSteps[stepObj.step] !== false ? (
                     <ChevronDown size={16} />
                   ) : (
                     <ChevronUp size={16} />
@@ -268,19 +326,30 @@ export default function LabPage() {
                       </ul>
                     )}
 
-                    {stepObj.hint && (
-                      <div className="instruction-hint-area">
+                    <div className="step-actions-row flex-gap">
+                      <button
+                        className={`btn btn-xs ${verifiedSteps[stepObj.step] ? 'btn-success' : 'btn-primary'}`}
+                        onClick={() => verifyStep(stepObj.step)}
+                        disabled={isVerifying || !sessionId}
+                        title={!sessionId ? "Click 'Start Lab' to enable verification" : "Verify this step in container"}
+                      >
+                        <CheckCircle2 size={12} />
+                        {verifiedSteps[stepObj.step] ? 'Verified' : `Verify Step ${stepObj.step}`}
+                      </button>
+
+                      {stepObj.hint && (
                         <button
-                          className="btn btn-ghost btn-sm hint-toggle"
+                          className="btn btn-ghost btn-xs hint-toggle"
                           onClick={() => toggleHint(stepObj.step)}
                         >
                           {showHint[stepObj.step] ? 'Hide Hint' : 'Show Hint'}
                         </button>
-                        {showHint[stepObj.step] && (
-                          <div className="hint-box">
-                            <code>{stepObj.hint}</code>
-                          </div>
-                        )}
+                      )}
+                    </div>
+
+                    {showHint[stepObj.step] && stepObj.hint && (
+                      <div className="hint-box mt-2">
+                        <code>{stepObj.hint}</code>
                       </div>
                     )}
                   </div>
@@ -306,37 +375,50 @@ export default function LabPage() {
                   <Loader size={32} className="spin" />
                 </div>
                 <h3>Verifying your work...</h3>
-                <p>Checking container state against lab objectives</p>
+                <p>Running automated checks inside the sandbox container</p>
               </>
             ) : verifyResult.status === 'pass' ? (
               <>
                 <div className="verify-icon pass">
                   <CheckCircle2 size={32} />
                 </div>
-                <h3>All checks passed! 🎉</h3>
-                <p>Great job! You completed all task verifications for this lab.</p>
+                <h3>Verification Passed! 🎉</h3>
+                <p style={{ color: '#10b981', fontWeight: 600 }}>
+                  +{verifyResult.xpEarned || 100} XP Earned • {verifyResult.score || 100}% Score
+                </p>
+                <p>Great job! You completed all task verifications for this step.</p>
               </>
             ) : (
               <>
                 <div className="verify-icon fail">
                   <XCircle size={32} />
                 </div>
-                <h3>Some checks failed</h3>
-                <p>Check the instructions, make sure your files/commands match, and try again.</p>
+                <h3>Verification Checklist Pending</h3>
+                <p>Review your container state and commands, or ask AI Mentor for assistance.</p>
 
                 {verifyResult.details && (
                   <div className="verify-details-list">
                     {verifyResult.details.map((res, i) => (
                       <div key={i} className={`verify-detail-item ${res.passed ? 'pass' : 'fail'}`}>
                         <span>{res.title || `Step ${res.step}`}</span>
-                        <span>{res.passed ? '✓ Passed' : '✗ Failed'}</span>
+                        <span>{res.passed ? '✓ Passed' : '✗ Pending'}</span>
                       </div>
                     ))}
                   </div>
                 )}
+
+                <button
+                  className="btn btn-primary btn-sm mb-2"
+                  onClick={() => {
+                    setVerifyResult(null);
+                    setShowMentor(true);
+                  }}
+                >
+                  <Bot size={14} /> Ask AI Mentor for Diagnostic Hint
+                </button>
               </>
             )}
-            <button className="btn btn-secondary" onClick={() => setVerifyResult(null)}>
+            <button className="btn btn-secondary btn-sm" onClick={() => setVerifyResult(null)}>
               Close
             </button>
           </div>

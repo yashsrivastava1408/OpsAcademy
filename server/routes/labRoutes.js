@@ -86,9 +86,17 @@ router.post('/:unitId/verify', async (req, res, next) => {
       }
     }
 
+    const passedCount = results.filter((r) => r.passed).length;
+    const score = Math.round((passedCount / Math.max(1, results.length)) * 100);
+    const xpEarned = allPassed ? 100 : Math.round(score * 0.8);
+
     res.json({
       success: true,
       allPassed,
+      score,
+      xpEarned,
+      passedCount,
+      totalCount: results.length,
       results,
     });
   } catch (err) {
