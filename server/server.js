@@ -55,6 +55,7 @@ const unitRoutes = require('./routes/unitRoutes');
 const labRoutes = require('./routes/labRoutes');
 const authRoutes = require('./routes/authRoutes');
 const agentRoutes = require('./routes/agentRoutes');
+const certificateRoutes = require('./routes/certificateRoutes');
 const { startReaper } = require('./services/reaperService');
 
 // ── API Routes ───────────────────────────────────────────────
@@ -63,6 +64,7 @@ app.use('/api/units', unitRoutes);
 app.use('/api/labs', labRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/agent', agentRoutes);
+app.use('/api/certificates', certificateRoutes);
 
 // Start background auto-reaper for stale sandboxes
 startReaper();

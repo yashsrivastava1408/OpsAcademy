@@ -20,11 +20,35 @@ try {
 // Active containers: Map<sessionId, { containerId, createdAt, userId, labId }>
 const activeSessions = new Map();
 
+async function ensureIsolatedNetwork(sessionId) {
+  const netName = `student-net-${sessionId.slice(0, 8)}`;
+  try {
+    const net = docker.getNetwork(netName);
+    await net.inspect();
+    return netName;
+  } catch {
+    try {
+      await docker.createNetwork({
+        Name: netName,
+        Driver: 'bridge',
+        Internal: false,
+        CheckDuplicate: true,
+        Labels: { 'opsacademy.session': sessionId },
+      });
+      return netName;
+    } catch {
+      return config.sandbox.dockerNetwork || 'isolated-student-net';
+    }
+  }
+}
+
 /**
- * Create a new Docker sandbox container
+ * Spawn a isolated Docker container sandbox session
  */
 async function createSandbox(sessionId, userId, labId) {
   if (!docker) throw new Error('Docker is not available. Switch to SANDBOX_MODE=pty');
+
+  const isolatedNetwork = await ensureIsolatedNetwork(sessionId);
 
   const container = await docker.createContainer({
     Image: config.sandbox.dockerImage,
@@ -39,7 +63,7 @@ async function createSandbox(sessionId, userId, labId) {
     HostConfig: {
       Memory: config.sandbox.maxMemoryMB * 1024 * 1024,
       NanoCpus: config.sandbox.maxCpuCores * 1e9,
-      NetworkMode: config.sandbox.dockerNetwork,
+      NetworkMode: isolatedNetwork,
       SecurityOpt: ['no-new-privileges:true'],
       ReadonlyRootfs: true,
       Mounts: [
