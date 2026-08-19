@@ -32,6 +32,10 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Customizations & Skills
+.agents/
+.agents/awesome-skills
+
 # Coverage
 coverage/
 .nyc_output/
