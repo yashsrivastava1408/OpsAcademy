@@ -2,14 +2,94 @@
   "steps": [
     {
       "step": 1,
-      "title": "Secret Detection Challenge",
-      "description": "Verify secret scanning rules.",
+      "title": "Automated Secret Detection & Pre-Commit Scanner",
+      "description": "Build an automated regex secret scanner that detects accidental AWS access keys, GitHub personal access tokens, and private RSA keys in source code.",
       "tasks": [
-        "Create sample file: `echo 'AWS_KEY=AKIAIOSFODNN7EXAMPLE' > /tmp/sample.txt`",
-        "Scan for AWS credentials pattern: `grep -E 'AKIA[0-9A-Z]{16}' /tmp/sample.txt`"
+        "Create `/home/student/scan_secrets.sh`",
+        "Implement scanning patterns for AWS keys (`AKIA[0-9A-Z]{16}`), Private Keys (`BEGIN.*PRIVATE KEY`), and Bearer tokens",
+        "Make it exit with status 1 if secrets are found, and 0 if clean",
+        "Test running the scanner on `/home/student/`"
       ],
       "verification": {
-        "command": "grep -E 'AKIA[0-9A-Z]{16}' /tmp/sample.txt && echo PASS || echo FAIL",
+        "command": "test -x /home/student/scan_secrets.sh && grep -q 'AKIA' /home/student/scan_secrets.sh && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Hardened Multi-Stage Dockerfile (Non-Root User)",
+      "description": "Construct a production-hardened Dockerfile implementing multi-stage build, minimal Alpine base image, and dedicated non-root UID 10001 execution.",
+      "tasks": [
+        "Create `/home/student/Dockerfile.secure`",
+        "Use multi-stage pattern: `FROM node:18-alpine AS builder` and `FROM alpine:3.19` runtime",
+        "Add a non-root system user: `RUN addgroup -S appgroup && adduser -S appuser -G appgroup -u 10001`",
+        "Specify `USER 10001` to prevent container root privilege escalation"
+      ],
+      "verification": {
+        "command": "test -f /home/student/Dockerfile.secure && grep -q 'USER' /home/student/Dockerfile.secure && grep -q 'adduser' /home/student/Dockerfile.secure && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "Software Bill of Materials (SBOM) & Vulnerability Audit",
+      "description": "Generate a JSON Software Bill of Materials (SBOM) for an application dependencies tree to ensure supply chain integrity (SLSA compliance).",
+      "tasks": [
+        "Create sample `/home/student/package.json` with dependencies like `express` and `jsonwebtoken`",
+        "Write `/home/student/generate_sbom.sh` to extract package names, exact versions, and SHA-256 integrity hashes into `/home/student/sbom.json`",
+        "Execute `/home/student/generate_sbom.sh` and inspect `/home/student/sbom.json`"
+      ],
+      "verification": {
+        "command": "test -x /home/student/generate_sbom.sh && /home/student/generate_sbom.sh && test -f /home/student/sbom.json && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "X.509 SSL/TLS Certificate Validator",
+      "description": "Write a cryptographic audit script that inspects TLS certificates, verifies validity dates, and alerts if certificate expires within 30 days.",
+      "tasks": [
+        "Generate a self-signed test certificate: `openssl req -x509 -newkey rsa:2048 -keyout /home/student/server.key -out /home/student/server.crt -days 365 -nodes -subj '/CN=opsacademy.local'`",
+        "Write `/home/student/verify_cert.sh` that uses `openssl x509 -enddate -noout -in /home/student/server.crt`",
+        "Make the script output the expiration date and return PASS"
+      ],
+      "verification": {
+        "command": "test -f /home/student/server.crt && test -x /home/student/verify_cert.sh && /home/student/verify_cert.sh && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "Linux Kernel & Sysctl Hardening Audit",
+      "description": "Audit and harden kernel network parameters to protect against SYN flood attacks and IP spoofing.",
+      "tasks": [
+        "Create `/home/student/sysctl_hardening.conf`",
+        "Add recommendations for `net.ipv4.tcp_syncookies = 1`",
+        "Add `net.ipv4.conf.all.rp_filter = 1` (reverse path filtering against IP spoofing)",
+        "Add `net.ipv4.icmp_echo_ignore_broadcasts = 1`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/sysctl_hardening.conf && grep -q 'tcp_syncookies' /home/student/sysctl_hardening.conf && grep -q 'rp_filter' /home/student/sysctl_hardening.conf && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 6,
+      "title": "File Capability & SUID/SGID Privilege Auditing",
+      "description": "Hunt for unsafe SUID/SGID binaries in the filesystem that could allow unprivileged users to escalate to root.",
+      "tasks": [
+        "Write an audit script `/home/student/audit_suid.sh`",
+        "Use `find / -perm -4000 -type f 2>/dev/null` or `find /usr/bin -perm -4000 2>/dev/null` to identify SUID binaries",
+        "Redirect output to `/home/student/suid_audit_report.txt`",
+        "Execute the audit script"
+      ],
+      "verification": {
+        "command": "test -x /home/student/audit_suid.sh && /home/student/audit_suid.sh && test -f /home/student/suid_audit_report.txt && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

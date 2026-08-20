@@ -136,17 +136,32 @@ export default function LabPage() {
     return `${m}:${s}`;
   };
 
+  const [startError, setStartError] = useState(null);
+
   const startLab = async () => {
     setIsStarting(true);
+    setStartError(null);
     try {
       const res = await sandboxApi.start('student', unitId);
-      setSessionId(res.data.data.sessionId);
-      setElapsedTime(0);
+      if (res.data?.data?.sessionId) {
+        setSessionId(res.data.data.sessionId);
+        setElapsedTime(0);
+      }
     } catch (err) {
-      console.warn('Sandbox API start warning (using instant fallback session):', err.message);
-      const fallbackSessionId = `local-lab-${Date.now()}`;
-      setSessionId(fallbackSessionId);
-      setElapsedTime(0);
+      console.warn('[LabPage] Sandbox start attempt 1 failed, retrying server connection...', err.message);
+      // Attempt retry in case cloud server is waking from sleep
+      try {
+        await new Promise((r) => setTimeout(r, 2000));
+        const retryRes = await sandboxApi.start('student', unitId);
+        if (retryRes.data?.data?.sessionId) {
+          setSessionId(retryRes.data.data.sessionId);
+          setElapsedTime(0);
+          return;
+        }
+      } catch (retryErr) {
+        setStartError('Sandbox gateway is waking up. Please click Start Lab again in a few seconds.');
+        setSessionId(null);
+      }
     } finally {
       setIsStarting(false);
     }
@@ -154,13 +169,16 @@ export default function LabPage() {
 
   const stopLab = async () => {
     if (sessionId) {
-      try {
-        await sandboxApi.stop(sessionId);
-      } catch (err) {
-        console.error('Failed to stop sandbox:', err);
-      }
+      const currId = sessionId;
       setSessionId(null);
       setElapsedTime(0);
+      try {
+        if (!currId.startsWith('local-lab-')) {
+          await sandboxApi.stop(currId);
+        }
+      } catch (err) {
+        // Session already reaped or closed; ignore 404
+      }
     }
   };
 
@@ -354,6 +372,14 @@ export default function LabPage() {
           )}
         </div>
       </div>
+
+      {/* ── Start Error Alert Banner ─────────────────────── */}
+      {startError && (
+        <div className="lab-alert-banner" style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', padding: '8px 16px', borderRadius: '8px', margin: '0 24px 12px', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>⚠️ {startError}</span>
+          <button className="btn btn-ghost btn-xs" onClick={() => setStartError(null)} style={{ color: '#fca5a5' }}>Dismiss</button>
+        </div>
+      )}
 
       {/* ── Split Pane: Instructions | Terminal | Inspector ──── */}
       <div className="lab-workspace">

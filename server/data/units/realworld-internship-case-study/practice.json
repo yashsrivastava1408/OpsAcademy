@@ -1,27 +1,53 @@
 {
   "unitId": "realworld-internship-case-study",
-  "title": "Practice Lab: Local Dev Contract & K8s NetworkPolicy Debugging",
+  "title": "Enterprise DevOps: GitOps, Change-Aware CI/CD & K8s Incident Post-Mortem Lab",
   "steps": [
     {
       "step": 1,
       "title": "Create Local Dev Makefile Entrypoint",
-      "instruction": "Create a Makefile with targets for `dev` (runs `docker compose up -d`), `dev-down` (`docker compose down`), and `dev-logs` (`docker compose logs -f`).",
-      "hint": "Use docker compose -f Backend/local/docker-compose.yml up -d in your Makefile target.",
-      "command": "make dev"
+      "description": "Construct a root `Makefile` implementing zero-K8s local developer workflows with targets: `dev` (runs `docker compose up -d`), `dev-down` (`docker compose down`), and `dev-logs` (`docker compose logs -f`).",
+      "tasks": [
+        "Create working directory: `mkdir -p /home/student/enterprise-devops && cd /home/student/enterprise-devops`",
+        "Create `/home/student/enterprise-devops/Makefile`",
+        "Add targets `dev:`, `dev-down:`, and `dev-logs:`",
+        "Verify Makefile syntax with `make -n -C /home/student/enterprise-devops dev`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/enterprise-devops/Makefile && grep -q 'dev:' /home/student/enterprise-devops/Makefile && grep -q 'dev-down:' /home/student/enterprise-devops/Makefile && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
     },
     {
       "step": 2,
-      "title": "Setup Gitignored Secret Template",
-      "instruction": "Copy secrets.template.yaml to secrets.yaml inside Backend/local/secrets/ and add Backend/local/secrets/secrets.yaml to .gitignore.",
-      "hint": "Add 'Backend/local/secrets/secrets.yaml' to .gitignore.",
-      "command": "grep 'secrets.yaml' .gitignore"
+      "title": "Gitignored Secret Template & Environment Contract",
+      "description": "Establish a secure secret contract by creating a template `secrets.template.yaml` and enforcing `.gitignore` rules against committing plain-text secrets.",
+      "tasks": [
+        "Create `/home/student/enterprise-devops/secrets.template.yaml` with placeholder keys",
+        "Create `/home/student/enterprise-devops/.gitignore` containing `secrets.yaml` and `*.env`",
+        "Verify `.gitignore` pattern matching"
+      ],
+      "verification": {
+        "command": "test -f /home/student/enterprise-devops/secrets.template.yaml && grep -q 'secrets.yaml' /home/student/enterprise-devops/.gitignore && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
     },
     {
       "step": 3,
-      "title": "Debug NetworkPolicy Label Mismatch",
-      "instruction": "Pods are stuck at Init:1/2 because NetworkPolicy uses 'name: encryption' instead of 'kubernetes.io/metadata.name: encryption'. Fix the label selector.",
-      "hint": "Inspect the namespace metadata label using kubectl get ns encryption --show-labels.",
-      "command": "kubectl apply -f Backend/k8s/base/network-policy.yaml"
+      "title": "Fix NetworkPolicy Cross-Namespace Label Mismatch",
+      "description": "Fix an incident where Pods are stuck at `Init:1/2` due to an incorrect namespaceSelector label (`name: backend` instead of `kubernetes.io/metadata.name: backend`).",
+      "tasks": [
+        "Create `/home/student/enterprise-devops/network-policy.yaml`",
+        "Define `kind: NetworkPolicy` with `ingress.from.namespaceSelector.matchLabels`",
+        "Use correct selector: `kubernetes.io/metadata.name: backend`",
+        "Verify YAML syntax"
+      ],
+      "verification": {
+        "command": "test -f /home/student/enterprise-devops/network-policy.yaml && grep -q 'kubernetes.io/metadata.name: backend' /home/student/enterprise-devops/network-policy.yaml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
     }
   ]
 }

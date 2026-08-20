@@ -2,28 +2,78 @@
   "steps": [
     {
       "step": 1,
-      "title": "Expose Application Metrics",
-      "description": "Inspect metrics format and verify /metrics endpoint response.",
+      "title": "Prometheus Metrics Exporter Setup",
+      "description": "Construct an application metrics endpoint exporting OpenMetrics / Prometheus formatted telemetry (Counter, Gauge, Histogram).",
       "tasks": [
-        "Simulate scraping a metrics endpoint: `curl -s http://localhost:4000/api/health || echo 'http_requests_total 42'`",
-        "Verify PromQL compatible metric formatting"
+        "Create `/home/student/monitoring/metrics_server.py` or `/home/student/monitoring/metrics.prom`",
+        "Include standard metrics: `# HELP http_requests_total Total HTTP requests`, `# TYPE http_requests_total counter`",
+        "Add gauge for memory usage: `process_resident_memory_bytes 104857600`",
+        "Add latency histogram: `http_request_duration_seconds_bucket{le=\"0.1\"} 150`"
       ],
       "verification": {
-        "command": "curl -s http://localhost:4000/api/health 2>&1 | grep -q 'ok\\|status\\|http' && echo PASS || echo FAIL",
+        "command": "test -f /home/student/monitoring/metrics.prom && grep -q 'http_requests_total' /home/student/monitoring/metrics.prom && grep -q 'process_resident_memory_bytes' /home/student/monitoring/metrics.prom && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
     },
     {
       "step": 2,
-      "title": "PromQL Query Practice",
-      "description": "Write PromQL expressions for calculating request rates and error percentages.",
+      "title": "Prometheus Scraper Configuration (prometheus.yml)",
+      "description": "Write a production `prometheus.yml` configuration defining scrape intervals, evaluation intervals, and static/Kubernetes service discovery targets.",
       "tasks": [
-        "Calculate request rate: `rate(http_requests_total[5m])`",
-        "Filter errors: `http_requests_total{status=~\"5..\"}`"
+        "Create `/home/student/monitoring/prometheus.yml`",
+        "Define `global.scrape_interval: 15s` and `global.evaluation_interval: 15s`",
+        "Add scrape job `job_name: 'microservices'` targeting `['localhost:8080', 'localhost:9090']`",
+        "Validate YAML formatting"
       ],
       "verification": {
-        "command": "echo 'rate(http_requests_total[5m])' | grep -q 'rate' && echo PASS || echo FAIL",
+        "command": "test -f /home/student/monitoring/prometheus.yml && grep -q 'scrape_interval' /home/student/monitoring/prometheus.yml && grep -q 'job_name' /home/student/monitoring/prometheus.yml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "Prometheus Alerting Rules & SLI Thresholds",
+      "description": "Formulate PromQL alerting rules for High Error Rate (>5% 5xx responses) and CrashLoopBackOff container restarts.",
+      "tasks": [
+        "Create `/home/student/monitoring/alert_rules.yml`",
+        "Define `groups.rules` containing alert `HighErrorRate`",
+        "Use expression: `expr: sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100 > 5`",
+        "Add `for: 2m` and `labels.severity: critical`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/monitoring/alert_rules.yml && grep -q 'HighErrorRate' /home/student/monitoring/alert_rules.yml && grep -q 'severity: critical' /home/student/monitoring/alert_rules.yml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Structured JSON Logging with Trace Correlation",
+      "description": "Build a structured logger that injects OpenTelemetry compatible `trace_id` and `span_id` into all application log outputs for distributed tracing.",
+      "tasks": [
+        "Create `/home/student/monitoring/structured_logger.sh` or `/home/student/monitoring/logger.py`",
+        "Ensure every log line outputs JSON: `{\"timestamp\": \"...\", \"level\": \"ERROR\", \"trace_id\": \"...\", \"message\": \"...\"}`",
+        "Generate a sample log at `/home/student/monitoring/app_traced.log`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/monitoring/app_traced.log && grep -q 'trace_id' /home/student/monitoring/app_traced.log && grep -q 'timestamp' /home/student/monitoring/app_traced.log && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "RED Method Observability Dashboard Spec",
+      "description": "Construct a Grafana dashboard JSON panel specification monitoring Rate, Errors, and Duration (RED method).",
+      "tasks": [
+        "Create `/home/student/monitoring/grafana_dashboard.json`",
+        "Define panels for Request Rate (`rate(http_requests_total[1m])`), Error Ratio, and p99 Latency (`histogram_quantile(0.99, ...)` )",
+        "Verify JSON validity with `python3 -m json.tool /home/student/monitoring/grafana_dashboard.json`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/monitoring/grafana_dashboard.json && python3 -m json.tool /home/student/monitoring/grafana_dashboard.json >/dev/null && grep -q 'histogram_quantile' /home/student/monitoring/grafana_dashboard.json && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

@@ -2,14 +2,80 @@
   "steps": [
     {
       "step": 1,
-      "title": "Python JSON Automation",
-      "description": "Parse and update a JSON config file using Python.",
+      "title": "Cloud Resource Inventory & Metrics Aggregator",
+      "description": "Write a Python script that discovers simulated cloud instances, computes total memory/CPU allocations, and exports a structured JSON report.",
       "tasks": [
-        "Create script: `echo 'import json; print(json.dumps({\"status\": \"ok\"}))' > /tmp/test.py`",
-        "Run script: `python3 /tmp/test.py`"
+        "Create `/home/student/inventory.py`",
+        "Implement a script that reads an infrastructure list and writes `/home/student/inventory_report.json`",
+        "Include keys for `total_instances`, `healthy_instances`, and `timestamp`",
+        "Run the script: `python3 /home/student/inventory.py`"
       ],
       "verification": {
-        "command": "python3 /tmp/test.py | grep -q 'ok' && echo PASS || echo FAIL",
+        "command": "python3 /home/student/inventory.py && test -f /home/student/inventory_report.json && grep -q 'total_instances' /home/student/inventory_report.json && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Resilient Health Probe with Exponential Backoff",
+      "description": "Build an HTTP probe script using `urllib.request` or `requests` that retries failing endpoints with exponential backoff and jitter.",
+      "tasks": [
+        "Create `/home/student/health_probe.py`",
+        "Implement a retry loop (max 3 attempts) that waits `2 ** attempt` seconds upon failure",
+        "Log each attempt with status code and latency",
+        "Make it test connectivity to `http://localhost:80` (or fallback endpoint) and write results to `/home/student/probe.log`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/health_probe.py && python3 /home/student/health_probe.py && test -f /home/student/probe.log && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "High-Performance Regex Log Analyzer",
+      "description": "Write a Python script utilizing `re` to parse 10,000 log lines in milliseconds, aggregate top offending IPs, and compute p95 request durations.",
+      "tasks": [
+        "Create `/home/student/log_analyzer.py`",
+        "Compile regex pattern: `r'(\\d+\\.\\d+\\.\\d+\\.\\d+) - - \\[(.*?)\\] \"(\\w+) (.*?) HTTP/.*\" (\\d+) (\\d+)'`",
+        "Parse a sample log and write the top error IP to `/home/student/top_offenders.txt`",
+        "Run `python3 /home/student/log_analyzer.py`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/log_analyzer.py && python3 /home/student/log_analyzer.py && test -f /home/student/top_offenders.txt && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Incident Alert Webhook Dispatcher",
+      "description": "Create an alert dispatcher that formats incident payloads (JSON cards with severity, affected services, and runbook links) and dispatches to webhook endpoints.",
+      "tasks": [
+        "Create `/home/student/alert_dispatcher.py`",
+        "Construct an incident payload dictionary with `severity: 'CRITICAL'`, `service: 'auth-api'`, `metric: '5xx_error_rate > 5%'`",
+        "Write the payload output to `/home/student/dispatched_alert.json`",
+        "Run `python3 /home/student/alert_dispatcher.py`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/alert_dispatcher.py && python3 /home/student/alert_dispatcher.py && test -f /home/student/dispatched_alert.json && grep -q 'CRITICAL' /home/student/dispatched_alert.json && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "CLI Infrastructure Management Utility with argparse",
+      "description": "Develop a command-line interface utility with `argparse` supporting subcommands (`start`, `stop`, `status`, `prune`) for managing sandbox workloads.",
+      "tasks": [
+        "Create `/home/student/opscli.py`",
+        "Use `argparse.ArgumentParser` with subparsers for `status` and `prune`",
+        "Make `python3 /home/student/opscli.py status` print system status to stdout",
+        "Test running the CLI tool"
+      ],
+      "verification": {
+        "command": "test -f /home/student/opscli.py && python3 /home/student/opscli.py status | grep -iE 'status|ok|running|system' && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

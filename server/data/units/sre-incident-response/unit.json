@@ -1,0 +1,21 @@
+{
+  "id": "sre-incident-response",
+  "title": "SRE Incident Response & Chaos Engineering",
+  "description": "Master live production incident response, outage triage, CrashLoopBackOff diagnosis, memory leak investigation with pmap and cgroups, CoreDNS failure recovery, and automated root cause analysis post-mortems.",
+  "difficulty": "advanced",
+  "duration": "60 min",
+  "category": "Site Reliability",
+  "prerequisites": ["linux-basics", "kubernetes-basics", "monitoring-observability"],
+  "objectives": [
+    "Triage production CrashLoopBackOff container failures using kubectl describe and logs",
+    "Identify and isolate process memory leaks using pmap, valgrind, and cgroups",
+    "Debug CoreDNS resolution storms, ndots search paths, and UDP timeouts",
+    "Mitigate cascading database connection pool exhaustion under synthetic load",
+    "Author comprehensive SRE Root Cause Analysis (RCA) and post-mortem action items"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

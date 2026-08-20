@@ -1,0 +1,68 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "Custom Seccomp Syscall Whitelisting Profile",
+      "description": "Construct a JSON Seccomp profile implementing default-deny `SCMP_ACT_ERRNO` policy and whitelisting only essential runtime syscalls (`read`, `write`, `exit_group`, `futex`).",
+      "tasks": [
+        "Create working directory: `mkdir -p /home/student/security-hardening && cd /home/student/security-hardening`",
+        "Create `/home/student/security-hardening/seccomp-profile.json`",
+        "Set `defaultAction: \"SCMP_ACT_ERRNO\"` and define `architectures: [\"SCMP_ARCH_X86_64\", \"SCMP_ARCH_AARCH64\"]`",
+        "Add `syscalls` array explicitly whitelisting `read`, `write`, `epoll_wait`, `nanosleep`, and `exit_group` with `action: \"SCMP_ACT_ALLOW\"`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/security-hardening/seccomp-profile.json && grep -q 'SCMP_ACT_ERRNO' /home/student/security-hardening/seccomp-profile.json && grep -q 'SCMP_ACT_ALLOW' /home/student/security-hardening/seccomp-profile.json && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Drop Capabilities & ReadOnlyRootFilesystem Manifest",
+      "description": "Configure a Kubernetes SecurityContext that drops all Linux capabilities (`drop: [\"ALL\"]`), disables privilege escalation, and enforces a read-only root filesystem.",
+      "tasks": [
+        "Create `/home/student/security-hardening/secure-pod.yaml`",
+        "Add `securityContext.readOnlyRootFilesystem: true`",
+        "Add `securityContext.allowPrivilegeEscalation: false`",
+        "Add `capabilities: { drop: [\"ALL\"], add: [\"NET_BIND_SERVICE\"] }`",
+        "Add an `emptyDir` mount for `/tmp` so ephemeral writes succeed without compromising root filesystem immutability"
+      ],
+      "verification": {
+        "command": "test -f /home/student/security-hardening/secure-pod.yaml && grep -q 'readOnlyRootFilesystem: true' /home/student/security-hardening/secure-pod.yaml && grep -q 'drop:' /home/student/security-hardening/secure-pod.yaml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "Falco Runtime Threat Detection Rule Authoring",
+      "description": "Author custom YAML Falco intrusion detection rules to flag interactive shell spawns and unauthorized `/etc/shadow` reads in real-time.",
+      "tasks": [
+        "Create `/home/student/security-hardening/falco_custom_rules.yaml`",
+        "Define rule `- rule: Container Shell Execution` with condition `spawned_process and container and proc.name in (sh, bash)`",
+        "Define rule `- rule: Read Sensitive Shadow File` with condition `open_read and fd.name = /etc/shadow`",
+        "Specify `priority: CRITICAL`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/security-hardening/falco_custom_rules.yaml && grep -q 'Container Shell Execution' /home/student/security-hardening/falco_custom_rules.yaml && grep -q 'Read Sensitive Shadow File' /home/student/security-hardening/falco_custom_rules.yaml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Automated Security Audit & Benchmark Script",
+      "description": "Write a bash verification script that audits running processes for non-root execution, checks file permissions on `/etc/passwd`, and logs audit results.",
+      "tasks": [
+        "Create `/home/student/security-hardening/audit_hardening.sh`",
+        "Verify if any running processes have UID 0; log non-compliant processes to `/home/student/security-hardening/audit_findings.log`",
+        "Make executable: `chmod +x /home/student/security-hardening/audit_hardening.sh` and execute"
+      ],
+      "verification": {
+        "command": "test -x /home/student/security-hardening/audit_hardening.sh && /home/student/security-hardening/audit_hardening.sh && test -f /home/student/security-hardening/audit_findings.log && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

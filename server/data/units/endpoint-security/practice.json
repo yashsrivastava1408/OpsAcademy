@@ -1,27 +1,52 @@
 {
   "unitId": "endpoint-security",
-  "title": "Practice Lab: Defender GPO Deployment, CrowdStrike API & BitLocker",
+  "title": "Enterprise Endpoint Security: EPP, EDR & XDR Defense Lab",
   "steps": [
     {
       "step": 1,
-      "title": "Onboard Microsoft Defender for Endpoint",
-      "instruction": "Execute PowerShell commands to verify Defender services ('WinDefend' and 'Sense') and verify real-time cloud protection status.",
-      "hint": "Run Get-Service -Name WinDefend, Sense and Get-MpPreference in PowerShell.",
-      "command": "powershell -Command \"Get-Service -Name WinDefend, Sense\""
+      "title": "Endpoint Agent & Telemetry Health Verification",
+      "description": "Construct an endpoint monitoring daemon script simulating EPP/EDR heartbeat telemetry, process interception, and cloud management check-in.",
+      "tasks": [
+        "Create `/home/student/edr_agent.sh`",
+        "Implement a health check checking local agent status, PID, and cloud connectivity",
+        "Make `/home/student/edr_agent.sh` write `STATUS=HEALTHY_TELEMETRY_ONLINE` to `/home/student/edr_status.log`",
+        "Make it executable: `chmod +x /home/student/edr_agent.sh` and run it"
+      ],
+      "verification": {
+        "command": "test -x /home/student/edr_agent.sh && /home/student/edr_agent.sh && grep -q 'HEALTHY_TELEMETRY_ONLINE' /home/student/edr_status.log && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
     },
     {
       "step": 2,
-      "title": "Configure CrowdStrike Falcon Host Auto-Isolation API",
-      "instruction": "Simulate calling CrowdStrike Falcon REST API to automatically isolate a compromised host upon detecting critical ransomware behavior.",
-      "hint": "Send POST request to CrowdStrike device action endpoint /devices/entities/host-actions/v1.",
-      "command": "curl -X POST https://api.crowdstrike.com/devices/entities/host-actions/v1 -d '{\"action_name\":\"contain\"}'"
+      "title": "Automated Host Network Isolation Simulation (CrowdStrike API)",
+      "description": "Build an automated incident containment script that simulates calling the EDR host containment API to isolate a compromised host while preserving analyst triage telemetry.",
+      "tasks": [
+        "Create `/home/student/contain_host.sh`",
+        "Simulate sending a JSON containment command: `{\"action\": \"contain\", \"host_id\": \"srv-prod-01\", \"reason\": \"Ransomware_Behavior_Detected\"}` to `/home/student/containment_audit.json`",
+        "Verify audit output creation"
+      ],
+      "verification": {
+        "command": "test -x /home/student/contain_host.sh && /home/student/contain_host.sh && grep -q 'Ransomware_Behavior_Detected' /home/student/containment_audit.json && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
     },
     {
       "step": 3,
-      "title": "Verify BitLocker XTS-AES Encryption via Intune",
-      "instruction": "Check BitLocker drive encryption status on OS volume C: and ensure recovery keys are backed up to Active Directory / Azure AD.",
-      "hint": "Run Get-BitLockerVolume -MountPoint C: and Assert-BitLockerKeyProtector.",
-      "command": "powershell -Command \"Get-BitLockerVolume -MountPoint C:\""
+      "title": "Storage Encryption & BitLocker/LUKS Policy Enforcement",
+      "description": "Formulate a policy script auditing disk encryption algorithms (XTS-AES 256-bit) and key escrow verification.",
+      "tasks": [
+        "Create `/home/student/audit_encryption.sh`",
+        "Verify volume mount encryption policy and export `ENCRYPTION_CIPHER=XTS-AES-256` to `/home/student/encryption_report.txt`",
+        "Execute `/home/student/audit_encryption.sh`"
+      ],
+      "verification": {
+        "command": "test -x /home/student/audit_encryption.sh && /home/student/audit_encryption.sh && grep -q 'XTS-AES-256' /home/student/encryption_report.txt && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
     }
   ]
 }

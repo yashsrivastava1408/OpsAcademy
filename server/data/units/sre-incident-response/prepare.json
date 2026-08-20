@@ -1,0 +1,26 @@
+{
+  "flashcards": [
+    {
+      "front": "What is MTTR and why is it the primary SRE performance metric during incidents?",
+      "back": "Mean Time to Resolution (MTTR) measures the average elapsed time from incident detection until complete service restoration. High-performing SRE teams maintain MTTR < 15 minutes through automated health probes, canary rollbacks, and fast runbooks."
+    },
+    {
+      "front": "How do you distinguish between an application crash and an OOMKilled event in Linux containers?",
+      "back": "Inspect the exit code: Exit code 1 indicates an unhandled application exception. Exit code 137 indicates the container exceeded its allocated memory limit and was killed via SIGKILL (128 + 9) by the Linux kernel OOM killer."
+    },
+    {
+      "front": "What are the 4 Golden Signals of SRE monitoring?",
+      "back": "1. Latency (time to serve a request)\n2. Traffic (demand/throughput)\n3. Errors (failure rate)\n4. Saturation (how full system resources are: CPU, memory, socket descriptors)."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "question": "A production microservice starts returning HTTP 504 Gateway Timeouts during a flash sale. Walk me through your first 5 minutes of investigation.",
+      "answer": "1. Check the Load Balancer & Ingress metrics to identify whether all pods or a subset are timing out.\n2. Inspect Pod statuses with `kubectl get pods -o wide` to check for CrashLoopBackOff or high restart counts.\n3. Pull live logs with `kubectl logs -l app=myservice --tail=100` looking for database connection timeouts, lock contention, or external API failures.\n4. Check resource saturation: `kubectl top pods` and `kubectl top nodes` to see if CPU is throttling or memory is near threshold.\n5. If saturated, temporarily scale replicas (`kubectl scale deployment`) or enable circuit-breaking while investigating downstream query bottlenecks."
+    },
+    {
+      "question": "What is the difference between a Blameless Post-Mortem and traditional incident reporting?",
+      "answer": "A Blameless Post-Mortem assumes that engineers made the best decisions possible with the information they had at the time. Instead of assigning individual blame, it focuses on systemic vulnerabilities, missing telemetry, poor guardrails, and automated circuit breakers to prevent the exact failure mode from recurring."
+    }
+  ]
+}

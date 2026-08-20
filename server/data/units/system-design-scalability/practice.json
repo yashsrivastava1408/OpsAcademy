@@ -2,14 +2,77 @@
   "steps": [
     {
       "step": 1,
-      "title": "Analyze Cache Performance",
-      "description": "Simulate calculating cache hit ratio and latency metrics.",
+      "title": "Nginx Reverse Proxy & Round-Robin Load Balancer",
+      "description": "Configure an Nginx load balancer upstream pooling 3 backend microservice nodes with health check timeouts and weighted round-robin distribution.",
       "tasks": [
-        "Run `echo 'cache_hits=950 cache_misses=50' > /tmp/cache.log`",
-        "Calculate hit ratio: `awk '{print ($1/($1+$2))*100}' /tmp/cache.log`"
+        "Create `/home/student/scalability/nginx_lb.conf`",
+        "Define `upstream backend_cluster` containing `server 10.0.1.10:8080 weight=3;`, `server 10.0.1.11:8080;`, and `server 10.0.1.12:8080 backup;`",
+        "Configure `location /` with `proxy_pass http://backend_cluster;` and `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`"
       ],
       "verification": {
-        "command": "test -f /tmp/cache.log && echo PASS || echo FAIL",
+        "command": "test -f /home/student/scalability/nginx_lb.conf && grep -q 'upstream backend_cluster' /home/student/scalability/nginx_lb.conf && grep -q 'proxy_pass' /home/student/scalability/nginx_lb.conf && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Distributed Caching & Cache-Control Policies",
+      "description": "Formulate HTTP caching headers and cache invalidation strategies (Stale-While-Revalidate and Redis TTLs).",
+      "tasks": [
+        "Create `/home/student/scalability/cache_headers.conf`",
+        "Add `add_header Cache-Control \"public, max-age=3600, stale-while-revalidate=86400\";`",
+        "Add `add_header ETag \"$upstream_http_etag\";`",
+        "Verify header declarations"
+      ],
+      "verification": {
+        "command": "test -f /home/student/scalability/cache_headers.conf && grep -q 'stale-while-revalidate' /home/student/scalability/cache_headers.conf && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "Leaky Bucket Rate Limiting against DDoS",
+      "description": "Implement rate limiting using Nginx `limit_req_zone` to clamp incoming traffic to 10 requests/sec with a burst buffer of 20 requests.",
+      "tasks": [
+        "Create `/home/student/scalability/rate_limit.conf`",
+        "Add `limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;`",
+        "Apply `limit_req zone=api_limit burst=20 nodelay;` and `limit_req_status 429;`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/scalability/rate_limit.conf && grep -q 'limit_req_zone' /home/student/scalability/rate_limit.conf && grep -q 'burst=20' /home/student/scalability/rate_limit.conf && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Circuit Breaker Pattern against Cascading Outages",
+      "description": "Write a Python circuit breaker simulation (`circuit_breaker.py`) that trips to OPEN state after 5 consecutive downstream timeouts.",
+      "tasks": [
+        "Create `/home/student/scalability/circuit_breaker.py`",
+        "Implement states: `CLOSED` (normal), `OPEN` (fast-fail), and `HALF-OPEN` (recovery probe)",
+        "Write simulation logic that trips the circuit on errors and logs state transitions to `/home/student/scalability/circuit_state.log`",
+        "Run `python3 /home/student/scalability/circuit_breaker.py`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/scalability/circuit_breaker.py && python3 /home/student/scalability/circuit_breaker.py && test -f /home/student/scalability/circuit_state.log && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "Active-Passive High Availability & Health Probing",
+      "description": "Configure keepalived / failover health checks that automatically redirect traffic from Primary Node to Standby Node within 3 seconds of failure.",
+      "tasks": [
+        "Create `/home/student/scalability/failover_check.sh`",
+        "Implement automated health probe checking HTTP status code; if non-200, trigger backup switchover",
+        "Make executable and verify test execution"
+      ],
+      "verification": {
+        "command": "test -x /home/student/scalability/failover_check.sh && /home/student/scalability/failover_check.sh && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

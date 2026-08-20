@@ -79,13 +79,13 @@ const server = http.createServer(app);
 attachTerminalWebSocket(server);
 
 // ── Start Server ─────────────────────────────────────────────
-server.listen(config.port, () => {
+server.listen(config.port, '0.0.0.0', () => {
   console.log('');
   console.log('  ╔═══════════════════════════════════════════════╗');
   console.log('  ║          🚀 OpsAcademy API Gateway            ║');
   console.log('  ╠═══════════════════════════════════════════════╣');
-  console.log(`  ║  HTTP:      http://localhost:${config.port}            ║`);
-  console.log(`  ║  WebSocket: ws://localhost:${config.port}/api/terminal ║`);
+  console.log(`  ║  HTTP:      http://0.0.0.0:${config.port}              ║`);
+  console.log(`  ║  WebSocket: ws://0.0.0.0:${config.port}/api/terminal   ║`);
   console.log(`  ║  Sandbox:   ${config.sandboxMode.toUpperCase()} mode ${ config.sandboxMode === 'pty' ? '💻' : '🐳'}                    ║`);
   console.log('  ╚═══════════════════════════════════════════════╝');
   console.log('');

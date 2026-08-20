@@ -2,14 +2,80 @@
   "steps": [
     {
       "step": 1,
-      "title": "GitOps Manifest Validation",
-      "description": "Inspect ArgoCD CRD YAML structures.",
+      "title": "Declarative ArgoCD Application CRD Manifest",
+      "description": "Construct a fully qualified ArgoCD `Application` Custom Resource manifest specifying source Git repo, target revision, and destination cluster namespace.",
       "tasks": [
-        "Create sample app spec: `echo 'kind: Application' > /tmp/argo-app.yaml`",
-        "Verify kind declaration"
+        "Create `/home/student/gitops/argocd-app.yaml`",
+        "Define `apiVersion: argoproj.io/v1alpha1` and `kind: Application`",
+        "Configure `spec.source` pointing to `repoURL: https://github.com/opsacademy/microservice-k8s` and `targetRevision: HEAD`",
+        "Set destination `server: https://kubernetes.default.svc` and `namespace: production`"
       ],
       "verification": {
-        "command": "grep -q 'Application' /tmp/argo-app.yaml && echo PASS || echo FAIL",
+        "command": "test -f /home/student/gitops/argocd-app.yaml && grep -q 'argoproj.io/v1alpha1' /home/student/gitops/argocd-app.yaml && grep -q 'kind: Application' /home/student/gitops/argocd-app.yaml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Automated Sync & Self-Healing SyncPolicy",
+      "description": "Configure automated synchronization, pruning of deleted resources, and self-healing to automatically revert manual cluster drift.",
+      "tasks": [
+        "Update `/home/student/gitops/argocd-app.yaml` to include `spec.syncPolicy.automated`",
+        "Enable `prune: true` so removed Git files are deleted in Kubernetes",
+        "Enable `selfHeal: true` to prevent uncommitted `kubectl edit` manual drift",
+        "Add `syncOptions: [CreateNamespace=true]`"
+      ],
+      "verification": {
+        "command": "grep -q 'selfHeal: true' /home/student/gitops/argocd-app.yaml && grep -q 'prune: true' /home/student/gitops/argocd-app.yaml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "App-of-Apps Multi-Cluster Master Pattern",
+      "description": "Design an enterprise App-of-Apps root catalog repository that boots multiple microservices with a single Git commit.",
+      "tasks": [
+        "Create directory structure: `/home/student/gitops/apps/`",
+        "Create `/home/student/gitops/apps/root-app.yaml` referencing child apps (`frontend-app.yaml`, `backend-app.yaml`, `database-app.yaml`)",
+        "Create `/home/student/gitops/apps/frontend-app.yaml` and `/home/student/gitops/apps/backend-app.yaml`",
+        "Verify all YAML files have valid syntax"
+      ],
+      "verification": {
+        "command": "test -f /home/student/gitops/apps/root-app.yaml && test -f /home/student/gitops/apps/frontend-app.yaml && test -f /home/student/gitops/apps/backend-app.yaml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Kustomize Multi-Environment Overlays",
+      "description": "Set up a clean Kustomize directory hierarchy with a shared base and environment-specific overlays for `staging` and `production`.",
+      "tasks": [
+        "Create `/home/student/kustomize/base/deployment.yaml` and `/home/student/kustomize/base/kustomization.yaml`",
+        "Create `/home/student/kustomize/overlays/prod/kustomization.yaml` with replica count patch (e.g. `replicas: 5`)",
+        "Create `/home/student/kustomize/overlays/staging/kustomization.yaml` with replica count patch (e.g. `replicas: 2`)",
+        "Verify `kustomization.yaml` references `../../base`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/kustomize/base/kustomization.yaml && test -f /home/student/kustomize/overlays/prod/kustomization.yaml && grep -q 'replicas' /home/student/kustomize/overlays/prod/kustomization.yaml && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "Argo Rollouts Canary Progressive Delivery",
+      "description": "Write a canary release manifest using `argoproj.io/v1alpha1 Rollout` with automated weight step-ups (20% -> 50% -> 100%).",
+      "tasks": [
+        "Create `/home/student/gitops/canary-rollout.yaml`",
+        "Set `kind: Rollout` with `strategy.canary.steps`",
+        "Add step 1: `setWeight: 20` and `pause: { duration: 60s }`",
+        "Add step 2: `setWeight: 50` and `pause: { duration: 120s }`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/gitops/canary-rollout.yaml && grep -q 'kind: Rollout' /home/student/gitops/canary-rollout.yaml && grep -q 'setWeight: 20' /home/student/gitops/canary-rollout.yaml && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

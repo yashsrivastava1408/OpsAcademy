@@ -1,0 +1,38 @@
+{
+  "sections": [
+    {
+      "id": "kernel-security-mechanisms",
+      "title": "Linux Kernel Isolation: Seccomp, AppArmor & Capabilities",
+      "content": "### Defense in Depth in Linux Workloads\n\nContainers share the host Linux kernel. Hardening the system call boundary is the primary defense against zero-day container breakout exploits:\n\n```text\nContainer Application ──> [Seccomp (Syscall Filter)] ──> [AppArmor/SELinux (Path MAC)] ──> [Capabilities Filter] ──> Host Kernel\n```\n\n#### Security Layers:\n1. **Seccomp (Secure Computing)**: Restricts which of the ~450 Linux system calls a process can make. Blocking calls like `ptrace`, `sys_chroot`, and `keyctl` neutralizes 90% of privilege escalation CVEs.\n2. **Linux Capabilities**: Divides root privileges into granular sub-units (`CAP_NET_BIND_SERVICE`, `CAP_CHOWN`). Dropping all capabilities (`cap-drop: ALL`) and whitelisting only necessary ones prevents unauthorized packet sniffing or raw device access.\n3. **AppArmor / SELinux**: Mandatory Access Control (MAC) enforcing granular file read/write, network socket, and execution permissions."
+    },
+    {
+      "id": "falco-ebpf-runtime-detection",
+      "title": "Runtime Intrusion Detection with Falco & eBPF",
+      "content": "### eBPF-Powered Kernel Telemetry\n\n**Falco** uses kernel instrumentation (via eBPF probes) to monitor system calls in real-time and trigger alerts when suspicious behavior occurs:\n\n```yaml\n- rule: Terminal Shell in Container\n  desc: A terminal shell was spawned in a running production container\n  condition: >\n    spawned_process and container\n    and proc.name in (bash, sh, zsh, dash)\n  output: \"Shell spawned in container (user=%user.name pod=%k8s.pod.name)\"\n  priority: WARNING\n```\n\nUnlike traditional log shippers, eBPF operates at the kernel ring buffer layer (<1% CPU overhead) and cannot be bypassed by user-space malware tampering with `/var/log`."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What is the primary function of Seccomp in Linux container security?",
+      "options": [
+        "To filter and intercept system calls (syscalls) executed by a process before reaching the kernel",
+        "To encrypt container network traffic over the wire",
+        "To scan container images for vulnerable open-source packages",
+        "To manage Kubernetes RBAC token permissions"
+      ],
+      "correctIndex": 0,
+      "explanation": "Seccomp (Secure Computing Mode) acts as a kernel-level system call firewall, blocking or logging unauthorized syscalls like ptrace or reboot."
+    },
+    {
+      "question": "Why should production containers drop CAP_NET_RAW capability?",
+      "options": [
+        "To prevent attackers from crafting raw TCP/IP packets to perform ARP spoofing or port scans inside the cluster network",
+        "To increase network throughput by disabling checksums",
+        "To allow containers to bind to privileged ports below 1024",
+        "To disable DNS resolution inside the pod"
+      ],
+      "correctIndex": 0,
+      "explanation": "CAP_NET_RAW allows a process to create raw network sockets, which attackers can exploit for network spoofing, ARP poisoning, or covert channel communication."
+    }
+  ]
+}

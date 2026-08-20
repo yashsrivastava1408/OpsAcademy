@@ -1,27 +1,52 @@
 {
   "unitId": "digital-forensics",
-  "title": "Practice Lab: Memory Analysis, Hashing & Timeline Forensic Reconstruction",
+  "title": "Digital Forensics & Incident Response (DFIR) Lab",
   "steps": [
     {
       "step": 1,
-      "title": "Verify Evidence SHA-256 Hash Integrity",
-      "instruction": "Compute the SHA-256 cryptographic hash of evidence file 'evidence_mem.raw' using sha256sum to ensure zero alteration.",
-      "hint": "Run sha256sum evidence_mem.raw in the terminal.",
-      "command": "sha256sum /tmp/evidence_mem.raw"
+      "title": "Evidence Hash Verification & Chain of Custody",
+      "description": "Compute and verify SHA-256 cryptographic hashes for disk and memory forensic artifacts to establish tamper-evident Chain of Custody.",
+      "tasks": [
+        "Create evidence workspace: `mkdir -p /home/student/dfir-evidence && cd /home/student/dfir-evidence`",
+        "Create sample evidence file: `echo 'SUSPICIOUS_MEMORY_DUMP_HEADER' > /home/student/dfir-evidence/evidence_mem.raw`",
+        "Compute SHA-256 hash and export to `/home/student/dfir-evidence/evidence_hash.txt` using `sha256sum /home/student/dfir-evidence/evidence_mem.raw`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/dfir-evidence/evidence_hash.txt && grep -q 'evidence_mem.raw' /home/student/dfir-evidence/evidence_hash.txt && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
     },
     {
       "step": 2,
-      "title": "Analyze Memory Dump with Volatility 3",
-      "instruction": "Run Volatility to inspect process tree and identify suspicious PowerShell child processes in the memory dump.",
-      "hint": "Use vol -f /tmp/evidence_mem.raw windows.pstree.",
-      "command": "python3 -m volatility3 -f /tmp/evidence_mem.raw windows.pstree"
+      "title": "Process Tree & Hidden Execution Analysis",
+      "description": "Write a forensic triage script that reconstructs process hierarchy (Parent PID -> Child PID) to identify unlinked or masquerading processes.",
+      "tasks": [
+        "Create `/home/student/dfir-evidence/process_triage.sh`",
+        "Inspect active processes and extract PPID relationships (`ps -eo pid,ppid,comm,args`)",
+        "Save process tree analysis to `/home/student/dfir-evidence/pstree_report.txt`",
+        "Make executable and run the script"
+      ],
+      "verification": {
+        "command": "test -x /home/student/dfir-evidence/process_triage.sh && /home/student/dfir-evidence/process_triage.sh && test -f /home/student/dfir-evidence/pstree_report.txt && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
     },
     {
       "step": 3,
-      "title": "Network Sockets Forensic Scan",
-      "instruction": "Extract active TCP/UDP network connections from memory to locate C2 server communication sockets.",
-      "hint": "Run windows.netscan plugin.",
-      "command": "python3 -m volatility3 -f /tmp/evidence_mem.raw windows.netscan"
+      "title": "Network Socket IOC & C2 Communication Scan",
+      "description": "Scan active listening sockets and outgoing TCP/UDP sessions to identify unauthorized remote Command & Control (C2) IP connections.",
+      "tasks": [
+        "Create `/home/student/dfir-evidence/net_ioc_scan.sh`",
+        "Extract foreign IP connections and open ports, saving output to `/home/student/dfir-evidence/netscan_findings.txt`",
+        "Execute `/home/student/dfir-evidence/net_ioc_scan.sh`"
+      ],
+      "verification": {
+        "command": "test -x /home/student/dfir-evidence/net_ioc_scan.sh && /home/student/dfir-evidence/net_ioc_scan.sh && test -f /home/student/dfir-evidence/netscan_findings.txt && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
     }
   ]
 }

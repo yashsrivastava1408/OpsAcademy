@@ -15,12 +15,27 @@ export default function Terminal({ sessionId, onDisconnect, onStartLab }) {
   const [status, setStatus] = useState('disconnected'); // disconnected | connecting | connected
 
   const connectWebSocket = useCallback(() => {
-    if (!sessionId) return;
+    if (!sessionId || sessionId.startsWith('local-lab-')) {
+      if (xtermRef.current) {
+        xtermRef.current.clear();
+        xtermRef.current.writeln('\x1b[1;36m[OpsAcademy Sandbox Gateway]\x1b[0m');
+        xtermRef.current.writeln('\x1b[33m⚡ Click "Start Lab" above to launch a live interactive shell session.\x1b[0m');
+      }
+      setStatus('disconnected');
+      return;
+    }
 
     setStatus('connecting');
     const wsUrl = getTerminalWsUrl(sessionId);
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    let ws;
+    try {
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+    } catch (e) {
+      console.warn('[Terminal] Failed to construct WebSocket:', e);
+      setStatus('disconnected');
+      return;
+    }
 
     if (xtermRef.current) {
       xtermRef.current.clear();
@@ -36,7 +51,9 @@ export default function Terminal({ sessionId, onDisconnect, onStartLab }) {
       if (fitAddonRef.current) {
         const dims = fitAddonRef.current.proposeDimensions();
         if (dims) {
-          ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+          try {
+            ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+          } catch { /* ignore */ }
         }
       }
     };
@@ -48,12 +65,14 @@ export default function Terminal({ sessionId, onDisconnect, onStartLab }) {
     };
 
     ws.onerror = (err) => {
-      console.error('[Terminal WS Error]', err);
       setStatus('disconnected');
     };
 
     ws.onclose = () => {
       setStatus('disconnected');
+      if (xtermRef.current) {
+        xtermRef.current.writeln('\r\n\x1b[31m[Sandbox Disconnected]\x1b[0m \x1b[90mSession closed. Click "Start Lab" to launch a new session.\x1b[0m');
+      }
       if (onDisconnect) onDisconnect();
     };
   }, [sessionId, onDisconnect]);

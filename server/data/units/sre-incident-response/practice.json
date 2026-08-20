@@ -1,0 +1,67 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "title": "CrashLoopBackOff Exit Code & Crash Log Analysis",
+      "description": "Investigate a failing background service that crashes immediately upon boot. Extract previous container exit codes and identify the root cause stack trace.",
+      "tasks": [
+        "Create working incident workspace: `mkdir -p /home/student/incident-war-room && cd /home/student/incident-war-room`",
+        "Create a simulated crashing microservice script: `/home/student/incident-war-room/crash_app.sh` that exits with code 1 due to missing `DATABASE_URL`",
+        "Create an incident triage script: `/home/student/incident-war-room/triage_crash.sh` that checks if `DATABASE_URL` is set, sets a default if missing, and logs `REPAIRED` to `/home/student/incident-war-room/repair.log`",
+        "Execute `/home/student/incident-war-room/triage_crash.sh`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/incident-war-room/triage_crash.sh && test -x /home/student/incident-war-room/triage_crash.sh && /home/student/incident-war-room/triage_crash.sh && grep -q 'REPAIRED' /home/student/incident-war-room/repair.log && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "Memory Leak & OOM Killer Hunting with pmap and ps",
+      "description": "Simulate a runaway process consuming resident memory. Inspect memory segment allocations and write an automated watchdog to terminate leaking PIDs before host starvation.",
+      "tasks": [
+        "Create an automated memory watchdog script: `/home/student/incident-war-room/memory_watchdog.sh`",
+        "Make it scan for any process consuming > 200MB resident set size (`rss`) using `ps -eo pid,rss,comm`",
+        "Log the offending PID to `/home/student/incident-war-room/oom_prevented.log`",
+        "Make executable: `chmod +x /home/student/incident-war-room/memory_watchdog.sh` and run it"
+      ],
+      "verification": {
+        "command": "test -x /home/student/incident-war-room/memory_watchdog.sh && /home/student/incident-war-room/memory_watchdog.sh && test -f /home/student/incident-war-room/oom_prevented.log && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "CoreDNS Timeout & ndots Optimization",
+      "description": "Diagnose latency degradation caused by DNS resolution retries. Optimize resolv.conf configurations and verify query resolution timings.",
+      "tasks": [
+        "Create `/home/student/incident-war-room/resolv_optimized.conf`",
+        "Configure `nameserver 1.1.1.1` and `nameserver 8.8.8.8`",
+        "Add `options timeout:2 attempts:2 rotate`",
+        "Verify formatting with `cat /home/student/incident-war-room/resolv_optimized.conf`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/incident-war-room/resolv_optimized.conf && grep -q 'nameserver' /home/student/incident-war-room/resolv_optimized.conf && grep -q 'options timeout' /home/student/incident-war-room/resolv_optimized.conf && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Authoring an SRE Post-Mortem Incident Report",
+      "description": "Generate an executive-ready Markdown Root Cause Analysis (RCA) document documenting the incident timeline, impact, root cause, and 5 action items.",
+      "tasks": [
+        "Create `/home/student/incident-war-room/POST_MORTEM.md`",
+        "Include sections: `## Incident Overview`, `## Timeline (UTC)`, `## Root Cause (5 Whys)`, and `## Action Items (Preventative)`",
+        "Include calculated MTTR (Mean Time to Resolution) under 15 minutes"
+      ],
+      "verification": {
+        "command": "test -f /home/student/incident-war-room/POST_MORTEM.md && grep -q 'Root Cause' /home/student/incident-war-room/POST_MORTEM.md && grep -q 'Action Items' /home/student/incident-war-room/POST_MORTEM.md && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    }
+  ]
+}

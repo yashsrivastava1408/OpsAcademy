@@ -1,0 +1,21 @@
+{
+  "id": "cloud-security-hardening",
+  "title": "Cloud-Native Container & Linux Kernel Hardening",
+  "description": "Master enterprise Linux kernel security, Seccomp system call filtering, AppArmor profiles, Linux Capabilities (CAP_SYS_ADMIN elimination), and runtime intrusion detection rules with Falco and eBPF.",
+  "difficulty": "advanced",
+  "duration": "55 min",
+  "category": "Security",
+  "prerequisites": ["linux-basics", "docker-basics", "devsecops-security"],
+  "objectives": [
+    "Write custom Seccomp system call whitelisting profiles blocking dangerous syscalls (ptrace, reboot, mount)",
+    "Configure AppArmor profile enforcement to protect against container filesystem escapes",
+    "Audit and drop unnecessary Linux Capabilities (CAP_NET_RAW, CAP_SYS_ADMIN, CAP_DAC_OVERRIDE)",
+    "Construct Falco runtime intrusion detection rules to detect rogue shell execution and reverse shells",
+    "Verify container immutability with ReadOnlyRootFilesystem policies"
+  ],
+  "modes": {
+    "learn": true,
+    "practice": true,
+    "prepare": true
+  }
+}

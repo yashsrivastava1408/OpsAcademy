@@ -1,0 +1,43 @@
+{
+  "sections": [
+    {
+      "id": "sre-foundations",
+      "title": "SRE Incident Lifecycle & Service Level Objectives",
+      "content": "### Site Reliability Engineering (SRE) Outage Response\n\nWhen high-severity incidents (SEV-1 / P1) occur, structured operational triage is critical to maintaining high availability (>99.99% uptime):\n\n```text\nIncident Timeline:\n[Detection / Pager Alert] ──> [Triage & Containment] ──> [Root Cause Mitigation] ──> [Post-Mortem & Blameless RCA]\n```\n\n#### Core SRE Metrics (The 4 Golden Signals):\n1. **Latency**: Time taken to service a request (differentiating between successful and error latency).\n2. **Traffic**: Demand placed on the system (HTTP requests/sec or IOPS).\n3. **Errors**: The rate of requests that fail (HTTP 5xx, failed DB queries, broken network connections).\n4. **Saturation**: How 'full' the service is (CPU, RAM, disk I/O, socket descriptors)."
+    },
+    {
+      "id": "k8s-crashloop-debugging",
+      "title": "Diagnosing CrashLoopBackOff & OOMKilled",
+      "content": "### Kubernetes Failure Modes\n\nWhen a container fails to start or continuously terminates, Kubernetes labels it with specific exit statuses:\n\n| State | Primary Root Cause | First Diagnostic Step |\n| :--- | :--- | :--- |\n| **CrashLoopBackOff (Exit 1)** | Application error, missing env var, syntax crash | `kubectl logs <pod> --previous` |\n| **OOMKilled (Exit 137)** | Container exceeded memory `limits` (Linux OOM killer) | `kubectl describe pod <pod>` (Look for `Last State: Terminated, Exit Code: 137`) |\n| **ImagePullBackOff** | Registry authentication failure or non-existent image tag | Check image name and Docker secret credentials |\n| **CreateContainerConfigError** | Missing ConfigMap key or Secret reference | `kubectl get configmap,secret` |"
+    },
+    {
+      "id": "dns-and-networking-failures",
+      "title": "CoreDNS Failures & The ndots:5 Bottleneck",
+      "content": "### Debugging DNS Outages in Cloud Workloads\n\nBy default, `/etc/resolv.conf` in Kubernetes pods sets `options ndots:5`. For external domains like `api.stripe.com`, Linux performs up to 4 sequential DNS queries inside cluster search domains (`default.svc.cluster.local`, `svc.cluster.local`, `cluster.local`) before querying the public root.\n\n```text\nClient Request: api.stripe.com\n1. api.stripe.com.default.svc.cluster.local  -> NXDOMAIN (Latency penalty)\n2. api.stripe.com.svc.cluster.local          -> NXDOMAIN\n3. api.stripe.com.cluster.local              -> NXDOMAIN\n4. api.stripe.com                            -> SUCCESS (Resolved)\n```\n\n**Fix**: Append a trailing dot (`api.stripe.com.`) in application configs to bypass search domain penalties and reduce DNS lookups by 75%."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "What is the primary indicator that a Kubernetes Pod was killed by the Linux Out-of-Memory (OOM) killer?",
+      "options": [
+        "Exit code 137 in container Last State",
+        "Exit code 0 with Completed status",
+        "Exit code 1 with Error status",
+        "Pod state set to Evicted due to disk pressure"
+      ],
+      "correctIndex": 0,
+      "explanation": "Exit code 137 corresponds to 128 + 9 (SIGKILL), indicating the Linux kernel OOM killer forcibly terminated the process for violating memory limits."
+    },
+    {
+      "question": "Why does adding a trailing dot (e.g. `api.example.com.`) improve external DNS query latency in Kubernetes pods?",
+      "options": [
+        "It signals to the resolver that the domain is Fully Qualified (FQDN), bypassing ndots search domain expansions",
+        "It switches the query protocol from UDP to TCP automatically",
+        "It forces CoreDNS to cache responses indefinitely",
+        "It encrypts DNS queries with DNS-over-HTTPS"
+      ],
+      "correctIndex": 0,
+      "explanation": "A trailing dot indicates a Fully Qualified Domain Name (FQDN), which skips search domain expansions defined in ndots:5."
+    }
+  ]
+}

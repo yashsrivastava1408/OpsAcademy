@@ -58,25 +58,42 @@ export default function DevOpsInspector({
   const dragStart = useRef({ x: 0, y: 0 });
 
   const tipData = RECRUITER_QUICK_TIPS[unitId] || RECRUITER_QUICK_TIPS.default;
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
 
   const fetchTelemetry = async () => {
-    if (!sessionId) return;
+    if (!sessionId || sessionId.startsWith('local-lab-')) return;
     try {
       setLoading(true);
       const res = await sandboxApi.getTelemetry(sessionId);
-      if (res.data?.data) {
+      if (isMounted.current && res.data?.data) {
         setTelemetry(res.data.data);
       }
     } catch (err) {
-      console.warn('[DevOpsInspector] Telemetry poll warning:', err.message);
+      if (err.response?.status === 404) {
+        // Session expired or killed on server; quiet reset
+        if (isMounted.current) {
+          setTelemetry({ fileTree: [], processes: [], ports: [] });
+        }
+      }
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    if (!sessionId || sessionId.startsWith('local-lab-')) {
+      setTelemetry({ fileTree: [], processes: [], ports: [] });
+      return;
+    }
     fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 4000);
+    const interval = setInterval(fetchTelemetry, 5000);
     return () => clearInterval(interval);
   }, [sessionId]);
 

@@ -2,15 +2,95 @@
   "steps": [
     {
       "step": 1,
-      "title": "Write a Defensive Script",
-      "description": "Create a script with set -euo pipefail.",
+      "title": "Strict Mode & Defensive Shell Scripting",
+      "description": "Initialize a production-grade Bash script implementing unofficial strict mode (`set -euo pipefail`) and custom exit traps.",
       "tasks": [
-        "Create `~/defensive.sh`: `echo '#!/bin/bash' > ~/defensive.sh && echo 'set -euo pipefail' >> ~/defensive.sh && echo 'echo \"Safe Script\"' >> ~/defensive.sh`",
-        "Make it executable: `chmod +x ~/defensive.sh`",
-        "Run it: `~/defensive.sh`"
+        "Create a script at `/home/student/strict_deploy.sh`",
+        "Add shebang `#!/bin/bash` followed by `set -euo pipefail`",
+        "Add a trap function `cleanup` that echoes 'Cleaning up temporary buffers' on EXIT signal (`trap cleanup EXIT`)",
+        "Make the script executable with `chmod +x /home/student/strict_deploy.sh`"
       ],
       "verification": {
-        "command": "test -x ~/defensive.sh && grep -q 'set -euo pipefail' ~/defensive.sh && echo PASS || echo FAIL",
+        "command": "test -x /home/student/strict_deploy.sh && grep -q 'set -euo pipefail' /home/student/strict_deploy.sh && grep -q 'trap' /home/student/strict_deploy.sh && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 2,
+      "title": "CLI Argument Parsing with getopts",
+      "description": "Write a dynamic CLI utility script that parses command line flags (`-e <env>`, `-p <port>`, `-v` for verbose).",
+      "tasks": [
+        "Create `/home/student/cli_parser.sh` with executable permissions",
+        "Implement `while getopts \"e:p:v\" opt; do` loop handling arguments",
+        "Store the environment in an `$ENV` variable and port in `$PORT`",
+        "Test executing `./cli_parser.sh -e production -p 8080`"
+      ],
+      "verification": {
+        "command": "test -x /home/student/cli_parser.sh && grep -q 'getopts' /home/student/cli_parser.sh && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 3,
+      "title": "High-Throughput Log Filtering with awk and sed",
+      "description": "Generate a sample web access log and build a single-line pipeline extracting HTTP 5xx error rates per client IP.",
+      "tasks": [
+        "Create a sample log at `/home/student/access.log` containing 20 lines of simulated Nginx logs with mixed 200, 404, and 500 status codes",
+        "Write a parser script `/home/student/parse_errors.sh` that uses `awk` to filter lines where status code >= 500",
+        "Output the count of 5xx errors to `/home/student/5xx_report.txt`"
+      ],
+      "verification": {
+        "command": "test -f /home/student/access.log && test -x /home/student/parse_errors.sh && /home/student/parse_errors.sh && test -f /home/student/5xx_report.txt && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 4,
+      "title": "Automated Health Monitor Daemon with Lockfile",
+      "description": "Create a daemon script that uses a PID lockfile (`/tmp/health_monitor.lock`) to prevent duplicate overlapping runs and monitors disk/memory thresholds.",
+      "tasks": [
+        "Create `/home/student/health_daemon.sh`",
+        "Check if `/tmp/health_monitor.lock` exists before running; exit with status 1 if locked",
+        "If not locked, create the lockfile, write current PID `$$`, log system date & uptime to `/home/student/system_health.log`, and remove lock on exit",
+        "Make it executable: `chmod +x /home/student/health_daemon.sh`"
+      ],
+      "verification": {
+        "command": "test -x /home/student/health_daemon.sh && /home/student/health_daemon.sh && test -f /home/student/system_health.log && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 5,
+      "title": "Rotating Archive & Backup Engine",
+      "description": "Build an automated backup script that compresses `/home/student/app` into timestamped `.tar.gz` archives and purges backups older than 7 days.",
+      "tasks": [
+        "Create workspace directory `/home/student/app` with sample config and source files",
+        "Create `/home/student/backup.sh` that archives `/home/student/app` into `/home/student/backups/backup_$(date +%Y%m%d_%H%M%S).tar.gz`",
+        "Include `find /home/student/backups -name '*.tar.gz' -mtime +7 -delete` retention policy",
+        "Execute `/home/student/backup.sh` and verify `.tar.gz` archive creation"
+      ],
+      "verification": {
+        "command": "test -x /home/student/backup.sh && /home/student/backup.sh && ls /home/student/backups/*.tar.gz >/dev/null 2>&1 && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
+        "check": "contains"
+      }
+    },
+    {
+      "step": 6,
+      "title": "Process Signal Trapping & Graceful Shutdown",
+      "description": "Create a long-running service script that gracefully handles `SIGTERM` and `SIGINT` signals, flushes buffers, and exits with 0.",
+      "tasks": [
+        "Create `/home/student/graceful_service.sh`",
+        "Register `trap 'echo Gracefully stopping service; exit 0' SIGTERM SIGINT`",
+        "Write PID to `/home/student/service.pid`",
+        "Make it executable: `chmod +x /home/student/graceful_service.sh`"
+      ],
+      "verification": {
+        "command": "test -x /home/student/graceful_service.sh && grep -E 'trap.*SIGTERM|trap.*SIGINT' /home/student/graceful_service.sh && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

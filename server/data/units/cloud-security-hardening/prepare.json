@@ -1,0 +1,26 @@
+{
+  "flashcards": [
+    {
+      "front": "What is the difference between Seccomp and AppArmor?",
+      "back": "Seccomp operates strictly at the system call level (filtering whether a syscall like ptrace or reboot is allowed). AppArmor operates at the file path and resource level (enforcing Mandatory Access Control on specific files, directories, and network sockets)."
+    },
+    {
+      "front": "Why is running a container with ReadOnlyRootFilesystem considered a best security practice?",
+      "back": "It prevents an attacker who exploits a web vulnerability from writing malicious binaries, rootkits, or persistence scripts to disk. Any required temporary scratch space is mounted explicitly via an ephemeral emptyDir volume."
+    },
+    {
+      "front": "How does eBPF improve container security observability over traditional kernel modules?",
+      "back": "eBPF runs sandboxed bytecode verified by the Linux kernel in real time without modifying kernel source or inserting risky kernel modules. It provides low-overhead (<1%) tracing of all process events, socket traffic, and file accesses."
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "question": "If an attacker achieves remote code execution (RCE) inside a container running as root, how do Linux capabilities and Seccomp prevent a host breakout?",
+      "answer": "Even if the container process has UID 0 (root), if the container was started with `cap-drop: ALL`, the attacker cannot mount host devices, load kernel modules, or tamper with system time. Furthermore, if Seccomp blocks `sys_chroot`, `ptrace`, and `bpf`, the attacker cannot hijack host processes or probe kernel memory, confining the breach entirely within the isolated container sandbox."
+    },
+    {
+      "question": "What is the principle of Least Privilege regarding Kubernetes Pod Security Standards (PSS)?",
+      "answer": "Pod Security Standards enforce the 'Restricted' profile: running as a non-root UID, dropping all capabilities, enforcing read-only root filesystems, denying hostPID/hostNetwork sharing, and forbidding privilege escalation (`allowPrivilegeEscalation: false`)."
+    }
+  ]
+}
