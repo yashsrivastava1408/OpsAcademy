@@ -104,13 +104,13 @@ sequenceDiagram
     actor Student
     participant Web as React client
     participant API as Gateway
-    participant Box as Sandbox
+    participant Sbx as Sandbox
     participant AI as AI Hub
 
     Student->>Web: "verify keeps failing"
     Web->>API: POST /api/agent/hint (step, session)
     API->>API: Which tier has this student unlocked for this step?
-    API->>Box: List files, read recorded command history
+    API->>Sbx: List files, read recorded command history
     API->>AI: question + step + history + file tree + tier
     AI->>AI: Assessor: typo? error message? tools not used yet?
     AI->>AI: Inspector: which paths the check needs are missing?
