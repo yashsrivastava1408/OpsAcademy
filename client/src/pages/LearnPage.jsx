@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
-import mermaid from 'mermaid';
+import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -16,35 +15,116 @@ import { unitApi } from '../services/api';
 import Quiz from '../components/Quiz/Quiz';
 import './LearnPage.css';
 
+const MERMAID_CONFIG = {
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#1a2332',
+    primaryTextColor: '#e2e8f0',
+    primaryBorderColor: '#00d4ff',
+    lineColor: '#00d4ff',
+    secondaryColor: '#0f1923',
+    tertiaryColor: '#162231',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px',
+    nodeBorder: '#00d4ff',
+    clusterBkg: '#0f1923',
+    clusterBorder: '#00d4ff33',
+    edgeLabelBackground: '#0d1117',
+    actorBkg: '#1a2332',
+    actorBorder: '#00d4ff',
+    actorTextColor: '#e2e8f0',
+    signalColor: '#00d4ff',
+    signalTextColor: '#e2e8f0',
+    labelBoxBkgColor: '#1a2332',
+    labelBoxBorderColor: '#00d4ff',
+    labelTextColor: '#e2e8f0',
+    noteBkgColor: '#162231',
+    noteTextColor: '#e2e8f0',
+    noteBorderColor: '#00d4ff33',
+  },
+};
+
+// The diagram library is large, so it is downloaded only when a lesson that
+// has a diagram is opened, and only once.
+let mermaidLoading = null;
+function loadMermaid() {
+  if (!mermaidLoading) {
+    mermaidLoading = import('mermaid')
+      .then(({ default: mermaid }) => {
+        mermaid.initialize(MERMAID_CONFIG);
+        return mermaid;
+      })
+      .catch((err) => {
+        mermaidLoading = null; // let the next diagram try again
+        throw err;
+      });
+  }
+  return mermaidLoading;
+}
+
+let mermaidCount = 0;
+
 /**
- * MermaidBlock — renders a mermaid chart definition as an interactive SVG diagram.
+ * MermaidBlock — renders a mermaid chart definition as an SVG diagram.
+ * Drawing waits until the block is about to scroll into view, so a long
+ * lesson does not lay out every diagram before it can be read.
  */
 function MermaidBlock({ chart, title }) {
   const containerRef = useRef(null);
+  const [near, setNear] = useState(false);
   const [svg, setSvg] = useState('');
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`;
+    const node = containerRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setNear(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setNear(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '600px 0px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
-    mermaid.render(id, chart).then(({ svg: rendered }) => {
-      if (!cancelled) setSvg(rendered);
-    }).catch((err) => {
-      console.warn('Mermaid render error:', err);
-      if (!cancelled) setSvg(`<pre style="color:#f87171">${chart}</pre>`);
-    });
+  useEffect(() => {
+    if (!near) return undefined;
+    let cancelled = false;
+    mermaidCount += 1;
+    const id = `mermaid-${mermaidCount}`;
+
+    loadMermaid()
+      .then((mermaid) => mermaid.render(id, chart))
+      .then(({ svg: rendered }) => {
+        if (!cancelled) setSvg(rendered);
+      })
+      .catch((err) => {
+        console.warn('Mermaid render error:', err);
+        if (!cancelled) setFailed(true);
+      });
 
     return () => { cancelled = true; };
-  }, [chart]);
+  }, [chart, near]);
 
   return (
     <div className="learn-mermaid glass-card">
       {title && <h4 className="mermaid-title">{title}</h4>}
-      <div
-        ref={containerRef}
-        className="mermaid-container"
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+      {failed ? (
+        // The diagram source is still readable when it cannot be drawn.
+        <pre className="diagram-box">{chart}</pre>
+      ) : (
+        <div
+          ref={containerRef}
+          className="mermaid-container"
+          style={svg ? undefined : { minHeight: 160 }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      )}
     </div>
   );
 }
@@ -261,6 +341,142 @@ function renderMarkdownString(markdownText, handleCopyCode, copiedIdx, unitId) {
   });
 }
 
+/** One block of an authored (array-style) section. */
+function ContentBlock({ block, blockKey, unitId, copiedKey, onCopy }) {
+  switch (block.type) {
+    case 'text':
+      return <p className="learn-paragraph">{parseInline(block.value)}</p>;
+
+    case 'code':
+      return (
+        <div className="learn-code-block glass-card">
+          <div className="code-header">
+            <span>{block.title || 'Shell / Configuration'}</span>
+            <div className="code-header-actions">
+              <button className="btn btn-ghost btn-sm code-copy-btn" onClick={() => onCopy(block.value, blockKey)}>
+                {copiedKey === blockKey ? (
+                  <>
+                    <Check size={14} className="copied-icon" /> Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy size={14} /> Copy
+                  </>
+                )}
+              </button>
+              <Link to={`/unit/${unitId}/practice`} className="btn btn-secondary btn-sm code-run-btn">
+                <Terminal size={12} /> Run in Shell
+              </Link>
+            </div>
+          </div>
+          <pre>
+            <code>{block.value}</code>
+          </pre>
+        </div>
+      );
+
+    case 'callout': {
+      const icons = {
+        info: <Info size={18} className="callout-icon info" />,
+        tip: <Lightbulb size={18} className="callout-icon tip" />,
+        warning: <AlertTriangle size={18} className="callout-icon warning" />,
+      };
+
+      return (
+        <div className={`learn-callout ${block.style}`}>
+          {icons[block.style] || icons.info}
+          <div className="callout-content">{parseInline(block.value)}</div>
+        </div>
+      );
+    }
+
+    case 'diagram':
+      return (
+        <div className="learn-diagram glass-card">
+          {block.title && <h4>{block.title}</h4>}
+          <pre className="diagram-box">{block.value}</pre>
+        </div>
+      );
+
+    case 'mermaid':
+      return <MermaidBlock chart={block.value} title={block.title} />;
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * One lesson section. Memoised, and it owns its "Copied!" state, so reading
+ * (scrolling, the table of contents highlight) never re-parses the lesson.
+ */
+const LearnSection = memo(function LearnSection({ section, unitId }) {
+  const [copiedKey, setCopiedKey] = useState(null);
+  const resetTimer = useRef(null);
+  useEffect(() => () => clearTimeout(resetTimer.current), []);
+
+  const handleCopy = useCallback((text, key) => {
+    // Clipboard access can be refused (permissions, insecure origin).
+    Promise.resolve(navigator.clipboard?.writeText(text)).then(() => {
+      setCopiedKey(key);
+      clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => setCopiedKey(null), 2000);
+    }).catch(() => {});
+  }, []);
+
+  const { content } = section;
+  return (
+    <section id={section.id} className="learn-section">
+      <h2 className="section-heading">{section.title}</h2>
+      <div className="section-blocks">
+        {Array.isArray(content) && content.map((block, idx) => (
+          <ContentBlock key={idx} block={block} blockKey={idx} unitId={unitId} copiedKey={copiedKey} onCopy={handleCopy} />
+        ))}
+        {typeof content === 'string' && renderMarkdownString(content, handleCopy, copiedKey, unitId)}
+      </div>
+
+      {/* Embedded Quiz */}
+      {section.quiz && <Quiz quiz={section.quiz} unitId={unitId} sectionId={section.id} />}
+    </section>
+  );
+});
+
+/**
+ * Reading progress bar. It writes the width straight to the element, at most
+ * once per frame, instead of putting scroll position in React state.
+ */
+function ReadingProgress() {
+  const barRef = useRef(null);
+
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const total = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      const percent = total > 0 ? Math.min(100, (window.scrollY / total) * 100) : 0;
+      if (barRef.current) barRef.current.style.width = `${percent}%`;
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, []);
+
+  return (
+    <div className="reading-progress-container">
+      <div ref={barRef} className="reading-progress-bar" style={{ width: '0%' }}></div>
+    </div>
+  );
+}
+
 export default function LearnPage() {
   const { unitId } = useParams();
   const navigate = useNavigate();
@@ -268,95 +484,57 @@ export default function LearnPage() {
   const [meta, setMeta] = useState(null);
   const [content, setContent] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null); // null | 'not_found' | 'offline'
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [activeSection, setActiveSection] = useState('');
-  const [copiedIdx, setCopiedIdx] = useState(null);
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const mermaidInitialized = useRef(false);
-
-  // Initialize mermaid once
-  useEffect(() => {
-    if (!mermaidInitialized.current) {
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: 'dark',
-        themeVariables: {
-          primaryColor: '#1a2332',
-          primaryTextColor: '#e2e8f0',
-          primaryBorderColor: '#00d4ff',
-          lineColor: '#00d4ff',
-          secondaryColor: '#0f1923',
-          tertiaryColor: '#162231',
-          fontFamily: 'Inter, sans-serif',
-          fontSize: '14px',
-          nodeBorder: '#00d4ff',
-          clusterBkg: '#0f1923',
-          clusterBorder: '#00d4ff33',
-          edgeLabelBackground: '#0d1117',
-          actorBkg: '#1a2332',
-          actorBorder: '#00d4ff',
-          actorTextColor: '#e2e8f0',
-          signalColor: '#00d4ff',
-          signalTextColor: '#e2e8f0',
-          labelBoxBkgColor: '#1a2332',
-          labelBoxBorderColor: '#00d4ff',
-          labelTextColor: '#e2e8f0',
-          noteBkgColor: '#162231',
-          noteTextColor: '#e2e8f0',
-          noteBorderColor: '#00d4ff33',
-        },
-      });
-      mermaidInitialized.current = true;
-    }
-  }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function fetchData() {
       setLoading(true);
+      setLoadError(null);
       try {
         const [metaRes, contentRes] = await Promise.all([
           unitApi.getMeta(unitId),
           unitApi.getMode(unitId, 'learn'),
         ]);
+        if (cancelled) return;
 
-        const metaData = metaRes.data.data;
         const contentData = contentRes.data.data;
-
-        setMeta(metaData);
+        setMeta(metaRes.data.data);
         setContent(contentData);
 
-        const sectionsList = contentData.sections || contentData.modules || [];
-        if (sectionsList.length > 0) {
-          setActiveSection(sectionsList[0].id);
-        }
+        const first = (contentData.sections || contentData.modules || [])[0];
+        setActiveSection(first ? first.id : '');
       } catch (err) {
-        console.error('Failed to load learn content:', err);
+        if (cancelled) return;
+        // A sleeping server is not the same as a lesson that does not exist.
+        setLoadError(err.response ? 'not_found' : 'offline');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     fetchData();
-  }, [unitId]);
+    return () => { cancelled = true; };
+  }, [unitId, loadAttempt]);
 
-  // Track scroll reading progress bar
+  // Highlight the section being read in the table of contents.
   useEffect(() => {
-    const handleScroll = () => {
-      const totalHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-      if (totalHeight > 0) {
-        const currentProgress = (window.scrollY / totalHeight) * 100;
-        setScrollProgress(currentProgress);
-      }
-    };
+    if (!content || typeof IntersectionObserver === 'undefined') return undefined;
+    const sections = content.sections || content.modules || [];
+    const nodes = sections.map((sec) => document.getElementById(sec.id)).filter(Boolean);
+    if (nodes.length === 0) return undefined;
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  const handleCopyCode = (text, idx) => {
-    navigator.clipboard.writeText(text);
-    setCopiedIdx(idx);
-    setTimeout(() => setCopiedIdx(null), 2000);
-  };
+    // A section is "current" while it crosses a band near the top of the screen.
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting);
+      if (visible.length > 0) setActiveSection(visible[0].target.id);
+    }, { rootMargin: '-15% 0px -70% 0px' });
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [content]);
 
   if (loading) {
     return (
@@ -367,7 +545,19 @@ export default function LearnPage() {
     );
   }
 
-  if (!content || !meta) {
+  if (loadError === 'offline') {
+    return (
+      <div className="learn-error">
+        <h2>Couldn't load this lesson</h2>
+        <p>The server did not respond. If it has been idle it can take up to a minute to wake up.</p>
+        <button className="btn btn-primary" onClick={() => setLoadAttempt((n) => n + 1)}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (loadError || !content || !meta) {
     return (
       <div className="learn-error">
         <h2>Lesson not found</h2>
@@ -380,93 +570,10 @@ export default function LearnPage() {
 
   const sectionsList = content.sections || content.modules || [];
 
-  const renderContentBlock = (block, idx) => {
-    switch (block.type) {
-      case 'text':
-        return (
-          <p key={idx} className="learn-paragraph">
-            {parseInline(block.value)}
-          </p>
-        );
-
-      case 'code':
-        return (
-          <div key={idx} className="learn-code-block glass-card">
-            <div className="code-header">
-              <span>{block.title || 'Shell / Configuration'}</span>
-              <div className="code-header-actions">
-                <button
-                  className="btn btn-ghost btn-sm code-copy-btn"
-                  onClick={() => handleCopyCode(block.value, idx)}
-                >
-                  {copiedIdx === idx ? (
-                    <>
-                      <Check size={14} className="copied-icon" /> Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={14} /> Copy
-                    </>
-                  )}
-                </button>
-                <Link to={`/unit/${unitId}/practice`} className="btn btn-secondary btn-sm code-run-btn">
-                  <Terminal size={12} /> Run in Shell
-                </Link>
-              </div>
-            </div>
-            <pre>
-              <code>{block.value}</code>
-            </pre>
-          </div>
-        );
-
-      case 'callout': {
-        const icons = {
-          info: <Info size={18} className="callout-icon info" />,
-          tip: <Lightbulb size={18} className="callout-icon tip" />,
-          warning: <AlertTriangle size={18} className="callout-icon warning" />,
-        };
-
-        return (
-          <div key={idx} className={`learn-callout ${block.style}`}>
-            {icons[block.style] || icons.info}
-            <div className="callout-content">{parseInline(block.value)}</div>
-          </div>
-        );
-      }
-
-      case 'diagram':
-        return (
-          <div key={idx} className="learn-diagram glass-card">
-            {block.title && <h4>{block.title}</h4>}
-            <pre className="diagram-box">{block.value}</pre>
-          </div>
-        );
-
-      case 'mermaid':
-        return <MermaidBlock key={idx} chart={block.value} title={block.title} />;
-
-      default:
-        return null;
-    }
-  };
-
-  const renderSectionContent = (sectionContent) => {
-    if (Array.isArray(sectionContent)) {
-      return sectionContent.map((block, idx) => renderContentBlock(block, idx));
-    }
-    if (typeof sectionContent === 'string') {
-      return renderMarkdownString(sectionContent, handleCopyCode, copiedIdx, unitId);
-    }
-    return null;
-  };
-
   return (
     <div className="learn-page">
       {/* Top Scroll Reading Progress Indicator */}
-      <div className="reading-progress-container">
-        <div className="reading-progress-bar" style={{ width: `${scrollProgress}%` }}></div>
-      </div>
+      <ReadingProgress />
 
       {/* Header */}
       <div className="learn-header">
@@ -507,15 +614,7 @@ export default function LearnPage() {
         {/* Lesson Body */}
         <main className="learn-body">
           {sectionsList.map((section) => (
-            <section key={section.id} id={section.id} className="learn-section">
-              <h2 className="section-heading">{section.title}</h2>
-              <div className="section-blocks">
-                {renderSectionContent(section.content)}
-              </div>
-
-              {/* Embedded Quiz */}
-              {section.quiz && <Quiz quiz={section.quiz} unitId={unitId} sectionId={section.id} />}
-            </section>
+            <LearnSection key={section.id} section={section} unitId={unitId} />
           ))}
 
           {/* Bottom Next Action */}

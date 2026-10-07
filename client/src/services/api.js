@@ -4,8 +4,13 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'opsacademy_token';
 const USER_KEY = 'opsacademy_user';
 
+// Longer than a cold start of a sleeping free-tier server, short enough that
+// a request to a dead one ends in an error the page can show.
+const REQUEST_TIMEOUT_MS = 75000;
+
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
+  timeout: REQUEST_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -71,7 +76,13 @@ export function ensureIdentity() {
 
 const isAuthRoute = (url = '') => url.startsWith('/auth/login') || url.startsWith('/auth/register');
 
+// Endpoints anyone may read. They are sent without a token, so they never
+// wait for a guest identity and the browser needs no CORS preflight for them.
+const PUBLIC_ROUTES = [/^\/units(\/|$)/, /^\/sandbox\/stats$/, /^\/certificates\/verify\//, /^\/health$/];
+const isPublicRoute = (url = '') => PUBLIC_ROUTES.some((pattern) => pattern.test(url));
+
 api.interceptors.request.use(async (config) => {
+  if (isPublicRoute(config.url)) return config;
   if (!isAuthRoute(config.url) || getToken()) {
     const token = isAuthRoute(config.url) ? getToken() : await ensureIdentity();
     config.headers.Authorization = `Bearer ${token}`;
@@ -143,15 +154,34 @@ export const sandboxApi = {
 };
 
 // ── Unit API (Learn, Practice, Prepare) ──────────────────────
+// Course content is the same for everyone and only changes with a deploy, so
+// each URL is fetched once and reused: moving between Learn, Practice and
+// Prepare does not wait on the network again.
+const CONTENT_TTL_MS = 5 * 60 * 1000;
+const contentCache = new Map(); // url -> { at, promise }
+
+function cachedGet(url) {
+  const hit = contentCache.get(url);
+  if (hit && Date.now() - hit.at < CONTENT_TTL_MS) return hit.promise;
+
+  const promise = api.get(url);
+  contentCache.set(url, { at: Date.now(), promise });
+  // A failed request is not remembered, so "Try again" really tries again.
+  promise.catch(() => {
+    if (contentCache.get(url)?.promise === promise) contentCache.delete(url);
+  });
+  return promise;
+}
+
 export const unitApi = {
   list: () =>
-    api.get('/units'),
+    cachedGet('/units'),
 
   getMeta: (unitId) =>
-    api.get(`/units/${unitId}`),
+    cachedGet(`/units/${unitId}`),
 
   getMode: (unitId, mode) =>
-    api.get(`/units/${unitId}/${mode}`),
+    cachedGet(`/units/${unitId}/${mode}`),
 };
 
 // ── Lab API ──────────────────────────────────────────────

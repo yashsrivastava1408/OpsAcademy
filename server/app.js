@@ -4,6 +4,7 @@
  */
 
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const helmet = require('helmet');
 const pinoHttp = require('pino-http');
@@ -26,6 +27,7 @@ const progressRoutes = require('./routes/progressRoutes');
 const certificateRoutes = require('./routes/certificateRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 
+const PREFLIGHT_MAX_AGE_SECONDS = 2 * 60 * 60; // the most Chrome will honour
 const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 function corsOrigin(origin, callback) {
@@ -44,7 +46,11 @@ function createApp() {
   app.disable('x-powered-by');
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-  app.use(cors({ origin: corsOrigin }));
+  // maxAge lets the browser remember the preflight answer. Without it almost
+  // every API call from the web app is preceded by an extra OPTIONS request.
+  app.use(cors({ origin: corsOrigin, maxAge: PREFLIGHT_MAX_AGE_SECONDS }));
+  // Lesson content is 10-25 KB of JSON per unit; gzip cuts it to about a quarter.
+  app.use(compression());
   app.use(express.json({ limit: '100kb' }));
   app.use(pinoHttp({
     logger,

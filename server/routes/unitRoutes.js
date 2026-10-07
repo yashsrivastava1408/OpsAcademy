@@ -8,12 +8,21 @@ const units = require('../lib/units');
 const router = express.Router();
 
 /**
+ * Course content only changes with a deploy and is the same for everyone,
+ * so browsers may reuse it for a few minutes and then revalidate with the ETag.
+ */
+function sendContent(res, body) {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json(body);
+}
+
+/**
  * GET /api/units
  * List all learning units (metadata only)
  */
 router.get('/', (req, res) => {
   const data = units.listMeta();
-  res.json({ success: true, data, count: data.length });
+  sendContent(res, { success: true, data, count: data.length });
 });
 
 /**
@@ -25,7 +34,7 @@ router.get('/:unitId', (req, res) => {
   if (!unit) {
     return res.status(404).json({ success: false, error: 'Unit not found' });
   }
-  res.json({ success: true, data: unit.meta });
+  sendContent(res, { success: true, data: unit.meta });
 });
 
 /**
@@ -44,7 +53,7 @@ router.get('/:unitId/:mode', (req, res) => {
     return res.status(404).json({ success: false, error: `No ${mode} content for this unit` });
   }
 
-  res.json({ success: true, data: content });
+  sendContent(res, { success: true, data: content });
 });
 
 module.exports = router;

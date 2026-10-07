@@ -34,7 +34,8 @@ router.get('/stats', (req, res) => {
 
 /**
  * POST /api/sandbox/start
- * Create a new sandbox session
+ * Start a sandbox for a lab, or hand back the one the caller already has
+ * running for it (a second tab, or a terminal that lost its connection).
  * Body: { labId? }
  */
 router.post('/start', requireAuth, rateLimit.sandboxStart(), async (req, res, next) => {
@@ -42,11 +43,13 @@ router.post('/start', requireAuth, rateLimit.sandboxStart(), async (req, res, ne
     const requested = req.body && req.body.labId;
     const labId = units.isValidUnitId(requested) ? requested : 'sandbox';
 
-    const sandbox = await getManager().createSession(req.user.id, labId);
+    const manager = getManager();
+    const running = labId === 'sandbox' ? null : manager.findSession(req.user.id, labId);
+    const sandbox = running || await manager.createSession(req.user.id, labId);
 
-    res.status(201).json({
+    res.status(running ? 200 : 201).json({
       success: true,
-      data: { ...sandbox, wsUrl: `/api/terminal?sessionId=${sandbox.sessionId}` },
+      data: { ...sandbox, resumed: Boolean(running), wsUrl: `/api/terminal?sessionId=${sandbox.sessionId}` },
     });
   } catch (err) {
     next(err);
@@ -89,7 +92,8 @@ router.get('/:sessionId/status', requireAuth, requireOwnedSession, (req, res) =>
  */
 router.get('/:sessionId/telemetry', requireAuth, requireOwnedSession, async (req, res, next) => {
   try {
-    res.json({ success: true, data: await telemetryService.capture(req.params.sessionId) });
+    // Polled by the inspector panel, so it must not reset the idle timer.
+    res.json({ success: true, data: await telemetryService.capture(req.params.sessionId, { touch: false }) });
   } catch (err) {
     next(err);
   }

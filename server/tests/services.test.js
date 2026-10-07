@@ -4,6 +4,7 @@ const progress = require('../services/progressService');
 const certificates = require('../services/certificateService');
 const { createClient, HubUnavailableError } = require('../services/aiHubClient');
 const telemetry = require('../services/telemetryService');
+const users = require('../services/userService');
 const config = require('../config');
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -326,5 +327,41 @@ describe('telemetry parsing', () => {
       { name: 'Makefile', path: 'Makefile', type: 'file', depth: 0 },
       { name: 'README', path: 'app/README', type: 'file', depth: 1 },
     ]);
+  });
+});
+
+describe('expired guests', () => {
+  test('guests past their token lifetime are removed with their progress; everyone else stays', async () => {
+    const now = Date.now();
+    const backdate = (user, days) => {
+      const { getStore } = require('../lib/store');
+      getStore().set('users', user.id, { ...user, createdAt: new Date(now - days * DAY).toISOString() });
+    };
+
+    const oldGuest = users.createGuest();
+    const oldGuestWithXp = users.createGuest();
+    const recentGuest = users.createGuest();
+    const upgraded = await users.register({ name: 'Asha Rao', email: 'asha@example.com', password: 'correct-horse' }, users.createGuest().id);
+    backdate(oldGuest, 40);
+    backdate(oldGuestWithXp, 32);
+    backdate(recentGuest, 29);
+    backdate(upgraded, 400);
+    progress.recordQuiz(oldGuestWithXp.id, 'linux-basics', 'q1');
+    progress.recordQuiz(upgraded.id, 'linux-basics', 'q1');
+    expect(progress.leaderboard()).toHaveLength(2);
+
+    expect(users.pruneExpiredGuests(now)).toBe(2);
+
+    expect(users.getById(oldGuest.id)).toBeNull();
+    expect(users.getById(oldGuestWithXp.id)).toBeNull();
+    expect(users.getById(recentGuest.id)).not.toBeNull();
+    expect(users.getById(upgraded.id)).toMatchObject({ guest: false, name: 'Asha Rao' });
+    expect(progress.summary(oldGuestWithXp.id).xp).toBe(0);
+    expect(progress.summary(upgraded.id).xp).toBe(progress.XP.quiz);
+    expect(progress.leaderboard().map((row) => row.name)).toEqual(['Asha Rao']);
+    await expect(users.login({ email: 'asha@example.com', password: 'correct-horse' })).resolves.toMatchObject({ id: upgraded.id });
+
+    // Nothing left to remove on the next run.
+    expect(users.pruneExpiredGuests(now)).toBe(0);
   });
 });

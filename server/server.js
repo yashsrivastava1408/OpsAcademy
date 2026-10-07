@@ -13,8 +13,19 @@ const { getStore } = require('./lib/store');
 const { getManager } = require('./services/sandboxManager');
 const { attachTerminalWebSocket } = require('./services/terminalService');
 const { startReaper, stopReaper } = require('./services/reaperService');
+const userService = require('./services/userService');
 
 const SHUTDOWN_TIMEOUT_MS = 10000;
+const GUEST_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+function pruneGuests() {
+  try {
+    const removed = userService.pruneExpiredGuests();
+    if (removed > 0) logger.info({ removed }, 'removed expired guest records');
+  } catch (err) {
+    logger.warn({ err: err.message }, 'could not prune guest records');
+  }
+}
 
 function start() {
   const app = createApp();
@@ -23,6 +34,9 @@ function start() {
 
   const wss = attachTerminalWebSocket(server, manager);
   startReaper(manager);
+
+  pruneGuests();
+  setInterval(pruneGuests, GUEST_PRUNE_INTERVAL_MS).unref();
 
   if (config.isProd && config.sandboxMode === 'pty') {
     logger.warn('SANDBOX_MODE=pty gives students a shell on this host with no isolation. Use SANDBOX_MODE=docker for untrusted users.');

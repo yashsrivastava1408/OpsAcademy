@@ -66,7 +66,8 @@ router.post('/flashcards/:unitId/:cardId/review', (req, res) => {
 
   const card = progressService.reviewCard(req.user.id, req.params.unitId, req.params.cardId, grade);
   if (!card) return res.status(404).json({ success: false, error: 'Flashcard not found' });
-  res.json({ success: true, data: card });
+  // The re-sorted deck comes back too, so the page needs no second request.
+  res.json({ success: true, data: card, deck: progressService.getDeck(req.user.id, req.params.unitId) });
 });
 
 module.exports = router;

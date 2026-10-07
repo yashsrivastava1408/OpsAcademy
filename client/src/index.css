@@ -3,8 +3,6 @@
    Premium dark theme with glassmorphism, gradients, and micro-animations
    ═══════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-
 /* ── CSS Custom Properties ────────────────────────────────── */
 :root {
   /* Background palette */
@@ -421,6 +419,26 @@ img {
 .animate-slide-left { animation: slideInLeft 0.4s ease-out; }
 .animate-float { animation: floatSlow 5s ease-in-out infinite; }
 
+.spin { animation: spin 1s linear infinite; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Shown while a page's code is loading, and for unknown URLs. */
+.page-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 64px);
+  gap: 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.page-loading h2 { color: var(--text-bright); }
+
 .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
 .stagger-children > *:nth-child(2) { animation-delay: 80ms; }
 .stagger-children > *:nth-child(3) { animation-delay: 160ms; }
@@ -437,4 +455,17 @@ img {
 
 @media (max-width: 480px) {
   html { font-size: 14px; }
+}
+
+/* People who ask their system for less motion get no looping or sliding effects. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -155,41 +155,46 @@ export default function PreparePage() {
   const [content, setContent] = useState(null);
   const [deck, setDeck] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null); // null | 'not_found' | 'offline'
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [grading, setGrading] = useState(false);
   const [activeTab, setActiveTab] = useState('flashcards'); // flashcards | interview | questions
   const [currentCardIdx, setCurrentCardIdx] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [expandedQ, setExpandedQ] = useState({});
 
-  const loadDeck = useCallback(async () => {
-    try {
-      const res = await progressApi.getDeck(unitId);
-      setDeck(res.data.data);
-    } catch {
-      setDeck(null); // falls back to the plain card list below
-    }
-  }, [unitId]);
-
   useEffect(() => {
+    let cancelled = false;
+
     async function fetchData() {
       setLoading(true);
+      setLoadError(null);
       try {
-        const [metaRes, contentRes] = await Promise.all([
+        // The schedule is personal and optional: without it the cards are shown in order.
+        const [metaRes, contentRes, deckRes] = await Promise.all([
           unitApi.getMeta(unitId),
           unitApi.getMode(unitId, 'prepare'),
+          progressApi.getDeck(unitId).catch(() => null),
         ]);
+        if (cancelled) return;
 
         setMeta(metaRes.data.data);
         setContent(contentRes.data.data);
-        await loadDeck();
+        setDeck(deckRes ? deckRes.data.data : null);
+        setCurrentCardIdx(0);
+        setRevealed(false);
       } catch (err) {
-        console.error('Failed to load interview prep content:', err);
+        if (cancelled) return;
+        // A sleeping server is not the same as content that does not exist.
+        setLoadError(err.response ? 'not_found' : 'offline');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     fetchData();
-  }, [unitId, loadDeck]);
+    return () => { cancelled = true; };
+  }, [unitId, loadAttempt]);
 
   if (loading) {
     return (
@@ -200,7 +205,19 @@ export default function PreparePage() {
     );
   }
 
-  if (!content || !meta) {
+  if (loadError === 'offline') {
+    return (
+      <div className="prepare-error">
+        <h2>Couldn't load the interview prep</h2>
+        <p>The server did not respond. If it has been idle it can take up to a minute to wake up.</p>
+        <button className="btn btn-primary" onClick={() => setLoadAttempt((n) => n + 1)}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (loadError || !content || !meta) {
     return (
       <div className="prepare-error">
         <h2>Content not found</h2>
@@ -226,13 +243,18 @@ export default function PreparePage() {
   };
 
   const gradeCard = async (grade) => {
+    // One review per card: a double click must not schedule it twice.
+    if (grading) return;
+    setGrading(true);
     try {
-      await progressApi.reviewCard(unitId, card.id, grade);
-      await loadDeck();
+      // The answer includes the re-sorted deck.
+      const res = await progressApi.reviewCard(unitId, card.id, grade);
+      if (res.data.deck) setDeck(res.data.deck);
       refreshProgress();
     } catch { /* keep going through the deck even if the review was not saved */ }
     // The reviewed card moves to the back of the deck, so the next one is at the same position.
     showCard(deck && currentCardIdx >= deck.cards.length - 1 ? 0 : currentCardIdx);
+    setGrading(false);
   };
 
   return (
@@ -302,7 +324,7 @@ export default function PreparePage() {
                     <span className="grade-prompt">How well did you remember it?</span>
                     <div className="grade-buttons">
                       {GRADES.map((g) => (
-                        <button key={g.grade} className={`btn btn-sm grade-btn ${g.className}`} onClick={() => gradeCard(g.grade)}>
+                        <button key={g.grade} className={`btn btn-sm grade-btn ${g.className}`} onClick={() => gradeCard(g.grade)} disabled={grading}>
                           {g.label}
                         </button>
                       ))}

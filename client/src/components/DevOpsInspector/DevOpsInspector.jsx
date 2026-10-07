@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Folder,
   FileText,
@@ -17,18 +17,22 @@ import {
   X,
 } from 'lucide-react';
 import { sandboxApi } from '../../services/api';
+import usePolling from '../../hooks/usePolling';
 import './DevOpsInspector.css';
 
+const TELEMETRY_POLL_MS = 5000;
+const EMPTY_TELEMETRY = { fileTree: [], processes: [], ports: [] };
+
 const RECRUITER_QUICK_TIPS = {
-  'docker-containers': {
+  'docker-basics': {
     question: 'Q: What is the difference between docker run and docker exec?',
     answer: '`docker run` creates and starts a NEW container from an image. `docker exec` runs a new command/shell inside an ALREADY RUNNING container.',
   },
-  'linux-fundamentals': {
+  'linux-basics': {
     question: 'Q: How do you check file permissions and active listening ports in Linux?',
     answer: 'Use `ls -la` to view Owner/Group/Other permission bits (e.g. 755 = rwxr-xr-x). Use `netstat -tuln` or `ss -tuln` to check listening TCP/UDP ports.',
   },
-  'kubernetes-orchestration': {
+  'kubernetes-basics': {
     question: 'Q: How do you debug a Pod stuck in CrashLoopBackOff status?',
     answer: '1. `kubectl get pods` to verify state. 2. `kubectl describe pod <name>` to read event warnings. 3. `kubectl logs <name>` to inspect container crash logs.',
   },
@@ -47,7 +51,7 @@ export default function DevOpsInspector({
 }) {
   const [activeTab, setActiveTab] = useState('files'); // files | sys | cmds
   const [showAnswer, setShowAnswer] = useState(false);
-  const [telemetry, setTelemetry] = useState({ fileTree: [], processes: [], ports: [] });
+  const [telemetry, setTelemetry] = useState(EMPTY_TELEMETRY);
   const [loading, setLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
   const [preview, setPreview] = useState({ loading: false, content: '', truncated: false, error: null });
@@ -66,74 +70,59 @@ export default function DevOpsInspector({
 
   // Draggable State
   // Starts below the lab header so it does not cover the Start / Verify buttons.
-  const [pos, setPos] = useState({ x: window.innerWidth - 370, y: 160 });
-  const isDragging = useRef(false);
-  const dragStart = useRef({ x: 0, y: 0 });
+  const [pos, setPos] = useState(() => ({ x: Math.max(10, window.innerWidth - 370), y: 160 }));
 
   const tipData = RECRUITER_QUICK_TIPS[unitId] || RECRUITER_QUICK_TIPS.default;
-  const isMounted = useRef(true);
 
+  // Each request remembers which session it was for, so a slow answer for a
+  // sandbox that has since been stopped or replaced is thrown away.
+  const sessionRef = useRef(sessionId);
   useEffect(() => {
-    isMounted.current = true;
-    return () => { isMounted.current = false; };
-  }, []);
-
-  const fetchTelemetry = async () => {
-    if (!sessionId) return;
-    try {
-      setLoading(true);
-      const res = await sandboxApi.getTelemetry(sessionId);
-      if (isMounted.current && res.data?.data) {
-        setTelemetry(res.data.data);
-      }
-    } catch (err) {
-      if (err.response?.status === 404) {
-        // Session expired or killed on server; quiet reset
-        if (isMounted.current) {
-          setTelemetry({ fileTree: [], processes: [], ports: [] });
-        }
-      }
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (!sessionId) {
-      setTelemetry({ fileTree: [], processes: [], ports: [] });
-      return;
-    }
-    fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 5000);
-    return () => clearInterval(interval);
-    // fetchTelemetry is recreated each render; polling restarts only when the session changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    sessionRef.current = sessionId;
+    if (!sessionId) setTelemetry(EMPTY_TELEMETRY);
+    return () => { sessionRef.current = null; };
   }, [sessionId]);
 
-  // Drag listeners
+  const fetchTelemetry = useCallback(async () => {
+    if (!sessionId) return;
+    const current = () => sessionRef.current === sessionId;
+    setLoading(true);
+    try {
+      const res = await sandboxApi.getTelemetry(sessionId);
+      if (current() && res.data?.data) setTelemetry(res.data.data);
+    } catch (err) {
+      // Session expired or killed on the server; quiet reset
+      if (current() && err.response?.status === 404) setTelemetry(EMPTY_TELEMETRY);
+    } finally {
+      if (current()) setLoading(false);
+    }
+  }, [sessionId]);
+
+  // Each poll runs commands inside the sandbox, so it only happens while the
+  // panel is open and the tab is visible.
+  usePolling(fetchTelemetry, TELEMETRY_POLL_MS, Boolean(sessionId) && !isMinimized);
+
+  // Dragging: the listeners live on the document while the mouse is down.
+  const stopDrag = useRef(null);
+  useEffect(() => () => { if (stopDrag.current) stopDrag.current(); }, []);
+
   const handleMouseDown = (e) => {
-    isDragging.current = true;
-    dragStart.current = {
-      x: e.clientX - pos.x,
-      y: e.clientY - pos.y,
+    if (e.target.closest('button')) return;
+    const offset = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+    const onMove = (event) => {
+      setPos({
+        x: Math.max(10, Math.min(window.innerWidth - 350, event.clientX - offset.x)),
+        y: Math.max(10, Math.min(window.innerHeight - 100, event.clientY - offset.y)),
+      });
     };
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  };
-
-  const handleMouseMove = (e) => {
-    if (!isDragging.current) return;
-    const newX = Math.max(10, Math.min(window.innerWidth - 350, e.clientX - dragStart.current.x));
-    const newY = Math.max(10, Math.min(window.innerHeight - 100, e.clientY - dragStart.current.y));
-    setPos({ x: newX, y: newY });
-  };
-
-  const handleMouseUp = () => {
-    isDragging.current = false;
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
+    const stop = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', stop);
+      stopDrag.current = null;
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', stop);
+    stopDrag.current = stop;
   };
 
   if (isMinimized) {
@@ -256,9 +245,9 @@ export default function DevOpsInspector({
               </div>
             ) : (
               <div className="file-tree-list">
-                {telemetry.fileTree.map((item, i) => (
+                {telemetry.fileTree.map((item) => (
                   <div
-                    key={i}
+                    key={item.path}
                     className={`tree-item depth-${Math.min(item.depth, 3)}`}
                   >
                     {item.type === 'directory' ? (

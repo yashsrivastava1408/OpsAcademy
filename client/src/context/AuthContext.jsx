@@ -1,16 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AuthContext } from '../hooks/useAuth';
-import { authApi, clearIdentity, ensureIdentity, getStoredUser, onIdentityChange, setIdentity } from '../services/api';
+import { authApi, clearIdentity, getStoredUser, onIdentityChange, setIdentity } from '../services/api';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(getStoredUser);
 
-  useEffect(() => {
-    const unsubscribe = onIdentityChange(setUser);
-    // Make sure there is an identity before any page needs one.
-    ensureIdentity().catch(() => { /* API offline: pages show their own fallbacks */ });
-    return unsubscribe;
-  }, []);
+  // A guest identity is created by the first request that needs one (see
+  // services/api.js), so someone who only reads the landing page or checks a
+  // certificate never has an account made for them.
+  useEffect(() => onIdentityChange(setUser), []);
 
   const login = useCallback(async (email, password) => {
     const res = await authApi.login(email, password);
@@ -27,7 +25,6 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     clearIdentity();
-    ensureIdentity().catch(() => {});
   }, []);
 
   return (

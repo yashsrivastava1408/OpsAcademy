@@ -7,7 +7,7 @@
  * changes it.
  */
 
-import { progressApi, onIdentityChange } from './api';
+import { progressApi, getToken, onIdentityChange } from './api';
 
 export const EMPTY_PROGRESS = {
   xp: 0,
@@ -40,6 +40,8 @@ export function subscribeProgress(listener) {
 }
 
 export function refreshProgress() {
+  // No identity yet means nothing has been done yet: there is nothing to fetch.
+  if (!getToken()) return Promise.resolve(current);
   if (!inFlight) {
     inFlight = progressApi
       .get()

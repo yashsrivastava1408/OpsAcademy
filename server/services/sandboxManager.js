@@ -151,6 +151,14 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     return [...sessions.values()].map(describe);
   }
 
+  /** The user's running sandbox for a lab, if they have one. */
+  function findSession(userId, labId) {
+    for (const session of sessions.values()) {
+      if (session.userId === userId && session.labId === labId) return describe(session);
+    }
+    return null;
+  }
+
   function touch(sessionId) {
     const session = sessions.get(sessionId);
     if (session) session.lastActiveAt = Date.now();
@@ -184,9 +192,13 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     return session;
   }
 
-  async function exec(sessionId, command, options) {
+  /**
+   * Run a command in the sandbox. Pass `touch: false` for background reads
+   * (the inspector's polling), so an open but unused tab still goes idle.
+   */
+  async function exec(sessionId, command, { touch: countsAsActivity = true, ...options } = {}) {
     const session = requireSession(sessionId);
-    session.lastActiveAt = Date.now();
+    if (countsAsActivity) session.lastActiveAt = Date.now();
     return engine.exec(session.engineId, command, options);
   }
 
@@ -284,6 +296,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     getSession,
     isOwner,
     listSessions,
+    findSession,
     touch,
     destroySession,
     onClose,

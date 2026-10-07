@@ -163,7 +163,7 @@ test('telemetry lists the files and directories the student created', async () =
   const session = await manager.createSession('user-1');
   await manager.exec(session.sessionId, 'mkdir -p webapp/src && touch webapp/src/index.js notes.txt Makefile && mkdir .git');
 
-  const telemetry = await telemetryService.capture(session.sessionId, manager);
+  const telemetry = await telemetryService.capture(session.sessionId, { manager });
 
   expect(telemetry.fileTree).toEqual([
     { name: 'Makefile', path: 'Makefile', type: 'file', depth: 0 },

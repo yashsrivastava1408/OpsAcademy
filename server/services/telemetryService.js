@@ -48,10 +48,14 @@ function parsePorts(raw) {
   return [...ports].sort((a, b) => a - b);
 }
 
-async function capture(sessionId, manager = getManager()) {
+/**
+ * @param {{ touch?: boolean }} [options] touch: false for polling, so looking
+ *   at the inspector is not counted as the student using the sandbox.
+ */
+async function capture(sessionId, { touch = true, manager = getManager() } = {}) {
   const run = async (command) => {
     try {
-      return (await manager.exec(sessionId, command)).stdout || '';
+      return (await manager.exec(sessionId, command, { touch })).stdout || '';
     } catch {
       return '';
     }

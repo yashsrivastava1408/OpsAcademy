@@ -4,8 +4,16 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { Wifi, WifiOff, Loader, Play } from 'lucide-react';
-import { getTerminalWsUrl } from '../../services/api';
+import { getTerminalWsUrl, sandboxApi } from '../../services/api';
 import './Terminal.css';
+
+// Close codes after which the sandbox itself is gone, so there is nothing to
+// reconnect to: 4000 session ended (stopped, idle, max age, abuse),
+// 4029 input flood, 1001 the gateway is shutting down.
+const SESSION_OVER_CODES = new Set([4000, 4029, 1001]);
+const MAX_RECONNECT_ATTEMPTS = 6;
+const RECONNECT_BASE_MS = 500;
+const RECONNECT_MAX_MS = 8000;
 
 const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStartLab }, ref) {
   const termRef = useRef(null);
@@ -86,35 +94,39 @@ const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStart
       }
     });
 
-    // Handle window resize
-    const handleResize = () => {
-      fitAddon.fit();
+    // Tell the shell whenever the grid changes size, whatever caused it: the
+    // window, or a side panel opening next to the terminal. Without this the
+    // shell keeps wrapping lines at the old width.
+    term.onResize(({ cols, rows }) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        const dims = fitAddon.proposeDimensions();
-        if (dims) {
-          wsRef.current.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
-        }
+        wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }));
       }
-    };
+    });
 
-    window.addEventListener('resize', handleResize);
-
+    // Refit when the panel changes size (this also covers window resizes).
+    let frame = 0;
     const observer = new ResizeObserver(() => {
-      requestAnimationFrame(() => fitAddon.fit());
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => fitAddon.fit());
     });
     observer.observe(termRef.current);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      cancelAnimationFrame(frame);
       observer.disconnect();
       term.dispose();
+      xtermRef.current = null;
+      fitAddonRef.current = null;
     };
   }, []);
 
-  // Connect when sessionId is available. Each run of this effect owns one
-  // socket and closes exactly that one on cleanup, so a quick change of
-  // session (or React re-running the effect) can never leave a stray
-  // connection or drop the live one.
+  // Connect when sessionId is available. Each run of this effect owns the
+  // sockets it opens and closes them on cleanup, so a quick change of session
+  // (or React re-running the effect) can never leave a stray connection.
+  //
+  // A dropped connection is not the end of the sandbox: it keeps running on
+  // the server. So the terminal reconnects on its own, and only reports the
+  // session as over when the server says so.
   useEffect(() => {
     if (!sessionId) {
       setStatus('disconnected');
@@ -123,65 +135,99 @@ const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStart
 
     let cancelled = false;
     let ws = null;
+    let retryTimer = null;
+    let attempts = 0;
+
+    const print = (line) => {
+      if (xtermRef.current) xtermRef.current.writeln(line);
+    };
+
+    const sessionOver = (reason) => {
+      setStatus('disconnected');
+      print(`\r\n\x1b[31m[Sandbox Disconnected]\x1b[0m \x1b[90m${reason} Click "Start Lab" to launch a new session.\x1b[0m`);
+      if (onDisconnectRef.current) onDisconnectRef.current();
+    };
+
+    const connect = async () => {
+      let url;
+      try {
+        url = await getTerminalWsUrl(sessionId);
+      } catch {
+        if (!cancelled) reconnect();
+        return;
+      }
+      if (cancelled) return;
+
+      const socket = new WebSocket(url);
+      ws = socket;
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        attempts = 0;
+        setStatus('connected');
+        const term = xtermRef.current;
+        if (!term) return;
+        // The gateway replays the recent output, so start from a clean screen.
+        term.reset();
+        if (fitAddonRef.current) fitAddonRef.current.fit();
+        socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      };
+
+      socket.onmessage = (event) => {
+        if (xtermRef.current) xtermRef.current.write(event.data);
+      };
+
+      socket.onclose = (event) => {
+        if (cancelled || ws !== socket) return;
+        if (SESSION_OVER_CODES.has(event.code)) {
+          // The gateway says why it closed the session (stopped, idle, max_age, ...).
+          sessionOver(event.reason ? `${event.reason}.` : 'Session closed.');
+          return;
+        }
+        reconnect();
+      };
+    };
+
+    // Wait a little longer each time, check the sandbox still exists, then
+    // open a new socket to it.
+    function reconnect() {
+      if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+        sessionOver('The connection could not be restored.');
+        return;
+      }
+      if (attempts === 0) print('\r\n\x1b[33m[Connection lost]\x1b[0m \x1b[90mReconnecting to your sandbox...\x1b[0m');
+      setStatus('connecting');
+      const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** attempts);
+      attempts += 1;
+
+      retryTimer = setTimeout(async () => {
+        try {
+          await sandboxApi.status(sessionId);
+        } catch (err) {
+          if (cancelled) return;
+          // An answer from the server means the sandbox is gone; no answer
+          // means the network is still down, so keep trying.
+          if (err.response) sessionOver('Session closed.');
+          else reconnect();
+          return;
+        }
+        if (!cancelled) connect();
+      }, delay);
+    }
 
     setStatus('connecting');
     if (xtermRef.current) {
-      xtermRef.current.clear();
-      xtermRef.current.writeln('\x1b[1;36m[OpsAcademy Sandbox Gateway]\x1b[0m');
-      xtermRef.current.writeln('\x1b[90mConnecting to your sandbox...\x1b[0m');
+      xtermRef.current.reset();
+      print('\x1b[1;36m[OpsAcademy Sandbox Gateway]\x1b[0m');
+      print('\x1b[90mConnecting to your sandbox...\x1b[0m');
     }
-
-    getTerminalWsUrl(sessionId)
-      .then((url) => {
-        if (cancelled) return;
-        ws = new WebSocket(url);
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-          setStatus('connected');
-          if (xtermRef.current) {
-            xtermRef.current.clear();
-          }
-          if (fitAddonRef.current) {
-            const dims = fitAddonRef.current.proposeDimensions();
-            if (dims) {
-              try {
-                ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
-              } catch { /* ignore */ }
-            }
-          }
-        };
-
-        ws.onmessage = (event) => {
-          if (xtermRef.current) {
-            xtermRef.current.write(event.data);
-          }
-        };
-
-        ws.onerror = () => {
-          setStatus('disconnected');
-        };
-
-        ws.onclose = (event) => {
-          setStatus('disconnected');
-          if (xtermRef.current) {
-            // The gateway says why it closed the session (stopped, idle, max_age, ...).
-            const reason = event.reason ? `${event.reason}.` : 'Session closed.';
-            xtermRef.current.writeln(`\r\n\x1b[31m[Sandbox Disconnected]\x1b[0m \x1b[90m${reason} Click "Start Lab" to launch a new session.\x1b[0m`);
-          }
-          if (onDisconnectRef.current) onDisconnectRef.current();
-        };
-      })
-      .catch((err) => {
-        console.warn('[Terminal] Failed to open WebSocket:', err);
-        if (!cancelled) setStatus('disconnected');
-      });
+    connect();
 
     return () => {
       cancelled = true;
+      clearTimeout(retryTimer);
       if (!ws) return;
       ws.onopen = null;
-      ws.onerror = null;
       ws.onclose = null;
       ws.onmessage = null;
       if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {

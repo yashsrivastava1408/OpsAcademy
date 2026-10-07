@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Terminal, LayoutDashboard, Compass, Sparkles, ExternalLink, Flame, Zap, LogOut } from 'lucide-react';
 import { sandboxApi } from '../../services/api';
 import useAuth from '../../hooks/useAuth';
 import useProgress from '../../hooks/useProgress';
+import usePolling from '../../hooks/usePolling';
 import './Navbar.css';
 
 const STATS_POLL_MS = 30000;
@@ -29,20 +30,13 @@ export default function Navbar() {
   const progress = useProgress();
   const [stats, setStats] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      sandboxApi.stats()
-        .then((res) => { if (!cancelled) setStats(res.data.data); })
-        .catch(() => { if (!cancelled) setStats(null); });
-    };
-    load();
-    const interval = setInterval(load, STATS_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
+  // The navbar is mounted for the whole visit, so there is nothing to cancel.
+  const loadStats = useCallback(() => {
+    sandboxApi.stats()
+      .then((res) => setStats(res.data.data))
+      .catch(() => setStats(null));
   }, []);
+  usePolling(loadStats, STATS_POLL_MS);
 
   const isActive = (path) => location.pathname === path ? 'active' : '';
   const engine = engineLabel(stats);

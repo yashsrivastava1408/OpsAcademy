@@ -21,9 +21,34 @@ import MentorChat from '../components/MentorChat/MentorChat';
 import DevOpsInspector from '../components/DevOpsInspector/DevOpsInspector';
 import { sandboxApi, unitApi, labApi, errorMessage } from '../services/api';
 import { refreshProgress } from '../services/progressService';
+import usePolling from '../hooks/usePolling';
 import './LabPage.css';
 
 const HISTORY_POLL_MS = 4000;
+
+/**
+ * Time since the sandbox started. It ticks in its own component so the lab
+ * page (instructions, terminal, inspector) is not re-rendered every second.
+ */
+function LabTimer({ startedAt }) {
+  const [now, setNow] = useState(Date.now);
+
+  useEffect(() => {
+    setNow(Date.now());
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
+  const seconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const sec = (seconds % 60).toString().padStart(2, '0');
+  return (
+    <span className="lab-timer">
+      <Clock size={14} />
+      {m}:{sec}
+    </span>
+  );
+}
 
 /** Render `backticked` parts of a task as inline code. */
 function renderInlineCode(text) {
@@ -34,6 +59,7 @@ export default function LabPage() {
   const { unitId } = useParams();
   const navigate = useNavigate();
   const terminalRef = useRef(null);
+  const startingRef = useRef(false);
 
   const [meta, setMeta] = useState(null);
   const [practiceData, setPracticeData] = useState(null);
@@ -45,7 +71,7 @@ export default function LabPage() {
   const [isStarting, setIsStarting] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState({});
   const [showHint, setShowHint] = useState({});
-  const [elapsedTime, setElapsedTime] = useState(0);
+  const [startedAt, setStartedAt] = useState(null);
   const [verifyResult, setVerifyResult] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [showMentor, setShowMentor] = useState(false);
@@ -75,7 +101,7 @@ export default function LabPage() {
         const existing = running?.data?.data?.find((s) => s.labId === unitId);
         if (!cancelled && existing) {
           setSessionId(existing.sessionId);
-          setElapsedTime(Math.floor(existing.uptime / 1000));
+          setStartedAt(Date.now() - existing.uptime);
         }
       } catch (err) {
         if (cancelled) return;
@@ -93,50 +119,37 @@ export default function LabPage() {
     return () => { cancelled = true; };
   }, [unitId, loadAttempt]);
 
-  // Timer
-  useEffect(() => {
-    if (!sessionId) return;
-    const interval = setInterval(() => {
-      setElapsedTime((prev) => prev + 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [sessionId]);
-
   // Commands the student has typed, as recorded by the gateway
-  useEffect(() => {
-    if (!sessionId) {
-      setCommandHistory([]);
-      return;
-    }
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await sandboxApi.getHistory(sessionId);
-        if (!cancelled) setCommandHistory(res.data.data.map((entry) => entry.command));
-      } catch { /* the session ended; the terminal reports it */ }
-    };
-    load();
-    const interval = setInterval(load, HISTORY_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await sandboxApi.getHistory(sessionId);
+      setCommandHistory((prev) => {
+        const next = res.data.data.map((entry) => entry.command);
+        // Keep the same array when nothing changed, so nothing re-renders.
+        return next.length === prev.length && next.every((command, i) => command === prev[i]) ? prev : next;
+      });
+    } catch { /* the session ended; the terminal reports it */ }
   }, [sessionId]);
 
-  const formatTime = (seconds) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
+  useEffect(() => {
+    if (!sessionId) setCommandHistory([]);
+  }, [sessionId]);
+
+  usePolling(loadHistory, HISTORY_POLL_MS, Boolean(sessionId));
 
   const startLab = async () => {
+    // Both Start buttons call this; a double click must not start two sandboxes.
+    if (startingRef.current) return;
+    startingRef.current = true;
     setIsStarting(true);
     setStartError(null);
     try {
       const res = await sandboxApi.start(unitId);
-      setSessionId(res.data.data.sessionId);
-      setElapsedTime(0);
-      setVerifiedSteps({});
+      const sandbox = res.data.data;
+      setSessionId(sandbox.sessionId);
+      // The gateway hands back a sandbox that is already running for this lab.
+      setStartedAt(sandbox.resumed ? Date.now() - sandbox.uptime : Date.now());
+      if (!sandbox.resumed) setVerifiedSteps({});
     } catch (err) {
       setStartError(
         err.response
@@ -144,6 +157,7 @@ export default function LabPage() {
           : 'The sandbox gateway did not respond. If it has been idle it may be waking up; try again in a few seconds.'
       );
     } finally {
+      startingRef.current = false;
       setIsStarting(false);
     }
   };
@@ -152,7 +166,6 @@ export default function LabPage() {
     if (!sessionId) return;
     const currId = sessionId;
     setSessionId(null);
-    setElapsedTime(0);
     try {
       await sandboxApi.stop(currId);
     } catch {
@@ -174,9 +187,11 @@ export default function LabPage() {
 
   const handleDisconnect = useCallback(() => setSessionId(null), []);
 
-  const runInTerminal = (command) => {
+  const runInTerminal = useCallback((command) => {
     if (terminalRef.current) terminalRef.current.send(`${command}\r`);
-  };
+  }, []);
+
+  const closeInspector = useCallback(() => setShowInspector(false), []);
 
   const verify = async (stepNumber) => {
     if (!sessionId) return;
@@ -305,12 +320,7 @@ export default function LabPage() {
             <Bot size={14} /> AI Mentor
           </button>
 
-          {sessionId && (
-            <span className="lab-timer">
-              <Clock size={14} />
-              {formatTime(elapsedTime)}
-            </span>
-          )}
+          {sessionId && startedAt && <LabTimer startedAt={startedAt} />}
 
           {!sessionId ? (
             <button className="btn btn-primary" onClick={startLab} disabled={isStarting}>
@@ -443,7 +453,7 @@ export default function LabPage() {
             unitId={unitId}
             commandHistory={commandHistory}
             onRunCommand={sessionId ? runInTerminal : undefined}
-            onClose={() => setShowInspector(false)}
+            onClose={closeInspector}
           />
         )}
       </div>

@@ -15,7 +15,8 @@ import {
   Target,
   Zap,
 } from 'lucide-react';
-import { unitApi, progressApi, certificateApi } from '../services/api';
+import { unitApi, progressApi, certificateApi, ensureIdentity } from '../services/api';
+import { EMPTY_PROGRESS } from '../services/progressService';
 import useAuth from '../hooks/useAuth';
 import useProgress from '../hooks/useProgress';
 import CertificateModal from '../components/CertificateModal/CertificateModal';
@@ -73,11 +74,23 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const progress = useProgress();
 
-  // Reload when the signed-in user or their XP changes.
+  // The dashboard is personal, so it is where a first-time visitor gets their guest identity.
+  // (Also after logging out, which leaves no identity at all.)
+  const userId = user?.id;
   useEffect(() => {
-    progressApi.leaderboard().then((res) => setLeaderboard(res.data.data)).catch(() => {});
-    certificateApi.list().then((res) => setCertificates(res.data.data)).catch(() => {});
-  }, [user?.id, progress.xp]);
+    if (!userId) ensureIdentity().catch(() => { /* API offline: the catalogue below still shows */ });
+  }, [userId]);
+
+  // Load once the user and their progress are known, then again when either
+  // changes, rather than once for each of them arriving.
+  const progressLoaded = progress !== EMPTY_PROGRESS;
+  useEffect(() => {
+    if (!userId || !progressLoaded) return undefined;
+    let cancelled = false;
+    progressApi.leaderboard().then((res) => { if (!cancelled) setLeaderboard(res.data.data); }).catch(() => {});
+    certificateApi.list().then((res) => { if (!cancelled) setCertificates(res.data.data); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [userId, progress.xp, progressLoaded]);
 
   useEffect(() => {
     async function loadUnits() {

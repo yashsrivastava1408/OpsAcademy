@@ -130,6 +130,21 @@ The mentor works without any LLM. Setting `ANTHROPIC_API_KEY` on the hub switche
 
 Everything here was measured by a script in this repository, on an Apple-silicon MacBook with Docker Desktop, over localhost. There is no network latency in these figures, and they will differ on other machines. Rerun the scripts to get your own.
 
+### Page weight (`npm run build` in `client/`)
+
+Each page is loaded on demand, so the terminal and diagram libraries are only downloaded by the pages that use them.
+
+| What the browser downloads | Minified | Gzipped |
+| :--- | ---: | ---: |
+| App shell, needed by every page (React, router, API client, navbar) | 297 kB | 98 kB |
+| Landing page | 55 kB | 21 kB |
+| Dashboard | 23 kB | 8 kB |
+| Lesson page (the diagram library is fetched only if the lesson has a diagram) | 15 kB | 5 kB |
+| Practice lab (includes xterm.js) | 374 kB | 97 kB |
+| All styles | 87 kB | 16 kB |
+
+Before pages were split, every visitor downloaded one 902 kB script (264 kB gzipped) whichever page they opened.
+
 ### Sandbox and terminal (`server/scripts/benchmark.js`, 15 sandboxes)
 
 | What the learner waits for | Docker mode | PTY mode |
@@ -220,7 +235,7 @@ Units are plain JSON under `server/data/units/`. Adding one needs no code: see [
 - **API gateway**: Node.js 22, Express, `ws`, `node-pty`, `dockerode`, JWT, bcrypt, helmet, express-rate-limit, pino, prom-client
 - **AI hub**: Python 3.11, Flask, gunicorn, scikit-learn (TF-IDF, Isolation Forest), a small BM25 implementation, optional Anthropic SDK
 - **Storage**: one JSON file with atomic writes, behind a small store interface
-- **Testing**: Jest and supertest (249 tests), pytest (269 tests), an end-to-end script that plays a learner over HTTP and WebSocket (54 checks)
+- **Testing**: Jest and supertest (258 tests), pytest (269 tests), an end-to-end script that plays a learner over HTTP and WebSocket (54 checks)
 - **Operations**: Docker Compose, Kubernetes manifests, Prometheus, Grafana, GitHub Actions
 
 There is no MongoDB, vector database or agent framework in this project. Retrieval is lexical and the "agents" are plain Python classes called in order.
@@ -275,7 +290,7 @@ Set `ANTHROPIC_API_KEY` for the hub and raise `AI_HUB_TIMEOUT_MS` on the gateway
 
 ```bash
 cd server
-npm test                                  # 249 tests, including real shells over node-pty
+npm test                                  # 258 tests, including real shells over node-pty
 npm run labs:validate                     # structure of every unit
 npm run labs:audit                        # every check against an empty Docker sandbox
 node scripts/docker-check.js              # try to break out of a real sandbox container

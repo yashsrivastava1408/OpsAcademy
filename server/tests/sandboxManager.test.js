@@ -183,6 +183,48 @@ describe('session lifecycle', () => {
     expect(reasons).toEqual(['exited']);
   });
 
+  test('exec with touch: false leaves the idle timer alone; a normal exec resets it', async () => {
+    const manager = managerWith(fakeEngine());
+    const session = await manager.createSession('user-1');
+    const startedAt = manager.getSession(session.sessionId).lastActiveAt;
+
+    jest.spyOn(Date, 'now').mockReturnValue(startedAt + 60000);
+    try {
+      await manager.exec(session.sessionId, 'ls', { touch: false });
+      expect(manager.getSession(session.sessionId).lastActiveAt).toBe(startedAt);
+      await manager.exec(session.sessionId, 'ls');
+      expect(manager.getSession(session.sessionId).lastActiveAt).toBe(startedAt + 60000);
+    } finally {
+      Date.now.mockRestore();
+    }
+  });
+
+  test('exec passes engine options through without the touch flag', async () => {
+    const engine = fakeEngine();
+    const seen = [];
+    engine.exec = (engineId, command, options) => {
+      seen.push(options);
+      return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
+    };
+    const manager = managerWith(engine);
+    const session = await manager.createSession('user-1');
+    await manager.exec(session.sessionId, 'ls', { touch: false, timeoutMs: 500 });
+    await manager.exec(session.sessionId, 'ls');
+    expect(seen).toEqual([{ timeoutMs: 500 }, {}]);
+  });
+
+  test('findSession returns the running sandbox for a user and lab only', async () => {
+    const manager = managerWith(fakeEngine(), { limits: { maxPerUser: 5 } });
+    const linux = await manager.createSession('user-1', 'linux-basics');
+    await manager.createSession('user-1', 'git-basics');
+
+    expect(manager.findSession('user-1', 'linux-basics').sessionId).toBe(linux.sessionId);
+    expect(manager.findSession('user-2', 'linux-basics')).toBeNull();
+    expect(manager.findSession('user-1', 'docker-basics')).toBeNull();
+    await manager.destroySession(linux.sessionId);
+    expect(manager.findSession('user-1', 'linux-basics')).toBeNull();
+  });
+
   test('sweep reaps sessions past max age or idle time and leaves fresh ones', async () => {
     const manager = managerWith(fakeEngine(), { limits: { maxSessionMs: 30 * 60000, maxIdleMs: 15 * 60000, maxPerUser: 5 } });
     const now = Date.now();

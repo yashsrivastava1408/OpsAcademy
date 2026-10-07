@@ -20,6 +20,10 @@ const INTERVIEW_PASS_SCORE = 70;
 const MAX_ACTIVE_DAYS = 400;
 const MAX_INTERVIEWS = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const LEADERBOARD_TTL_MS = 15 * 1000;
+
+// The last ranking, reused until someone's progress changes or it ages out.
+let leaderboardCache = null;
 
 function emptyProgress(userId) {
   return {
@@ -41,6 +45,7 @@ function load(userId) {
 
 function save(doc) {
   getStore().set(PROGRESS, doc.userId, doc);
+  leaderboardCache = null;
 }
 
 function dayKey(timestamp) {
@@ -324,21 +329,35 @@ function isUnitCompleted(userId, unitId) {
 
 function leaderboard(limit = 20, now = Date.now()) {
   const store = getStore();
-  return store.all(PROGRESS)
-    .filter((doc) => doc.xp > 0)
-    .sort((a, b) => b.xp - a.xp)
-    .slice(0, limit)
-    .map((doc, index) => {
-      const user = store.get(USERS, doc.userId);
-      return {
+  let cached = leaderboardCache;
+  if (!cached || cached.store !== store || cached.limit !== limit || now < cached.at || now - cached.at >= LEADERBOARD_TTL_MS) {
+    const ranked = store.all(PROGRESS)
+      .filter((doc) => doc.xp > 0)
+      .sort((a, b) => b.xp - a.xp)
+      .slice(0, limit)
+      .map((doc, index) => ({
         rank: index + 1,
         userId: doc.userId,
-        name: user ? user.name : 'Learner',
         xp: doc.xp,
         completedUnits: Object.keys(doc.completedUnits).length,
         streak: computeStreak(doc.activeDays, now).current,
-      };
-    });
+      }));
+    cached = { store, limit, at: now, ranked };
+    leaderboardCache = cached;
+  }
+
+  // Names are read fresh: a guest who registers shows their real name at once.
+  return cached.ranked.map(({ rank, userId, ...row }) => {
+    const user = store.get(USERS, userId);
+    return { rank, userId, name: user ? user.name : 'Learner', ...row };
+  });
+}
+
+/** Forget a learner's progress (used when an expired guest is removed). */
+function remove(userId) {
+  const existed = getStore().delete(PROGRESS, userId);
+  if (existed) leaderboardCache = null;
+  return existed;
 }
 
 module.exports = {
@@ -356,4 +375,5 @@ module.exports = {
   unitAccuracy,
   isUnitCompleted,
   leaderboard,
+  remove,
 };

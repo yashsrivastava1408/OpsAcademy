@@ -164,19 +164,12 @@ const TECH_STACK = [
   { name: 'Kubernetes', icon: <SiKubernetes size={22} className="text-blue-500" /> },
 ];
 
-export default function LandingPage() {
+/**
+ * The hero's demo terminal. It rotates through its tabs on a timer, so it is
+ * its own component: the rest of the landing page does not re-render with it.
+ */
+function DemoTerminal() {
   const [activeDemoTab, setActiveDemoTab] = useState('bash');
-  const [curriculumGroup, setCurriculumGroup] = useState('all');
-  const [showAllCourses, setShowAllCourses] = useState(false);
-
-  const filteredCourses = CURRICULUM_COURSES.filter(
-    (course) => curriculumGroup === 'all' || course.group === curriculumGroup
-  );
-
-  const displayedCourses =
-    showAllCourses || curriculumGroup !== 'all'
-      ? filteredCourses
-      : filteredCourses.slice(0, 8);
 
   // Auto-rotate terminal tabs every 3.5 seconds
   useEffect(() => {
@@ -191,6 +184,73 @@ export default function LandingPage() {
 
     return () => clearInterval(interval);
   }, []);
+
+  return (
+    <div className="mock-terminal neon-border-glow">
+      <div className="mock-terminal-header">
+        <div className="terminal-dots">
+          <span className="terminal-dot red"></span>
+          <span className="terminal-dot yellow"></span>
+          <span className="terminal-dot green"></span>
+        </div>
+        <div className="terminal-tabs">
+          {Object.keys(DEMO_TABS).map((tabKey) => (
+            <button
+              key={tabKey}
+              className={`terminal-tab-btn ${activeDemoTab === tabKey ? 'active' : ''}`}
+              onClick={() => setActiveDemoTab(tabKey)}
+            >
+              {DEMO_TABS[tabKey].label}
+            </button>
+          ))}
+        </div>
+        <div className="terminal-live-badge">
+          <span className="live-dot"></span> Interactive Sandbox
+        </div>
+      </div>
+
+      <div className="mock-terminal-body">
+        {DEMO_TABS[activeDemoTab].lines.map((line, i) => (
+          <div key={i} className="terminal-line">
+            {line.prompt && <span className="term-prompt">$ </span>}
+            <span className={line.highlight ? 'term-highlight' : line.cursor ? 'term-cursor' : 'term-output'}>
+              {line.text}
+            </span>
+          </div>
+        ))}
+
+        <div className="terminal-input-row">
+          <span className="term-prompt">student@opsacademy ~ $ </span>
+          <input
+            type="text"
+            className="hero-term-input"
+            placeholder="Try typing 'docker run' or 'kubectl get pods'..."
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.target.value.trim()) {
+                const val = e.target.value.trim();
+                e.target.value = '';
+                alert(`🚀 Try it live in the full interactive lab! Click 'Start Learning' to launch session for command: "${val}"`);
+              }
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LandingPage() {
+  const [curriculumGroup, setCurriculumGroup] = useState('all');
+  const [showAllCourses, setShowAllCourses] = useState(false);
+
+  const filteredCourses = CURRICULUM_COURSES.filter(
+    (course) => curriculumGroup === 'all' || course.group === curriculumGroup
+  );
+
+  const displayedCourses =
+    showAllCourses || curriculumGroup !== 'all'
+      ? filteredCourses
+      : filteredCourses.slice(0, 8);
 
   return (
     <div className="landing">
@@ -239,56 +299,7 @@ export default function LandingPage() {
               <SiTerraform size={18} className="text-purple-400" /> Terraform IaC
             </div>
 
-            <div className="mock-terminal neon-border-glow">
-              <div className="mock-terminal-header">
-                <div className="terminal-dots">
-                  <span className="terminal-dot red"></span>
-                  <span className="terminal-dot yellow"></span>
-                  <span className="terminal-dot green"></span>
-                </div>
-                <div className="terminal-tabs">
-                  {Object.keys(DEMO_TABS).map((tabKey) => (
-                    <button
-                      key={tabKey}
-                      className={`terminal-tab-btn ${activeDemoTab === tabKey ? 'active' : ''}`}
-                      onClick={() => setActiveDemoTab(tabKey)}
-                    >
-                      {DEMO_TABS[tabKey].label}
-                    </button>
-                  ))}
-                </div>
-                <div className="terminal-live-badge">
-                  <span className="live-dot"></span> Interactive Sandbox
-                </div>
-              </div>
-
-              <div className="mock-terminal-body">
-                {DEMO_TABS[activeDemoTab].lines.map((line, i) => (
-                  <div key={i} className="terminal-line">
-                    {line.prompt && <span className="term-prompt">$ </span>}
-                    <span className={line.highlight ? 'term-highlight' : line.cursor ? 'term-cursor' : 'term-output'}>
-                      {line.text}
-                    </span>
-                  </div>
-                ))}
-
-                <div className="terminal-input-row">
-                  <span className="term-prompt">student@opsacademy ~ $ </span>
-                  <input
-                    type="text"
-                    className="hero-term-input"
-                    placeholder="Try typing 'docker run' or 'kubectl get pods'..."
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && e.target.value.trim()) {
-                        const val = e.target.value.trim();
-                        e.target.value = '';
-                        alert(`🚀 Try it live in the full interactive lab! Click 'Start Learning' to launch session for command: "${val}"`);
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
+            <DemoTerminal />
           </div>
         </div>
       </section>

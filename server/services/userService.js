@@ -5,12 +5,17 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { getStore } = require('../lib/store');
+const progressService = require('./progressService');
 
 const USERS = 'users';
 const EMAILS = 'emails';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MIN_PASSWORD_LENGTH = 8;
 const BCRYPT_ROUNDS = 10;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// A guest token lasts 30 days (config.guestJwtExpiry) and is never renewed,
+// so after that nobody can reach the guest's record again.
+const GUEST_RETENTION_DAYS = 31;
 
 class UserError extends Error {
   constructor(message, statusCode = 400) {
@@ -99,4 +104,22 @@ async function login({ email, password }) {
   return user;
 }
 
-module.exports = { createGuest, getById, register, login, publicUser, UserError };
+/**
+ * Delete guests whose token has expired, with their progress. Every visitor
+ * gets a guest record, so without this the store only ever grows.
+ * @returns {number} how many guests were removed
+ */
+function pruneExpiredGuests(now = Date.now()) {
+  const store = getStore();
+  const cutoff = now - GUEST_RETENTION_DAYS * DAY_MS;
+  let removed = 0;
+  for (const user of store.all(USERS)) {
+    if (!user.guest || !(Date.parse(user.createdAt) < cutoff)) continue;
+    store.delete(USERS, user.id);
+    progressService.remove(user.id);
+    removed += 1;
+  }
+  return removed;
+}
+
+module.exports = { createGuest, getById, register, login, publicUser, pruneExpiredGuests, UserError };

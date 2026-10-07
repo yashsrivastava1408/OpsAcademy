@@ -70,6 +70,17 @@ describe('health and readiness', () => {
     expect(res.body.status).toBe('not_ready');
   });
 
+  test('preflight answers can be cached by the browser', async () => {
+    const res = await request(app)
+      .options('/api/progress')
+      .set('Origin', 'http://localhost:5173')
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Access-Control-Request-Headers', 'authorization');
+    expect(res.status).toBe(204);
+    expect(res.headers['access-control-max-age']).toBe('7200');
+    expect(res.headers['access-control-allow-headers']).toMatch(/authorization/i);
+  });
+
   test('unknown API paths return a JSON 404', async () => {
     const res = await request(app).get('/api/nope');
     expect(res.status).toBe(404);
@@ -218,6 +229,23 @@ describe('units', () => {
     expect((await request(app).get('/api/units/linux-basics/prepare')).body.data.flashcards.length).toBeGreaterThan(0);
   });
 
+  test('lesson content is compressed and cacheable; errors and personal data are not cached', async () => {
+    const learn = await request(app).get('/api/units/linux-basics/learn').set('Accept-Encoding', 'gzip');
+    expect(learn.headers['content-encoding']).toBe('gzip');
+    expect(learn.headers['cache-control']).toBe('public, max-age=300');
+    expect(learn.headers.etag).toBeDefined();
+    expect(learn.body.data.sections.length).toBeGreaterThan(0);
+
+    // The browser's revalidation costs no body at all.
+    const revalidated = await request(app).get('/api/units/linux-basics/learn').set('If-None-Match', learn.headers.etag);
+    expect(revalidated.status).toBe(304);
+
+    expect((await request(app).get('/api/units')).headers['cache-control']).toBe('public, max-age=300');
+    expect((await request(app).get('/api/units/does-not-exist')).headers['cache-control']).toBeUndefined();
+    const visitor = await guest();
+    expect((await request(app).get('/api/progress').set(visitor.auth)).headers['cache-control']).toBeUndefined();
+  });
+
   test.each([
     ['/api/units/does-not-exist', 404],
     ['/api/units/linux-basics/secrets', 400],
@@ -293,10 +321,54 @@ describe('sandbox ownership', () => {
 
   test('the per-user limit returns 429 with a clear message', async () => {
     const owner = await guest();
-    for (let i = 0; i < config.sandbox.maxPerUser; i += 1) await startSandbox(owner);
+    const labs = units.listMeta().map((meta) => meta.id);
+    for (let i = 0; i < config.sandbox.maxPerUser; i += 1) await startSandbox(owner, labs[i]);
     const res = await request(app).post('/api/sandbox/start').set(owner.auth).send({});
     expect(res.status).toBe(429);
     expect(res.body.error).toMatch(/Stop one first/);
+  });
+
+  test('starting a lab that is already running hands back the same sandbox', async () => {
+    const owner = await guest();
+    const other = await guest();
+    const first = await request(app).post('/api/sandbox/start').set(owner.auth).send({ labId: 'linux-basics' });
+    expect(first.status).toBe(201);
+    expect(first.body.data.resumed).toBe(false);
+
+    // A second tab, or a page whose terminal dropped, must not use up another slot.
+    const again = await request(app).post('/api/sandbox/start').set(owner.auth).send({ labId: 'linux-basics' });
+    expect(again.status).toBe(200);
+    expect(again.body.data).toMatchObject({ sessionId: first.body.data.sessionId, resumed: true });
+    expect(ctx.engine.created).toHaveLength(1);
+
+    // A different lab, or a different user, still gets a sandbox of their own.
+    expect((await startSandbox(owner, 'git-basics')).sessionId).not.toBe(first.body.data.sessionId);
+    expect((await startSandbox(other)).sessionId).not.toBe(first.body.data.sessionId);
+
+    // Once stopped, the next start is a fresh sandbox.
+    await request(app).delete(`/api/sandbox/${first.body.data.sessionId}`).set(owner.auth);
+    const fresh = await request(app).post('/api/sandbox/start').set(owner.auth).send({ labId: 'linux-basics' });
+    expect(fresh.status).toBe(201);
+    expect(fresh.body.data.sessionId).not.toBe(first.body.data.sessionId);
+  });
+
+  test('the inspector polling telemetry does not keep an unused sandbox alive', async () => {
+    const owner = await guest();
+    const { sessionId } = await startSandbox(owner);
+    const startedAt = ctx.manager.getSession(sessionId).lastActiveAt;
+
+    jest.spyOn(Date, 'now').mockReturnValue(startedAt + 5 * 60000);
+    try {
+      await request(app).get(`/api/sandbox/${sessionId}/telemetry`).set(owner.auth);
+      await request(app).get(`/api/sandbox/${sessionId}/history`).set(owner.auth);
+      expect(ctx.manager.getSession(sessionId).lastActiveAt).toBe(startedAt);
+
+      // Real work in the sandbox still counts as activity.
+      await request(app).post('/api/labs/linux-basics/verify').set(owner.auth).send({ sessionId, stepNumber: 1 });
+      expect(ctx.manager.getSession(sessionId).lastActiveAt).toBe(startedAt + 5 * 60000);
+    } finally {
+      Date.now.mockRestore();
+    }
   });
 
   test('an invalid labId falls back to a plain sandbox', async () => {
@@ -452,6 +524,24 @@ describe('lab verification and progress', () => {
     expect(JSON.stringify(res.body)).not.toContain(top.user.id);
     expect(JSON.stringify(res.body)).not.toContain(idle.user.id);
   });
+
+  test('the leaderboard is up to date straight after XP or a name changes', async () => {
+    const learner = await guest();
+    const board = () => request(app).get('/api/progress/leaderboard').set(learner.auth).then((res) => res.body.data);
+    expect(await board()).toEqual([]);
+
+    const { sessionId } = await startSandbox(learner);
+    await request(app).post('/api/labs/linux-basics/verify').set(learner.auth).send({ sessionId, stepNumber: 1 });
+    expect(await board()).toMatchObject([{ rank: 1, xp: 20, name: learner.user.name }]);
+
+    await request(app).post('/api/labs/linux-basics/verify').set(learner.auth).send({ sessionId, stepNumber: 2 });
+    expect((await board())[0].xp).toBe(40);
+
+    // Registering renames the guest; the cached ranking must not show the old name.
+    await request(app).post('/api/auth/register').set(learner.auth)
+      .send({ name: 'Meera Nair', email: `meera${Date.now()}@example.com`, password: 'correct-horse' });
+    expect((await board())[0].name).toBe('Meera Nair');
+  });
 });
 
 /** Flip the lab engine between passing and failing checks. */
@@ -471,6 +561,9 @@ describe('flashcards (spaced repetition)', () => {
     const card = deck.cards[0];
     const review = await request(app).post(`/api/progress/flashcards/linux-basics/${card.id}/review`).set(student.auth).send({ grade: 4 });
     expect(review.body.data).toMatchObject({ reps: 1, intervalDays: 1 });
+    // The response carries the re-sorted deck, so the page needs no second request.
+    expect(review.body.deck.dueCount).toBe(deck.total - 1);
+    expect(review.body.deck.cards[review.body.deck.cards.length - 1].id).toBe(card.id);
 
     const after = (await request(app).get('/api/progress/flashcards/linux-basics').set(student.auth)).body.data;
     expect(after.dueCount).toBe(deck.total - 1);
