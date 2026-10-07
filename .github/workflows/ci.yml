@@ -1,4 +1,4 @@
-name: OpsAcademy Enterprise CI/CD Pipeline
+name: CI
 
 on:
   push:
@@ -6,49 +6,137 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test-server-api:
-    name: Express API Gateway & Certificate Tests
+  server:
+    name: Gateway tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
     steps:
-      - name: Checkout Code Repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js 20.x
-        uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: 'server/package-lock.json'
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
 
-      - name: Install Server Dependencies
-        run: |
-          cd server
-          npm ci || npm install
+      - run: npm ci
 
-      - name: Validate Server Syntax & Package Linting
-        run: |
-          cd server
-          node -e "console.log('✅ Server syntax validated clean')"
+      # Unit, API, WebSocket and real-shell (node-pty) tests
+      - run: npm test
 
-  test-python-ai-hub:
-    name: Python 6-Agent AI RAG Pipeline Tests
+      - name: Validate lab content
+        run: npm run labs:validate
+
+  ai-hub:
+    name: AI hub tests and evaluation
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-hub
     steps:
-      - name: Checkout Code Repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ai-hub/requirements-dev.txt
 
-      - name: Install Python AI Hub Dependencies
-        run: |
-          cd ai-hub
-          pip install -r requirements.txt || pip install flask requests numpy scikit-learn
+      - run: pip install -r requirements-dev.txt
 
-      - name: Test Base64 Anti-Abuse De-obfuscator Firewall
+      - name: Knowledge base matches the course content
+        run: python scripts/build_corpus.py --check
+
+      - run: python -m pytest tests -q
+
+      # Fails the build if hints leak answers, retrieval or the scanner
+      # regress, or stuck-student cases stop passing.
+      - name: Quality gates
+        run: python evals/run_eval.py --check
+
+  client:
+    name: Client lint and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  sandbox-e2e:
+    name: Docker sandbox and end-to-end
+    runs-on: ubuntu-latest
+    needs: [server, ai-hub]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ai-hub/requirements.txt
+
+      - name: Build images
         run: |
-          cd ai-hub
-          python -c "from agents.abuse_scanner import AntiAbuseScanner; scanner = AntiAbuseScanner(); print('✅ Base64 Anti-Abuse Firewall operational')"
+          docker build -t opsacademy-sandbox:latest sandbox-image
+          docker build -t opsacademy/server:ci server
+          docker build -t opsacademy/ai-hub:ci ai-hub
+          docker build -t opsacademy/client:ci client
+
+      - name: Install dependencies
+        run: |
+          cd server && npm ci
+          pip install -r ../ai-hub/requirements.txt
+
+      # Tries to break every sandbox restriction from inside a real container.
+      - name: Sandbox isolation check
+        working-directory: server
+        run: node scripts/docker-check.js
+
+      - name: Start AI hub and gateway (Docker sandboxes)
+        env:
+          AI_HUB_TOKEN: ci-shared-token
+        run: |
+          (cd ai-hub && PORT=5005 gunicorn --bind 127.0.0.1:5005 --workers 1 --threads 8 --keep-alive 15 app:app > ../hub.log 2>&1 &)
+          (cd server && SANDBOX_MODE=docker PORT=4000 AI_HUB_URL=http://127.0.0.1:5005 DATA_DIR=$RUNNER_TEMP/data node server.js > ../gateway.log 2>&1 &)
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4000/api/ready | grep -q '"status":"ready"' && exit 0
+            sleep 2
+          done
+          cat hub.log gateway.log
+          exit 1
+
+      # A student's whole journey: terminal, lab checks, hints, certificate.
+      - name: End-to-end
+        working-directory: server
+        run: node scripts/e2e.js http://127.0.0.1:4000
+
+      - name: Logs
+        if: failure()
+        run: cat hub.log gateway.log

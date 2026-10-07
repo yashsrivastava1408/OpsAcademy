@@ -104,13 +104,13 @@ const FEATURES = [
   {
     icon: <Terminal size={24} />,
     title: 'Live Terminal',
-    description: 'Real Linux shell in your browser via WebSocket streaming (<50ms latency). Execute commands, write scripts, and build infrastructure live.',
+    description: 'A real Linux shell in your browser, streamed over WebSocket from a pre-warmed sandbox. Execute commands, write scripts, and build infrastructure live.',
     color: 'cyan',
   },
   {
     icon: <Brain size={24} />,
     title: 'Multi-Agent AI Mentor',
-    description: '4-agent RAG pipeline (LangGraph + Qdrant) that inspects your environment and provides hints without giving away the direct answer.',
+    description: 'A pipeline of agents reads your sandbox and your recent commands, retrieves the relevant course notes, and gives hints in three tiers, from a nudge to the command\'s general form, without handing over the answer.',
     color: 'purple',
   },
   {
@@ -147,10 +147,10 @@ const CURRICULUM_COURSES = [
 ];
 
 const SECURITY_HIGHLIGHTS = [
-  { title: 'Isolation Forest ML Anomaly Detection', desc: 'Agent 0 scans command telemetry to block fork bombs & miners' },
-  { title: 'Read-Only Root Filesystem', desc: 'System files are immutable; writable only in isolated student workspace' },
-  { title: 'Auto-Reaper Background Service', desc: 'Sweeps and reaps stale container sessions >30 minutes to save resources' },
-  { title: 'JWT & Bcrypt Hardened Auth', desc: 'Secure stateless authorization headers with salt-hashed password storage' },
+  { title: 'Command Tripwire & Anomaly Scoring', desc: 'Fork bombs, miners and escape attempts are blocked at the terminal; three strikes ends the session' },
+  { title: 'Locked-Down Containers', desc: 'No network, all capabilities dropped, read-only root, and caps on memory, CPU and process count' },
+  { title: 'Auto-Reaper Background Service', desc: 'Sandboxes are destroyed after 15 idle minutes or 30 minutes in total' },
+  { title: 'Per-User Sandbox Ownership', desc: 'Every sandbox is bound to a JWT identity; nobody else can attach to it, read it or stop it' },
 ];
 
 const TECH_STACK = [
@@ -158,9 +158,9 @@ const TECH_STACK = [
   { name: 'Node.js', icon: <FaNodeJs size={22} className="text-green-500" /> },
   { name: 'Docker', icon: <FaDocker size={22} className="text-cyan-400" /> },
   { name: 'Python', icon: <FaPython size={22} className="text-yellow-400" /> },
-  { name: 'LangGraph', icon: <Brain size={22} className="text-purple-400" /> },
+  { name: 'Flask AI Hub', icon: <Brain size={22} className="text-purple-400" /> },
   { name: 'WebSocket', icon: <Activity size={22} className="text-cyan-400" /> },
-  { name: 'Qdrant RAG', icon: <Search size={22} className="text-purple-400" /> },
+  { name: 'Hybrid Retrieval', icon: <Search size={22} className="text-purple-400" /> },
   { name: 'Kubernetes', icon: <SiKubernetes size={22} className="text-blue-500" /> },
 ];
 
@@ -297,20 +297,20 @@ export default function LandingPage() {
       <section className="stats-strip">
         <div className="container stats-grid">
           <div className="stat-card">
-            <span className="stat-num gradient-text">94.8%</span>
-            <span className="stat-label">B.Tech Placement Rate</span>
+            <span className="stat-num gradient-text">19 Units</span>
+            <span className="stat-label">Learn • Practice • Prepare</span>
           </div>
           <div className="stat-card">
-            <span className="stat-num gradient-text">&lt; 50ms</span>
-            <span className="stat-label">Sandbox Acquisition</span>
+            <span className="stat-num gradient-text">89 Steps</span>
+            <span className="stat-label">Checked in a Live Sandbox</span>
           </div>
           <div className="stat-card">
-            <span className="stat-num gradient-text">6 Agents</span>
-            <span className="stat-label">Cooperative AI RAG</span>
+            <span className="stat-num gradient-text">3 Tiers</span>
+            <span className="stat-label">Hints That Don't Give It Away</span>
           </div>
           <div className="stat-card">
-            <span className="stat-num gradient-text">14 Paths</span>
-            <span className="stat-label">Production DevOps Labs</span>
+            <span className="stat-num gradient-text">Signed</span>
+            <span className="stat-label">Publicly Verifiable Certificates</span>
           </div>
         </div>
       </section>
@@ -551,7 +551,7 @@ export default function LandingPage() {
               <div className="arch-box arch-ai">
                 <Brain size={18} />
                 <span>AI Agent Hub</span>
-                <small>Python Flask + LangGraph</small>
+                <small>Python Flask + scikit-learn</small>
               </div>
             </div>
             <div className="arch-arrow">↓ Docker Socket / PTY</div>

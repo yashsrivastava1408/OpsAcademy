@@ -445,3 +445,16 @@
 }
 
 .mt-3 { margin-top: 10px; }
+
+/* ── File preview content ─────────────────────────────────── */
+.preview-content {
+  margin: 0;
+  max-height: 50vh;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

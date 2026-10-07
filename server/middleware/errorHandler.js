@@ -1,18 +1,19 @@
 /**
  * Global error handler middleware
  */
-function errorHandler(err, req, res, _next) {
-  console.error(`[Error] ${err.message}`);
-  if (process.env.NODE_ENV !== 'production') {
-    console.error(err.stack);
-  }
 
-  const statusCode = err.statusCode || 500;
-  
+const config = require('../config');
+const logger = require('../lib/logger');
+
+function errorHandler(err, req, res, _next) {
+  const statusCode = err.statusCode || err.status || 500;
+
+  if (statusCode >= 500) logger.error({ err, path: req.path }, 'request failed');
+
   res.status(statusCode).json({
     success: false,
-    error: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
+    // Internal error details stay in the logs in production.
+    error: statusCode >= 500 && config.isProd ? 'Internal Server Error' : err.message || 'Internal Server Error',
   });
 }
 

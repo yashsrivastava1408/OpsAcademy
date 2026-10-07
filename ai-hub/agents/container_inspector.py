@@ -1,43 +1,80 @@
 """
-Agent 1.5: Container Live Diagnostic Agent
+Agent 1.5: Container Inspector
 
-Inspects running container process trees, open ports, file paths, and environment state
-in real-time to provide ground-truth telemetry to the AI RAG engine.
+Compares what the step's check looks for with what is actually in the
+student's sandbox. The gateway sends the sandbox file tree and the step's
+verification command; this agent reads the paths out of that command and
+reports which ones are missing. It never repeats the verification command
+itself or the text patterns it greps for.
 """
 
+import re
+
+HOME = "/home/student/"
+# How deep the gateway lists the sandbox unless it says otherwise.
+DEFAULT_TREE_DEPTH = 3
+
+# `test -d path`, `[ -f path ]`
+TEST_FLAG = re.compile(r"(?:\btest|\[)\s+-([defx])\s+([^\s\])&|;]+)")
+# `grep ... 'pattern' path` - the last argument is the file being read.
+GREP_FILE = re.compile(r"\bgrep\b[^|;&]*?\s(/home/student/[^\s|;&)]+)")
+# `cat path`, `stat ... path`
+READ_FILE = re.compile(r"\b(?:cat|stat|head|tail|wc)\b[^|;&]*?\s(/home/student/[^\s|;&)]+)")
+
+
+def relative(path: str) -> str:
+    path = path.strip("'\"")
+    return path[len(HOME):] if path.startswith(HOME) else path
+
+
+def expected_paths(verification_command: str) -> list:
+    """Paths the check depends on, as [{'path', 'kind'}] with kind directory|file|any."""
+    if not verification_command:
+        return []
+
+    found = {}
+    for flag, path in TEST_FLAG.findall(verification_command):
+        if path.startswith(HOME):
+            kind = {"d": "directory", "f": "file", "x": "file"}.get(flag, "any")
+            found[relative(path)] = kind
+    for pattern in (GREP_FILE, READ_FILE):
+        for path in pattern.findall(verification_command):
+            found.setdefault(relative(path), "file")
+
+    return [{"path": path, "kind": kind} for path, kind in found.items() if path]
+
+
 class ContainerInspector:
-    def __init__(self):
-        pass
+    def inspect(self, step: dict = None, container_telemetry: dict = None) -> dict:
+        telemetry = container_telemetry or {}
+        tree = telemetry.get("fileTree")
+        expected = expected_paths((step or {}).get("verificationCommand"))
 
-    def inspect(self, query: str, assessment: dict, container_telemetry: dict = None) -> dict:
-        if container_telemetry is None:
-            container_telemetry = {}
-
-        diagnostics = []
-        detected_issue = assessment.get("detected_issue")
-
-        # 1. Analyze detected error state
-        if detected_issue == "PERMISSION_DENIED":
-            diagnostics.append("File execution permission bit missing (requires chmod +x).")
-        elif detected_issue == "PATH_NOT_FOUND":
-            diagnostics.append("Target directory or file path does not exist in working directory.")
-        elif detected_issue == "TYPO_OR_PATH":
-            diagnostics.append("Command binary missing from system PATH or misspelled.")
-
-        # 2. Inspect query keywords for specific technology checks
-        q_lower = query.lower()
-        if "docker" in q_lower or "container" in q_lower:
-            diagnostics.append("Container engine active; checking running container sockets.")
-        if "nginx" in q_lower or "port" in q_lower or "web" in q_lower:
-            diagnostics.append("Checking web server binding on local ports 80/8080.")
-        if "k8s" in q_lower or "kubectl" in q_lower or "pod" in q_lower:
-            diagnostics.append("Checking Kubernetes pod event status logs.")
-
-        return {
-            "telemetry_active": bool(container_telemetry),
-            "diagnostics": diagnostics,
-            "detected_issue": detected_issue,
-            "summary": "; ".join(diagnostics) if diagnostics else "Container state normal."
+        report = {
+            "telemetry_active": tree is not None,
+            "checked_paths": len(expected),
+            "missing": [],
+            "wrong_type": [],
+            "present": [],
+            "ports": telemetry.get("ports") or [],
         }
+        # A partial listing cannot prove a path is absent.
+        if tree is None or not expected or telemetry.get("truncated"):
+            return report
+
+        max_depth = telemetry.get("maxDepth", DEFAULT_TREE_DEPTH)
+        expected = [item for item in expected if item["path"].count("/") < max_depth]
+
+        actual = {entry["path"]: entry.get("type") for entry in tree if isinstance(entry, dict) and "path" in entry}
+        for item in expected:
+            path, kind = item["path"], item["kind"]
+            if path not in actual:
+                report["missing"].append(path)
+            elif kind != "any" and actual[path] != kind:
+                report["wrong_type"].append({"path": path, "expected": kind, "actual": actual[path]})
+            else:
+                report["present"].append(path)
+        return report
+
 
 inspector = ContainerInspector()

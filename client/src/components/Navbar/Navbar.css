@@ -139,3 +139,48 @@
     padding: 8px 10px;
   }
 }
+
+/* ── Live status, progress and account ────────────────────── */
+.nav-telemetry-badge.offline {
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+}
+
+.nav-telemetry-badge.offline .pulse-dot {
+  color: var(--accent-red);
+  animation: none;
+}
+
+.nav-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.nav-progress span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-progress span:first-child svg { color: var(--accent-green); }
+.nav-progress span:last-child svg { color: var(--accent-orange); }
+
+.nav-user {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nav-user-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}

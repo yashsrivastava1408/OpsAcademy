@@ -1,0 +1,48 @@
+# Only the gateway may call the AI hub, and the gateway pod (where PTY
+# sandboxes run) may reach nothing but DNS and the hub. Requires a CNI that
+# enforces NetworkPolicy (Calico, Cilium, ...).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-hub-from-gateway-only
+  namespace: opsacademy
+spec:
+  podSelector:
+    matchLabels:
+      app: opsacademy-ai-hub
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: opsacademy-server
+      ports:
+        - port: 5000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-egress
+  namespace: opsacademy
+spec:
+  podSelector:
+    matchLabels:
+      app: opsacademy-server
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: opsacademy-ai-hub
+      ports:
+        - port: 5000
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

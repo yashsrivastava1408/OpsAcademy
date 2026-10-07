@@ -514,7 +514,7 @@ export default function LearnPage() {
               </div>
 
               {/* Embedded Quiz */}
-              {section.quiz && <Quiz quiz={section.quiz} />}
+              {section.quiz && <Quiz quiz={section.quiz} unitId={unitId} sectionId={section.id} />}
             </section>
           ))}
 

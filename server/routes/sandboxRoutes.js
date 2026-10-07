@@ -1,34 +1,52 @@
 /**
  * Sandbox Routes — REST API for managing sandbox sessions
+ *
+ * Every session belongs to the user who started it. Other users get a 404
+ * for it, the same answer as for a session that does not exist.
  */
 
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
-const sandboxManager = require('../services/sandboxManager');
+const { requireAuth } = require('../middleware/auth');
+const rateLimit = require('../middleware/rateLimit');
+const units = require('../lib/units');
+const { getManager } = require('../services/sandboxManager');
+const telemetryService = require('../services/telemetryService');
 
 const router = express.Router();
+
+const MAX_FILE_PREVIEW_BYTES = 20 * 1024;
+const SAFE_RELATIVE_PATH = /^[A-Za-z0-9_.-][A-Za-z0-9_./ -]{0,255}$/;
+
+function requireOwnedSession(req, res, next) {
+  if (!getManager().isOwner(req.params.sessionId, req.user.id)) {
+    return res.status(404).json({ success: false, error: 'Sandbox session not found' });
+  }
+  next();
+}
+
+/**
+ * GET /api/sandbox/stats
+ * Public aggregate numbers: mode, pool level and measured claim latency
+ */
+router.get('/stats', (req, res) => {
+  res.json({ success: true, data: getManager().stats() });
+});
 
 /**
  * POST /api/sandbox/start
  * Create a new sandbox session
- * Body: { userId?, labId? }
+ * Body: { labId? }
  */
-router.post('/start', async (req, res, next) => {
+router.post('/start', requireAuth, rateLimit.sandboxStart(), async (req, res, next) => {
   try {
-    const { userId = 'anonymous', labId = 'sandbox' } = req.body;
-    const sessionId = uuidv4();
+    const requested = req.body && req.body.labId;
+    const labId = units.isValidUnitId(requested) ? requested : 'sandbox';
 
-    await sandboxManager.createSandbox(sessionId, userId, labId);
-
-    const sandbox = sandboxManager.getSandbox(sessionId);
+    const sandbox = await getManager().createSession(req.user.id, labId);
 
     res.status(201).json({
       success: true,
-      data: {
-        sessionId,
-        ...sandbox,
-        wsUrl: `/api/terminal?sessionId=${sessionId}`,
-      },
+      data: { ...sandbox, wsUrl: `/api/terminal?sessionId=${sandbox.sessionId}` },
     });
   } catch (err) {
     next(err);
@@ -36,21 +54,21 @@ router.post('/start', async (req, res, next) => {
 });
 
 /**
+ * GET /api/sandbox
+ * List the caller's own sandboxes
+ */
+router.get('/', requireAuth, (req, res) => {
+  const sandboxes = getManager().listSessions().filter((s) => s.userId === req.user.id);
+  res.json({ success: true, data: sandboxes, count: sandboxes.length, mode: getManager().getMode() });
+});
+
+/**
  * DELETE /api/sandbox/:sessionId
  * Destroy a sandbox session
  */
-router.delete('/:sessionId', async (req, res, next) => {
+router.delete('/:sessionId', requireAuth, requireOwnedSession, async (req, res, next) => {
   try {
-    const { sessionId } = req.params;
-    const destroyed = await sandboxManager.destroySandbox(sessionId);
-
-    if (!destroyed) {
-      return res.status(404).json({
-        success: false,
-        error: 'Sandbox session not found',
-      });
-    }
-
+    await getManager().destroySession(req.params.sessionId, 'stopped');
     res.json({ success: true, message: 'Sandbox destroyed' });
   } catch (err) {
     next(err);
@@ -61,153 +79,73 @@ router.delete('/:sessionId', async (req, res, next) => {
  * GET /api/sandbox/:sessionId/status
  * Get sandbox session info
  */
-router.get('/:sessionId/status', (req, res) => {
-  const { sessionId } = req.params;
-  const sandbox = sandboxManager.getSandbox(sessionId);
-
-  if (!sandbox) {
-    return res.status(404).json({
-      success: false,
-      error: 'Sandbox session not found',
-    });
-  }
-
-  res.json({ success: true, data: sandbox });
+router.get('/:sessionId/status', requireAuth, requireOwnedSession, (req, res) => {
+  res.json({ success: true, data: getManager().getSession(req.params.sessionId) });
 });
 
 /**
  * GET /api/sandbox/:sessionId/telemetry
- * Live container file tree, process list, and listening port inspection
+ * Live file tree, process list and listening ports
  */
-router.get('/:sessionId/telemetry', async (req, res, next) => {
+router.get('/:sessionId/telemetry', requireAuth, requireOwnedSession, async (req, res, next) => {
   try {
-    const { sessionId } = req.params;
-    const sandbox = sandboxManager.getSandbox(sessionId);
+    res.json({ success: true, data: await telemetryService.capture(req.params.sessionId) });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    if (!sandbox) {
-      return res.status(404).json({ success: false, error: 'Sandbox session not found' });
+/**
+ * GET /api/sandbox/:sessionId/history
+ * Commands entered in this session's terminal, oldest first
+ */
+router.get('/:sessionId/history', requireAuth, requireOwnedSession, (req, res) => {
+  res.json({ success: true, data: getManager().getHistory(req.params.sessionId) });
+});
+
+/**
+ * GET /api/sandbox/:sessionId/file?path=webapp/src/index.js
+ * Read a file from the student's home directory (first 20 KB)
+ */
+router.get('/:sessionId/file', requireAuth, requireOwnedSession, async (req, res, next) => {
+  try {
+    const filePath = typeof req.query.path === 'string' ? req.query.path : '';
+    // The path is placed inside a shell command, so only plain relative
+    // paths are accepted: no quotes, no `..`, nothing absolute.
+    if (!SAFE_RELATIVE_PATH.test(filePath) || filePath.split('/').includes('..')) {
+      return res.status(400).json({ success: false, error: 'Invalid file path' });
     }
 
-    let filesRaw = '';
-    let psRaw = '';
-    let portsRaw = '';
-
-    try {
-      const filesExec = await sandboxManager.execInSandbox(sessionId, 'find /home/student -maxdepth 3 -not -path "*/.*"');
-      filesRaw = filesExec.stdout || '';
-    } catch { /* ignore */ }
-
-    try {
-      const psExec = await sandboxManager.execInSandbox(sessionId, 'ps aux 2>/dev/null || ps -ef');
-      psRaw = psExec.stdout || '';
-    } catch { /* ignore */ }
-
-    try {
-      const portsExec = await sandboxManager.execInSandbox(sessionId, 'netstat -tuln 2>/dev/null || ss -tuln 2>/dev/null');
-      portsRaw = portsExec.stdout || '';
-    } catch { /* ignore */ }
-
-    // Parse file list
-    const fileList = filesRaw
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line && line !== '/home/student')
-      .map((pathStr) => {
-        const relPath = pathStr.replace('/home/student/', '');
-        const parts = relPath.split('/');
-        const isDir = !relPath.includes('.') || pathStr.endsWith('/');
-        return {
-          name: parts[parts.length - 1],
-          path: relPath,
-          type: isDir ? 'directory' : 'file',
-          depth: parts.length - 1,
-        };
-      });
-
-    // Parse process list
-    const processList = psRaw
-      .split('\n')
-      .slice(1)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .slice(0, 10)
-      .map((line) => {
-        const parts = line.split(/\s+/);
-        return {
-          user: parts[0] || 'root',
-          pid: parts[1] || '1',
-          cpu: parts[2] || '0.0',
-          mem: parts[3] || '0.0',
-          command: parts.slice(10).join(' ') || parts.slice(7).join(' ') || line,
-        };
-      });
-
-    // Parse listening ports
-    const ports = Array.from(
-      new Set(
-        (portsRaw.match(/:(8080|8000|80|443|3000|5000|5432|6379|9090)\b/g) || []).map((p) => p.replace(':', ''))
-      )
+    const target = `/home/student/${filePath}`;
+    const result = await getManager().exec(
+      req.params.sessionId,
+      `test -f '${target}' && head -c ${MAX_FILE_PREVIEW_BYTES + 1} '${target}'`
     );
+    if (result.exitCode !== 0) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
 
+    const truncated = Buffer.byteLength(result.stdout) > MAX_FILE_PREVIEW_BYTES;
     res.json({
       success: true,
-      data: {
-        sessionId,
-        fileTree: fileList,
-        processes: processList,
-        ports,
-        timestamp: new Date().toISOString(),
-      },
+      data: { path: filePath, content: result.stdout.slice(0, MAX_FILE_PREVIEW_BYTES), truncated },
     });
   } catch (err) {
     next(err);
   }
 });
-router.get('/metrics', (req, res) => {
-  const sandboxes = sandboxManager.listSandboxes();
-  const poolStats = sandboxManager.getPoolStats();
-
-  res.json({
-    success: true,
-    data: {
-      mode: sandboxManager.getMode(),
-      activeSessions: sandboxes.length,
-      sandboxes,
-      pool: poolStats,
-      timestamp: new Date().toISOString(),
-    },
-  });
-});
 
 /**
- * POST /api/sandbox/pool/refill
- * Manually trigger pool replenishment
+ * POST /api/sandbox/:sessionId/reset
+ * Wipe the student's home directory to start the lab over
  */
-router.post('/pool/refill', async (req, res, next) => {
+router.post('/:sessionId/reset', requireAuth, requireOwnedSession, async (req, res, next) => {
   try {
-    await sandboxManager.initPool();
-    res.json({
-      success: true,
-      message: 'Pool replenishment triggered',
-      pool: sandboxManager.getPoolStats(),
-    });
+    await getManager().reset(req.params.sessionId);
+    res.json({ success: true, message: 'Sandbox reset' });
   } catch (err) {
     next(err);
   }
-});
-
-/**
- * GET /api/sandbox
- * List all active sandboxes
- */
-router.get('/', (req, res) => {
-  const sandboxes = sandboxManager.listSandboxes();
-  res.json({
-    success: true,
-    data: sandboxes,
-    count: sandboxes.length,
-    mode: sandboxManager.getMode(),
-  });
 });
 
 module.exports = router;

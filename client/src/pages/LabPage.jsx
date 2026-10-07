@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -14,66 +14,32 @@ import {
   Award,
   Bot,
   Activity,
+  RotateCcw,
 } from 'lucide-react';
 import Terminal from '../components/Terminal/Terminal';
 import MentorChat from '../components/MentorChat/MentorChat';
 import DevOpsInspector from '../components/DevOpsInspector/DevOpsInspector';
-import { sandboxApi, unitApi, labApi } from '../services/api';
-import { markUnitCompleted } from '../services/progressService';
+import { sandboxApi, unitApi, labApi, errorMessage } from '../services/api';
+import { refreshProgress } from '../services/progressService';
 import './LabPage.css';
 
-const FALLBACK_LAB_DATA = {
-  title: 'DevOps Interactive Practice Lab',
-  category: 'DevOps & Cloud',
-  difficulty: 'intermediate',
-  duration: '45 min',
-  steps: [
-    {
-      step: 1,
-      title: 'Initialize System Environment & Inspect Directory',
-      description: 'Explore the Linux container filesystem and check current working directory permissions.',
-      tasks: [
-        'Run pwd to display current working directory',
-        'Run ls -la to view permissions and hidden files',
-        'Create a new workspace directory using mkdir -p app',
-      ],
-      hint: 'mkdir -p app && cd app && pwd',
-      verification: { command: 'pwd', expectedOutput: '/home/student', check: 'contains' },
-    },
-    {
-      step: 2,
-      title: 'Configure Container Application & Process Telemetry',
-      description: 'Create an application index file and verify container process telemetry.',
-      tasks: [
-        'Create index.html inside app/ directory',
-        'Write HTML content using echo "<h1>OpsAcademy Live</h1>" > app/index.html',
-        'Run ps aux to inspect active background process daemons',
-      ],
-      hint: 'echo "<h1>OpsAcademy Live Server</h1>" > app/index.html',
-      verification: { command: 'ls -la app', expectedOutput: 'index.html', check: 'contains' },
-    },
-    {
-      step: 3,
-      title: 'Verify Network Sockets & System Ports',
-      description: 'Check active listening network ports and verify web server binding status.',
-      tasks: [
-        'Run netstat -tuln or ss -tuln to inspect open listening ports',
-        'Verify listening port status (Port 80/8080)',
-        'Execute curl command to test local HTTP response',
-      ],
-      hint: 'netstat -tuln || ss -tuln',
-      verification: { command: 'ps aux', check: 'exitCode' },
-    },
-  ],
-};
+const HISTORY_POLL_MS = 4000;
+
+/** Render `backticked` parts of a task as inline code. */
+function renderInlineCode(text) {
+  return text.split('`').map((part, i) => (i % 2 === 1 ? <code key={i} className="task-code">{part}</code> : part));
+}
 
 export default function LabPage() {
   const { unitId } = useParams();
   const navigate = useNavigate();
+  const terminalRef = useRef(null);
 
   const [meta, setMeta] = useState(null);
   const [practiceData, setPracticeData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [sessionId, setSessionId] = useState(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -84,42 +50,48 @@ export default function LabPage() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [showMentor, setShowMentor] = useState(false);
   const [showInspector, setShowInspector] = useState(true);
-  const [commandHistory, setCommandHistory] = useState(['ls -la', 'pwd']);
+  const [commandHistory, setCommandHistory] = useState([]);
+  const [startError, setStartError] = useState(null);
+  const [verifiedSteps, setVerifiedSteps] = useState({});
+  const [focusStep, setFocusStep] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function loadData() {
       setLoading(true);
-      const unitTitle = unitId
-        ? unitId.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-        : 'DevOps Practice';
-
-      let loadedMeta = {
-        title: `${unitTitle} Practice Lab`,
-        category: 'DevOps & Cloud',
-        difficulty: 'intermediate',
-        duration: '45 min',
-      };
-      let loadedPractice = FALLBACK_LAB_DATA;
-
+      setLoadError(null);
       try {
         const [metaRes, practiceRes] = await Promise.all([
           unitApi.getMeta(unitId),
           unitApi.getMode(unitId, 'practice'),
         ]);
+        if (cancelled) return;
+        setMeta(metaRes.data.data);
+        setPracticeData(practiceRes.data.data);
 
-        if (metaRes.data?.data) loadedMeta = metaRes.data.data;
-        if (practiceRes.data?.data) loadedPractice = practiceRes.data.data;
+        // Pick up a sandbox for this lab that is still running, e.g. after a page reload.
+        const running = await sandboxApi.list().catch(() => null);
+        const existing = running?.data?.data?.find((s) => s.labId === unitId);
+        if (!cancelled && existing) {
+          setSessionId(existing.sessionId);
+          setElapsedTime(Math.floor(existing.uptime / 1000));
+        }
       } catch (err) {
-        console.warn('[LabPage] Using robust fallback lab data:', err.message);
+        if (cancelled) return;
+        setLoadError(
+          err.response?.status === 404
+            ? 'not_found'
+            : 'The server did not respond. If it has been idle it can take up to a minute to wake up.'
+        );
       } finally {
-        setMeta(loadedMeta);
-        setPracticeData(loadedPractice);
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     loadData();
-  }, [unitId]);
+    return () => { cancelled = true; };
+  }, [unitId, loadAttempt]);
 
   // Timer
   useEffect(() => {
@@ -130,132 +102,111 @@ export default function LabPage() {
     return () => clearInterval(interval);
   }, [sessionId]);
 
+  // Commands the student has typed, as recorded by the gateway
+  useEffect(() => {
+    if (!sessionId) {
+      setCommandHistory([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await sandboxApi.getHistory(sessionId);
+        if (!cancelled) setCommandHistory(res.data.data.map((entry) => entry.command));
+      } catch { /* the session ended; the terminal reports it */ }
+    };
+    load();
+    const interval = setInterval(load, HISTORY_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [sessionId]);
+
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
     const s = (seconds % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
   };
 
-  const [startError, setStartError] = useState(null);
-
   const startLab = async () => {
     setIsStarting(true);
     setStartError(null);
     try {
-      const res = await sandboxApi.start('student', unitId);
-      if (res.data?.data?.sessionId) {
-        setSessionId(res.data.data.sessionId);
-        setElapsedTime(0);
-      }
+      const res = await sandboxApi.start(unitId);
+      setSessionId(res.data.data.sessionId);
+      setElapsedTime(0);
+      setVerifiedSteps({});
     } catch (err) {
-      console.warn('[LabPage] Sandbox start attempt 1 failed, retrying server connection...', err.message);
-      // Attempt retry in case cloud server is waking from sleep
-      try {
-        await new Promise((r) => setTimeout(r, 2000));
-        const retryRes = await sandboxApi.start('student', unitId);
-        if (retryRes.data?.data?.sessionId) {
-          setSessionId(retryRes.data.data.sessionId);
-          setElapsedTime(0);
-          return;
-        }
-      } catch (retryErr) {
-        setStartError('Sandbox gateway is waking up. Please click Start Lab again in a few seconds.');
-        setSessionId(null);
-      }
+      setStartError(
+        err.response
+          ? errorMessage(err)
+          : 'The sandbox gateway did not respond. If it has been idle it may be waking up; try again in a few seconds.'
+      );
     } finally {
       setIsStarting(false);
     }
   };
 
   const stopLab = async () => {
-    if (sessionId) {
-      const currId = sessionId;
-      setSessionId(null);
-      setElapsedTime(0);
-      try {
-        if (!currId.startsWith('local-lab-')) {
-          await sandboxApi.stop(currId);
-        }
-      } catch (err) {
-        // Session already reaped or closed; ignore 404
-      }
+    if (!sessionId) return;
+    const currId = sessionId;
+    setSessionId(null);
+    setElapsedTime(0);
+    try {
+      await sandboxApi.stop(currId);
+    } catch {
+      // Session already reaped or closed
     }
   };
 
-  const [verifiedSteps, setVerifiedSteps] = useState({});
-
-  const verifyStep = async (stepNumber) => {
-    if (!sessionId) {
-      alert("Please click 'Start Lab' first to launch the interactive sandbox!");
-      return;
+  const resetLab = async () => {
+    if (!sessionId) return;
+    if (!window.confirm('Reset this lab? Every file you created in the sandbox will be deleted.')) return;
+    try {
+      await sandboxApi.reset(sessionId);
+      setVerifiedSteps({});
+      setVerifyResult(null);
+    } catch (err) {
+      setStartError(errorMessage(err, 'Could not reset the sandbox.'));
     }
+  };
+
+  const handleDisconnect = useCallback(() => setSessionId(null), []);
+
+  const runInTerminal = (command) => {
+    if (terminalRef.current) terminalRef.current.send(`${command}\r`);
+  };
+
+  const verify = async (stepNumber) => {
+    if (!sessionId) return;
     setIsVerifying(true);
     setVerifyResult({ status: 'checking' });
+    if (stepNumber) setFocusStep(stepNumber);
 
     try {
       const res = await labApi.verify(unitId, sessionId, stepNumber);
       const data = res.data;
-      const stepPassed = data.allPassed || (data.results && data.results.every((r) => r.passed));
 
-      if (stepPassed) {
-        setVerifiedSteps((prev) => ({ ...prev, [stepNumber]: true }));
-        setVerifyResult({
-          status: 'pass',
-          stepNumber,
-          xpEarned: data.xpEarned || 25,
-          score: data.score || 100,
-          details: data.results,
-        });
-      } else {
-        setVerifiedSteps((prev) => ({ ...prev, [stepNumber]: false }));
-        setVerifyResult({
-          status: 'fail',
-          stepNumber,
-          details: data.results,
-        });
-      }
+      setVerifiedSteps((prev) => {
+        const next = { ...prev };
+        data.results.forEach((r) => { next[r.step] = r.passed; });
+        return next;
+      });
+      // After a full run, focus on the first step that failed.
+      const firstFailed = data.results.find((r) => !r.passed);
+      if (!stepNumber && firstFailed) setFocusStep(firstFailed.step);
+      setVerifyResult({
+        status: data.allPassed ? 'pass' : 'fail',
+        stepNumber,
+        xpEarned: data.xpEarned,
+        score: data.score,
+        unitCompleted: data.unitCompleted,
+        details: data.results,
+      });
+      refreshProgress();
     } catch (err) {
-      console.error('Step verification error:', err);
-      setVerifyResult({ status: 'fail', details: [{ error: err.message }] });
-    } finally {
-      setIsVerifying(false);
-    }
-  };
-
-  const runVerification = async () => {
-    if (!sessionId) {
-      alert("Please click 'Start Lab' first to launch the interactive sandbox!");
-      return;
-    }
-    setIsVerifying(true);
-    setVerifyResult({ status: 'checking' });
-
-    try {
-      const res = await labApi.verify(unitId, sessionId);
-      const data = res.data;
-
-      if (data.allPassed) {
-        markUnitCompleted(unitId);
-        const allMap = {};
-        (practiceData?.steps || []).forEach((s) => { allMap[s.step] = true; });
-        setVerifiedSteps(allMap);
-
-        setVerifyResult({
-          status: 'pass',
-          xpEarned: data.xpEarned || 100,
-          score: data.score || 100,
-          details: data.results,
-        });
-      } else {
-        setVerifyResult({
-          status: 'fail',
-          score: data.score || 0,
-          details: data.results,
-        });
-      }
-    } catch (err) {
-      console.error('Verification error:', err);
-      setVerifyResult({ status: 'fail', details: [{ error: err.message }] });
+      setVerifyResult({ status: 'error', message: errorMessage(err, 'Verification could not run. Is the sandbox still running?') });
     } finally {
       setIsVerifying(false);
     }
@@ -278,7 +229,7 @@ export default function LabPage() {
     );
   }
 
-  if (!meta || !practiceData) {
+  if (loadError === 'not_found' || (!loadError && (!meta || !practiceData))) {
     return (
       <div className="lab-not-found">
         <h2>Lab not found</h2>
@@ -290,7 +241,24 @@ export default function LabPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="lab-not-found">
+        <h2>Couldn't load this lab</h2>
+        <p>{loadError}</p>
+        <button className="btn btn-primary" onClick={() => setLoadAttempt((n) => n + 1)}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+
   const steps = practiceData.steps || [];
+  // The mentor helps with the step the student last checked and has not passed;
+  // otherwise with the first step that has not been verified yet.
+  const currentStep = steps.find((s) => s.step === focusStep && !verifiedSteps[s.step])
+    || steps.find((s) => !verifiedSteps[s.step])
+    || steps[steps.length - 1];
 
   return (
     <div className="lab-page">
@@ -360,13 +328,17 @@ export default function LabPage() {
             </button>
           ) : (
             <>
+              <button className="btn btn-ghost btn-sm" onClick={resetLab} title="Delete everything in the sandbox and start the lab over">
+                <RotateCcw size={14} />
+                Reset
+              </button>
               <button className="btn btn-secondary btn-sm" onClick={stopLab}>
                 <Square size={14} />
                 Stop
               </button>
-              <button className="btn btn-success btn-sm" onClick={runVerification} disabled={isVerifying}>
+              <button className="btn btn-success btn-sm" onClick={() => verify()} disabled={isVerifying}>
                 <CheckCircle2 size={14} />
-                Verify
+                Verify All
               </button>
             </>
           )}
@@ -420,7 +392,7 @@ export default function LabPage() {
                     {stepObj.tasks && (
                       <ul className="tasks-bullet-list">
                         {stepObj.tasks.map((task, i) => (
-                          <li key={i}>{task}</li>
+                          <li key={i}>{renderInlineCode(task)}</li>
                         ))}
                       </ul>
                     )}
@@ -428,9 +400,9 @@ export default function LabPage() {
                     <div className="step-actions-row flex-gap">
                       <button
                         className={`btn btn-xs ${verifiedSteps[stepObj.step] ? 'btn-success' : 'btn-primary'}`}
-                        onClick={() => verifyStep(stepObj.step)}
+                        onClick={() => verify(stepObj.step)}
                         disabled={isVerifying || !sessionId}
-                        title={!sessionId ? "Click 'Start Lab' to enable verification" : "Verify this step in container"}
+                        title={!sessionId ? "Click 'Start Lab' to enable verification" : 'Run this step\'s check in your sandbox'}
                       >
                         <CheckCircle2 size={12} />
                         {verifiedSteps[stepObj.step] ? 'Verified' : `Verify Step ${stepObj.step}`}
@@ -460,19 +432,18 @@ export default function LabPage() {
 
         {/* Terminal Panel */}
         <div className="lab-terminal">
-          <Terminal sessionId={sessionId} onDisconnect={() => setSessionId(null)} onStartLab={startLab} />
+          <Terminal ref={terminalRef} sessionId={sessionId} onDisconnect={handleDisconnect} onStartLab={startLab} />
         </div>
 
         {/* Live DevOps File & Telemetry Inspector Side Panel */}
-        {showInspector && (
+        {/* The mentor drawer uses the same corner, so the inspector steps aside while it is open. */}
+        {showInspector && !showMentor && (
           <DevOpsInspector
             sessionId={sessionId}
             unitId={unitId}
             commandHistory={commandHistory}
-            onRunCommand={(cmd) => {
-              // Append to history and trigger
-              setCommandHistory((prev) => [...prev, cmd]);
-            }}
+            onRunCommand={sessionId ? runInTerminal : undefined}
+            onClose={() => setShowInspector(false)}
           />
         )}
       </div>
@@ -487,37 +458,57 @@ export default function LabPage() {
                   <Loader size={32} className="spin" />
                 </div>
                 <h3>Verifying your work...</h3>
-                <p>Running automated checks inside the sandbox container</p>
+                <p>Running the checks inside your sandbox</p>
               </>
             ) : verifyResult.status === 'pass' ? (
               <>
                 <div className="verify-icon pass">
                   <CheckCircle2 size={32} />
                 </div>
-                <h3>Verification Passed! 🎉</h3>
+                <h3>{verifyResult.unitCompleted ? 'Lab complete!' : 'Verification passed'}</h3>
                 <p style={{ color: '#10b981', fontWeight: 600 }}>
-                  +{verifyResult.xpEarned || 100} XP Earned • {verifyResult.score || 100}% Score
+                  {verifyResult.xpEarned > 0 ? `+${verifyResult.xpEarned} XP earned` : 'Already verified, no new XP'}
                 </p>
-                <p>Great job! You completed all task verifications for this step.</p>
+                <p>
+                  {verifyResult.unitCompleted
+                    ? 'Every step in this lab has been verified in your sandbox.'
+                    : verifyResult.stepNumber
+                      ? `Step ${verifyResult.stepNumber} checks out. On to the next one.`
+                      : 'All checks passed.'}
+                </p>
+                {verifyResult.unitCompleted && (
+                  <Link to="/dashboard" className="btn btn-primary btn-sm mb-2">
+                    <Award size={14} /> Get your certificate
+                  </Link>
+                )}
+              </>
+            ) : verifyResult.status === 'error' ? (
+              <>
+                <div className="verify-icon fail">
+                  <XCircle size={32} />
+                </div>
+                <h3>Couldn't run the check</h3>
+                <p>{verifyResult.message}</p>
               </>
             ) : (
               <>
                 <div className="verify-icon fail">
                   <XCircle size={32} />
                 </div>
-                <h3>Verification Checklist Pending</h3>
-                <p>Review your container state and commands, or ask AI Mentor for assistance.</p>
+                <h3>Not there yet</h3>
+                <p>
+                  {verifyResult.details.filter((r) => r.passed).length} of {verifyResult.details.length} checks passed.
+                  Compare your sandbox with the tasks, or ask the mentor.
+                </p>
 
-                {verifyResult.details && (
-                  <div className="verify-details-list">
-                    {verifyResult.details.map((res, i) => (
-                      <div key={i} className={`verify-detail-item ${res.passed ? 'pass' : 'fail'}`}>
-                        <span>{res.title || `Step ${res.step}`}</span>
-                        <span>{res.passed ? '✓ Passed' : '✗ Pending'}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className="verify-details-list">
+                  {verifyResult.details.map((res, i) => (
+                    <div key={i} className={`verify-detail-item ${res.passed ? 'pass' : 'fail'}`}>
+                      <span>{res.title || `Step ${res.step}`}</span>
+                      <span>{res.passed ? '✓ Passed' : '✗ Not yet'}</span>
+                    </div>
+                  ))}
+                </div>
 
                 <button
                   className="btn btn-primary btn-sm mb-2"
@@ -526,7 +517,7 @@ export default function LabPage() {
                     setShowMentor(true);
                   }}
                 >
-                  <Bot size={14} /> Ask AI Mentor for Diagnostic Hint
+                  <Bot size={14} /> Ask the mentor
                 </button>
               </>
             )}
@@ -540,8 +531,11 @@ export default function LabPage() {
       {/* ── AI Mentor Chat Drawer ───────────────────────── */}
       {showMentor && (
         <MentorChat
+          key={currentStep?.step}
           unitId={unitId}
-          currentStep={1}
+          currentStep={currentStep?.step || 1}
+          stepTitle={currentStep?.title}
+          sessionId={sessionId}
           onClose={() => setShowMentor(false)}
         />
       )}

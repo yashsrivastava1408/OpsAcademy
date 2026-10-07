@@ -1,6 +1,5 @@
 import {
   Terminal,
-  CheckCircle2,
   Sparkles,
   Layers,
   Award,

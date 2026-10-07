@@ -1,0 +1,6 @@
+node_modules/
+sandboxes/
+.data/
+.env
+tests/
+coverage/

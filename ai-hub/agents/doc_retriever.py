@@ -1,102 +1,113 @@
-import re
+"""
+Agent 2: Knowledge Retriever
+
+Hybrid lexical retrieval over the course's own content (learn sections and
+flashcards, built by scripts/build_corpus.py). Two rankers run on every
+query and are merged with reciprocal rank fusion:
+
+  - BM25 over word tokens: strong on exact terms like `kubectl` or `chmod`
+  - TF-IDF cosine over character n-grams: tolerant of typos and word forms
+
+Chunks from the unit the student is working in get a small boost. There is
+no embedding model or vector database here; evals/run_eval.py measures how
+well this does on labelled questions.
+"""
+
+import json
 import math
+from collections import Counter
+from pathlib import Path
 
-DOC_KNOWLEDGE_BASE = [
-    {
-        "topic": "linux_permissions",
-        "keywords": ["chmod", "permission", "denied", "rwx", "755", "644", "chown", "sudo"],
-        "content": "Linux file permissions consist of Owner, Group, and Others. Use 'chmod +x script.sh' to make a file executable. 755 means owner=rwx, group=r-x, others=r-x."
-    },
-    {
-        "topic": "linux_navigation",
-        "keywords": ["mkdir", "touch", "ls", "cd", "pwd", "directory", "file", "find", "grep"],
-        "content": "Use 'pwd' to print current working directory. Use 'mkdir -p a/b/c' to create nested directories. Use 'ls -la' to show hidden files."
-    },
-    {
-        "topic": "docker_containers",
-        "keywords": ["docker", "run", "container", "image", "pull", "ps", "port", "detach", "exec"],
-        "content": "Docker containers share the host OS kernel. 'docker run -d -p 8080:80 nginx' runs Nginx in detached mode mapping host port 8080 to container port 80."
-    },
-    {
-        "topic": "dockerfile",
-        "keywords": ["dockerfile", "build", "copy", "cmd", "run", "from", "layer", "entrypoint", "multistage"],
-        "content": "Copy dependency files like package.json first before source code to leverage Docker layer caching and speed up image builds."
-    },
-    {
-        "topic": "git_branching",
-        "keywords": ["git", "branch", "checkout", "merge", "commit", "rebase", "conflict", "head"],
-        "content": "Use 'git checkout -b feature-name' to create and switch to a branch. Use 'git merge feature-name' from main to integrate code."
-    },
-    {
-        "topic": "k8s_pods",
-        "keywords": ["kubernetes", "k8s", "kubectl", "pod", "deployment", "service", "crashloopbackoff", "ingress"],
-        "content": "Pods are the smallest deployable units in K8s. Use 'kubectl describe pod <name>' and 'kubectl logs <name>' to diagnose failing pods."
-    },
-    {
-        "topic": "terraform_iac",
-        "keywords": ["terraform", "tf", "hcl", "provider", "resource", "plan", "apply", "state"],
-        "content": "Terraform provisions IaC declaratively. Always run 'terraform plan' to inspect changes before executing 'terraform apply'."
-    },
-    {
-        "topic": "cicd_pipelines",
-        "keywords": ["github", "actions", "pipeline", "workflow", "ci", "cd", "deploy", "runner"],
-        "content": "CI/CD pipelines automate testing and deployment. Store secrets in GitHub Actions Secrets rather than hardcoding credentials in YAML."
-    }
-]
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import linear_kernel
 
-import os
-import glob
+from agents.text import tokenize
+
+CORPUS_PATH = Path(__file__).resolve().parent.parent / "data" / "corpus.json"
+
+BM25_K1 = 1.5
+BM25_B = 0.75
+RRF_K = 60
+CANDIDATES = 30
+# Added to a chunk's fused score when it belongs to the student's current unit:
+# worth about as much as ranking first in one of the two rankers.
+UNIT_BOOST = 1.0 / (RRF_K + 1)
+
 
 class DocRetriever:
-    def __init__(self):
-        self.docs = list(DOC_KNOWLEDGE_BASE)
-        self.load_awesome_skills()
+    def __init__(self, corpus: list = None):
+        self.docs = corpus if corpus is not None else self.load_corpus()
+        texts = [self.searchable(doc) for doc in self.docs]
 
-    def load_awesome_skills(self):
-        skills_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".agents", "awesome-skills"))
-        if os.path.exists(skills_dir):
-            try:
-                md_files = glob.glob(os.path.join(skills_dir, "**", "*.md"), recursive=True)[:50]
-                for md_file in md_files:
-                    filename = os.path.basename(md_file)
-                    with open(md_file, "r", encoding="utf-8", errors="ignore") as f:
-                        content = f.read(500)
-                    keywords = [w.lower() for w in re.findall(r'\w+', filename) if len(w) > 3]
-                    self.docs.append({
-                        "topic": filename.replace(".md", ""),
-                        "keywords": keywords,
-                        "content": content.replace("\n", " ").strip()
-                    })
-                print(f"[DocRetriever] Indexed {len(md_files)} agentic-awesome-skills into RAG knowledge base.")
-            except Exception as e:
-                print(f"[DocRetriever] Warning loading awesome-skills: {e}")
+        # BM25 index
+        self.doc_tokens = [tokenize(text) for text in texts]
+        self.doc_freqs = [Counter(tokens) for tokens in self.doc_tokens]
+        self.avg_len = sum(len(t) for t in self.doc_tokens) / max(1, len(self.docs))
+        document_frequency = Counter(term for tokens in self.doc_tokens for term in set(tokens))
+        total = len(self.docs)
+        self.idf = {term: math.log(1 + (total - df + 0.5) / (df + 0.5)) for term, df in document_frequency.items()}
 
-    def compute_tfidf_score(self, query: str, doc: dict) -> float:
-        query_terms = re.findall(r'\w+', query.lower())
-        if not query_terms:
-            return 0.0
+        # Character n-gram TF-IDF index
+        self.vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True, min_df=1)
+        self.matrix = self.vectorizer.fit_transform(texts) if texts else None
 
-        doc_text = (doc["topic"] + " " + " ".join(doc["keywords"]) + " " + doc["content"]).lower()
-        doc_terms = re.findall(r'\w+', doc_text)
+    @staticmethod
+    def load_corpus() -> list:
+        if not CORPUS_PATH.exists():
+            return []
+        return json.loads(CORPUS_PATH.read_text())
 
-        score = 0.0
-        for term in set(query_terms):
-            if term in doc_terms:
-                tf = doc_terms.count(term) / len(doc_terms)
-                idf = math.log(1 + (len(self.docs) / max(1, sum(1 for d in self.docs if term in (d["topic"] + " " + " ".join(d["keywords"])).lower()))))
-                score += tf * idf * (3.0 if term in doc["keywords"] else 1.0)
+    @staticmethod
+    def searchable(doc: dict) -> str:
+        # The title is repeated so a match on it outweighs a passing mention in the body.
+        return f"{doc.get('title', '')}. {doc.get('title', '')}. {doc.get('unit_title', '')}. {doc.get('text', '')}"
 
-        return score
+    def bm25_scores(self, query: str) -> list:
+        terms = tokenize(query)
+        scores = [0.0] * len(self.docs)
+        for index, freqs in enumerate(self.doc_freqs):
+            length = len(self.doc_tokens[index])
+            for term in terms:
+                tf = freqs.get(term)
+                if not tf:
+                    continue
+                norm = tf + BM25_K1 * (1 - BM25_B + BM25_B * length / self.avg_len)
+                scores[index] += self.idf.get(term, 0.0) * tf * (BM25_K1 + 1) / norm
+        return scores
 
-    def retrieve(self, query: str, context_tags: list = None) -> list:
-        scored_results = []
+    def tfidf_scores(self, query: str) -> list:
+        if self.matrix is None:
+            return []
+        return linear_kernel(self.vectorizer.transform([query]), self.matrix)[0].tolist()
 
-        for doc in self.docs:
-            score = self.compute_tfidf_score(query, doc)
-            if score > 0:
-                scored_results.append((score, doc["content"], doc["topic"]))
+    @staticmethod
+    def ranked(scores: list) -> list:
+        """Indexes of the best-scoring documents, ignoring ones that did not match at all."""
+        order = sorted((i for i, s in enumerate(scores) if s > 0), key=lambda i: scores[i], reverse=True)
+        return order[:CANDIDATES]
 
-        scored_results.sort(key=lambda x: x[0], reverse=True)
-        return [r[1] for r in scored_results[:2]] if scored_results else [self.docs[0]["content"]]
+    def retrieve(self, query: str, unit_id: str = None, top_k: int = 3) -> list:
+        """
+        @returns up to top_k chunks, best first, each with its fused `score`.
+                 Empty when nothing in the corpus matches the query.
+        """
+        if not self.docs or not query or not query.strip():
+            return []
+
+        fused = Counter()
+        for scores in (self.bm25_scores(query), self.tfidf_scores(query)):
+            for rank, index in enumerate(self.ranked(scores)):
+                fused[index] += 1.0 / (RRF_K + rank + 1)
+
+        if unit_id:
+            for index in fused:
+                if self.docs[index]["unit"] == unit_id:
+                    fused[index] += UNIT_BOOST
+
+        results = []
+        for index, score in fused.most_common(top_k):
+            results.append({**self.docs[index], "score": round(score, 5)})
+        return results
+
 
 retriever = DocRetriever()

@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { CheckCircle2, XCircle, HelpCircle, Sparkles, RefreshCw } from 'lucide-react';
+import { progressApi } from '../../services/api';
+import { refreshProgress } from '../../services/progressService';
 import './Quiz.css';
 
-export default function Quiz({ quiz }) {
+export default function Quiz({ quiz, unitId, sectionId }) {
   const [selectedOption, setSelectedOption] = useState(null);
   const [submitted, setSubmitted] = useState(false);
+  const [xpAwarded, setXpAwarded] = useState(0);
 
   if (!quiz) return null;
 
@@ -14,6 +17,16 @@ export default function Quiz({ quiz }) {
     if (submitted) return;
     setSelectedOption(index);
     setSubmitted(true);
+
+    // The server checks the answer too and awards XP the first time it is right.
+    if (unitId && sectionId) {
+      progressApi.answerQuiz(unitId, sectionId, index)
+        .then((res) => {
+          setXpAwarded(res.data.xpAwarded || 0);
+          if (res.data.xpAwarded) refreshProgress();
+        })
+        .catch(() => { /* XP is a bonus; the explanation still shows */ });
+    }
   };
 
   const handleReset = () => {
@@ -30,7 +43,7 @@ export default function Quiz({ quiz }) {
         </div>
         {submitted && isCorrect && (
           <span className="quiz-score-badge">
-            <Sparkles size={12} /> Passed +25 XP
+            <Sparkles size={12} /> {xpAwarded > 0 ? `Passed +${xpAwarded} XP` : 'Passed'}
           </span>
         )}
       </div>

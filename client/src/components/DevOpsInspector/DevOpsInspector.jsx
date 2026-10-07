@@ -50,10 +50,23 @@ export default function DevOpsInspector({
   const [telemetry, setTelemetry] = useState({ fileTree: [], processes: [], ports: [] });
   const [loading, setLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
+  const [preview, setPreview] = useState({ loading: false, content: '', truncated: false, error: null });
+
+  const openPreview = async (item) => {
+    setPreviewFile(item);
+    setPreview({ loading: true, content: '', truncated: false, error: null });
+    try {
+      const res = await sandboxApi.getFile(sessionId, item.path);
+      setPreview({ loading: false, content: res.data.data.content, truncated: res.data.data.truncated, error: null });
+    } catch (err) {
+      setPreview({ loading: false, content: '', truncated: false, error: err.response?.data?.error || 'Could not read this file' });
+    }
+  };
   const [isMinimized, setIsMinimized] = useState(false);
 
   // Draggable State
-  const [pos, setPos] = useState({ x: window.innerWidth - 370, y: 90 });
+  // Starts below the lab header so it does not cover the Start / Verify buttons.
+  const [pos, setPos] = useState({ x: window.innerWidth - 370, y: 160 });
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
 
@@ -66,7 +79,7 @@ export default function DevOpsInspector({
   }, []);
 
   const fetchTelemetry = async () => {
-    if (!sessionId || sessionId.startsWith('local-lab-')) return;
+    if (!sessionId) return;
     try {
       setLoading(true);
       const res = await sandboxApi.getTelemetry(sessionId);
@@ -88,13 +101,15 @@ export default function DevOpsInspector({
   };
 
   useEffect(() => {
-    if (!sessionId || sessionId.startsWith('local-lab-')) {
+    if (!sessionId) {
       setTelemetry({ fileTree: [], processes: [], ports: [] });
       return;
     }
     fetchTelemetry();
     const interval = setInterval(fetchTelemetry, 5000);
     return () => clearInterval(interval);
+    // fetchTelemetry is recreated each render; polling restarts only when the session changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   // Drag listeners
@@ -255,7 +270,7 @@ export default function DevOpsInspector({
                     {item.type === 'file' && (
                       <button
                         className="btn btn-ghost btn-xs inspect-file-btn"
-                        onClick={() => setPreviewFile(item)}
+                        onClick={() => openPreview(item)}
                         title="Preview File"
                       >
                         <Eye size={11} />
@@ -292,10 +307,10 @@ export default function DevOpsInspector({
             <div className="section-block mt-3">
               <div className="block-title">
                 <Cpu size={12} />
-                <span>Running Processes (ps aux)</span>
+                <span>Running Processes</span>
               </div>
               {telemetry.processes.length === 0 ? (
-                <span className="none-text">Container initializing...</span>
+                <span className="none-text">{sessionId ? 'No processes listed' : 'Start the lab to see processes'}</span>
               ) : (
                 <div className="processes-list">
                   {telemetry.processes.map((proc, i) => (
@@ -324,7 +339,7 @@ export default function DevOpsInspector({
               </div>
             ) : (
               <div className="history-list">
-                {commandHistory.slice(-10).reverse().map((cmd, i) => (
+                {commandHistory.slice(-25).reverse().map((cmd, i) => (
                   <div key={i} className="history-item">
                     <code className="history-cmd">{cmd}</code>
                     {onRunCommand && (
@@ -353,7 +368,12 @@ export default function DevOpsInspector({
               <button className="btn btn-ghost btn-xs" onClick={() => setPreviewFile(null)}>✖</button>
             </div>
             <div className="preview-body">
-              <code>File preview active: /home/student/{previewFile.path}</code>
+              {preview.loading && <span className="none-text">Reading file...</span>}
+              {preview.error && <span className="none-text">{preview.error}</span>}
+              {!preview.loading && !preview.error && (
+                <pre className="preview-content">{preview.content || '(empty file)'}</pre>
+              )}
+              {preview.truncated && <span className="none-text">Showing the first 20 KB.</span>}
             </div>
           </div>
         </div>

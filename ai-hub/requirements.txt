@@ -1,6 +1,7 @@
 flask==3.0.3
-flask-cors==4.0.1
+gunicorn>=23,<27
 scikit-learn==1.4.2
 numpy==1.26.4
-requests==2.31.0
 python-dotenv==1.0.1
+# Optional LLM mentor: only used when ANTHROPIC_API_KEY is set.
+anthropic>=1,<2

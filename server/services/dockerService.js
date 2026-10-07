@@ -1,255 +1,274 @@
 /**
- * Docker Service — Container-based sandbox engine
- * 
- * Spawns isolated Alpine Linux containers via dockerode.
- * Used when SANDBOX_MODE=docker (VPS with Docker socket access).
- * 
- * Provides the same interface as ptyService.js for seamless swapping.
+ * Docker engine — container sandbox
+ *
+ * Runs each sandbox in its own locked-down container via dockerode.
+ * Used when SANDBOX_MODE=docker. See docs/THREAT_MODEL.md for what each
+ * restriction below is there to stop.
+ *
+ * Implements the engine interface shared with ptyService.js:
+ *   create, destroy, isAlive, exec, attach, reset, onExit, info
  */
 
 const Docker = require('dockerode');
+const fs = require('fs');
 const config = require('../config');
+const logger = require('../lib/logger');
 
-let docker;
-try {
-  docker = new Docker({ socketPath: config.dockerSocketPath });
-} catch (err) {
-  console.warn('[Docker] Docker not available:', err.message);
+const STUDENT_HOME = '/home/student';
+const STUDENT_UID = 1000;
+
+let docker = null;
+function getDocker() {
+  if (!docker) docker = new Docker({ socketPath: config.dockerSocketPath });
+  return docker;
 }
 
-// Active containers: Map<sessionId, { containerId, createdAt, userId, labId }>
-const activeSessions = new Map();
+// Map<engineId, { containerId, networkName, alive, exitListeners }>
+const sandboxes = new Map();
 
-async function ensureIsolatedNetwork(sessionId) {
-  const netName = `student-net-${sessionId.slice(0, 8)}`;
-  try {
-    const net = docker.getNetwork(netName);
-    await net.inspect();
-    return netName;
-  } catch {
-    try {
-      await docker.createNetwork({
-        Name: netName,
-        Driver: 'bridge',
-        Internal: false,
-        CheckDuplicate: true,
-        Labels: { 'opsacademy.session': sessionId },
-      });
-      return netName;
-    } catch {
-      return config.sandbox.dockerNetwork || 'isolated-student-net';
-    }
-  }
+function containerName(engineId) {
+  return `opsacademy-sbx-${engineId}`;
 }
 
 /**
- * Spawn a isolated Docker container sandbox session
+ * 'none' gives the container no network interface at all. 'internal' gives
+ * each sandbox its own bridge with no route out, for labs that need
+ * localhost-style networking. 'bridge' allows outbound internet.
  */
-async function createSandbox(sessionId, userId, labId) {
-  if (!docker) throw new Error('Docker is not available. Switch to SANDBOX_MODE=pty');
+async function resolveNetwork(engineId) {
+  const mode = config.sandbox.dockerNetworkMode;
+  if (mode === 'none' || mode === 'bridge') return { networkMode: mode, networkName: null };
 
-  const isolatedNetwork = await ensureIsolatedNetwork(sessionId);
+  const networkName = `opsacademy-net-${engineId}`;
+  await getDocker().createNetwork({
+    Name: networkName,
+    Driver: 'bridge',
+    Internal: true,
+    Labels: { 'opsacademy.sandbox': engineId },
+  });
+  return { networkMode: networkName, networkName };
+}
 
-  const container = await docker.createContainer({
+/**
+ * Container settings for a sandbox. Exported so tests can assert the
+ * hardening without needing a Docker daemon.
+ */
+function buildContainerOptions(engineId, { labId, networkMode }) {
+  const securityOpt = ['no-new-privileges:true'];
+  if (config.sandbox.dockerSeccompProfile) {
+    securityOpt.push(`seccomp=${fs.readFileSync(config.sandbox.dockerSeccompProfile, 'utf8')}`);
+  }
+
+  const memoryBytes = config.sandbox.maxMemoryMB * 1024 * 1024;
+
+  return {
+    name: containerName(engineId),
     Image: config.sandbox.dockerImage,
     Cmd: ['/bin/sh'],
     Tty: true,
     OpenStdin: true,
-    Labels: {
-      'opsacademy.session': sessionId,
-      'opsacademy.user': userId,
-      'opsacademy.lab': labId || 'sandbox',
-    },
+    User: `${STUDENT_UID}:${STUDENT_UID}`,
+    WorkingDir: STUDENT_HOME,
+    Hostname: 'opsacademy',
+    Env: [`LAB_ID=${labId || 'sandbox'}`, `HOME=${STUDENT_HOME}`],
+    Labels: { 'opsacademy.sandbox': engineId },
     HostConfig: {
-      Memory: config.sandbox.maxMemoryMB * 1024 * 1024,
-      NanoCpus: config.sandbox.maxCpuCores * 1e9,
-      NetworkMode: isolatedNetwork,
-      SecurityOpt: ['no-new-privileges:true'],
+      Memory: memoryBytes,
+      MemorySwap: memoryBytes, // equal to Memory: no swap to hide in
+      NanoCpus: Math.round(config.sandbox.maxCpuCores * 1e9),
+      PidsLimit: config.sandbox.maxPids,
+      NetworkMode: networkMode,
+      CapDrop: ['ALL'],
+      SecurityOpt: securityOpt,
+      Privileged: false,
       ReadonlyRootfs: true,
-      Mounts: [
-        {
-          Target: '/home/student',
-          Source: `student-vol-${sessionId}`,
-          Type: 'volume',
-          ReadOnly: false,
-        },
-        {
-          Target: '/tmp',
-          Type: 'tmpfs',
-          TmpfsOptions: { SizeBytes: 64 * 1024 * 1024 }, // 64MB tmpfs
-        },
+      AutoRemove: false,
+      Ulimits: [
+        { Name: 'nofile', Soft: 1024, Hard: 1024 },
+        { Name: 'fsize', Soft: config.sandbox.homeSizeMB * 1024 * 1024, Hard: config.sandbox.homeSizeMB * 1024 * 1024 },
       ],
+      // Writable space is RAM-backed and size-capped, so a student cannot
+      // fill the host disk and nothing survives the container.
+      Tmpfs: {
+        // `exec` because labs have students write and run their own scripts (Docker's tmpfs default is noexec).
+        [STUDENT_HOME]: `rw,exec,nosuid,nodev,size=${config.sandbox.homeSizeMB}m,uid=${STUDENT_UID},gid=${STUDENT_UID},mode=0755`,
+        '/tmp': `rw,nosuid,nodev,noexec,size=${Math.min(64, config.sandbox.homeSizeMB)}m,mode=1777`,
+      },
     },
-  });
-
-  await container.start();
-
-  const session = {
-    containerId: container.id,
-    container,
-    createdAt: Date.now(),
-    lastActiveAt: Date.now(),
-    userId,
-    labId,
   };
-
-  activeSessions.set(sessionId, session);
-  console.log(`[Docker] Created container ${container.id.slice(0, 12)} for session ${sessionId}`);
-  return session;
 }
 
-/**
- * Touch session activity timestamp
- */
-function touchSession(sessionId) {
-  const session = activeSessions.get(sessionId);
-  if (session) {
-    session.lastActiveAt = Date.now();
+async function create(engineId, { labId } = {}) {
+  const { networkMode, networkName } = await resolveNetwork(engineId);
+
+  let container;
+  try {
+    container = await getDocker().createContainer(buildContainerOptions(engineId, { labId, networkMode }));
+    await container.start();
+  } catch (err) {
+    if (container) await container.remove({ force: true }).catch(() => {});
+    if (networkName) await getDocker().getNetwork(networkName).remove().catch(() => {});
+    throw err;
   }
+
+  const sandbox = { containerId: container.id, networkName, alive: true, exitListeners: [] };
+  sandboxes.set(engineId, sandbox);
+
+  // Notice containers that die on their own (OOM kill, pid limit, `exit`).
+  container.wait().then(() => {
+    sandbox.alive = false;
+    for (const listener of sandbox.exitListeners) listener();
+  }).catch(() => {});
+
+  logger.debug({ engineId, containerId: container.id.slice(0, 12) }, '[Docker] sandbox created');
 }
 
-/**
- * Destroy a Docker sandbox container
- */
-async function destroySandbox(sessionId) {
-  const session = activeSessions.get(sessionId);
-  if (!session) return false;
+async function destroy(engineId) {
+  const sandbox = sandboxes.get(engineId);
+  if (!sandbox) return false;
+  sandboxes.delete(engineId);
+  sandbox.exitListeners = [];
 
   try {
-    const container = docker.getContainer(session.containerId);
-    await container.stop({ t: 2 }).catch(() => {}); // Ignore if already stopped
-    await container.remove({ force: true });
+    await getDocker().getContainer(sandbox.containerId).remove({ force: true });
   } catch (err) {
-    console.warn(`[Docker] Error removing container for ${sessionId}:`, err.message);
+    if (err.statusCode !== 404) logger.warn({ engineId, err: err.message }, '[Docker] error removing container');
   }
 
-  activeSessions.delete(sessionId);
-  console.log(`[Docker] Destroyed sandbox ${sessionId}`);
+  if (sandbox.networkName) {
+    await getDocker().getNetwork(sandbox.networkName).remove().catch((err) => {
+      logger.warn({ engineId, err: err.message }, '[Docker] error removing network');
+    });
+  }
   return true;
 }
 
-/**
- * Get sandbox session info
- */
-function getSandbox(sessionId) {
-  const session = activeSessions.get(sessionId);
-  if (!session) return null;
+function isAlive(engineId) {
+  const sandbox = sandboxes.get(engineId);
+  return Boolean(sandbox && sandbox.alive);
+}
 
-  const now = Date.now();
-  return {
-    sessionId,
-    userId: session.userId,
-    labId: session.labId,
-    createdAt: session.createdAt,
-    lastActiveAt: session.lastActiveAt || session.createdAt,
-    idleMs: now - (session.lastActiveAt || session.createdAt),
-    uptime: now - session.createdAt,
-    containerId: session.containerId,
-    mode: 'docker',
-  };
+function onExit(engineId, listener) {
+  const sandbox = sandboxes.get(engineId);
+  if (sandbox) sandbox.exitListeners.push(listener);
 }
 
 /**
- * Get a Docker exec stream for terminal piping
- * Returns an object with .on('data'), .write(), .resize() methods
+ * Run a command inside the container and capture stdout/stderr separately.
  */
-async function getContainerStream(sessionId) {
-  const session = activeSessions.get(sessionId);
-  if (!session) return null;
+async function exec(engineId, command, { timeoutMs = config.sandbox.execTimeoutMs } = {}) {
+  const sandbox = sandboxes.get(engineId);
+  if (!sandbox) throw new Error('Sandbox not found');
 
-  const container = docker.getContainer(session.containerId);
-  
-  const exec = await container.exec({
-    Cmd: ['/bin/sh'],
-    AttachStdin: true,
-    AttachStdout: true,
-    AttachStderr: true,
-    Tty: true,
-  });
-
-  const stream = await new Promise((resolve, reject) => {
-    exec.start({ hijack: true, stdin: true }, (err, s) => {
-      if (err) return reject(err);
-      resolve(s);
-    });
-  });
-
-  return { stream, exec };
-}
-
-/**
- * Resize the container terminal
- */
-async function resizeSandbox(sessionId, cols, rows) {
-  // Docker resize happens on the exec instance, handled in terminal service
-}
-
-/**
- * List all active sandbox sessions
- */
-function listSandboxes() {
-  const list = [];
-  const now = Date.now();
-  for (const [sessionId, session] of activeSessions) {
-    list.push({
-      sessionId,
-      userId: session.userId,
-      labId: session.labId,
-      createdAt: session.createdAt,
-      lastActiveAt: session.lastActiveAt || session.createdAt,
-      idleMs: now - (session.lastActiveAt || session.createdAt),
-      uptime: now - session.createdAt,
-      containerId: session.containerId,
-      mode: 'docker',
-    });
-  }
-  return list;
-}
-
-/**
- * Execute a command inside a container and return output
- * Used for lab verification
- */
-async function execInSandbox(sessionId, command) {
-  const session = activeSessions.get(sessionId);
-  if (!session) throw new Error('Sandbox not found');
-
-  session.lastActiveAt = Date.now();
-  const container = docker.getContainer(session.containerId);
-  const exec = await container.exec({
+  const container = getDocker().getContainer(sandbox.containerId);
+  const execInstance = await container.exec({
     Cmd: ['/bin/sh', '-c', command],
     AttachStdout: true,
     AttachStderr: true,
+    WorkingDir: STUDENT_HOME,
   });
+  const stream = await execInstance.start({});
 
   return new Promise((resolve, reject) => {
-    exec.start((err, stream) => {
-      if (err) return reject(err);
-      
-      let stdout = '';
-      let stderr = '';
-      
-      stream.on('data', (chunk) => { stdout += chunk.toString(); });
-      stream.on('end', () => {
-        exec.inspect((err, data) => {
-          resolve({
-            exitCode: data ? data.ExitCode : 1,
-            stdout,
-            stderr,
-          });
-        });
+    const out = [];
+    const err = [];
+    const collect = (chunks) => ({ write: (chunk) => chunks.push(chunk) });
+    getDocker().modem.demuxStream(stream, collect(out), collect(err));
+
+    const timer = setTimeout(() => {
+      stream.destroy();
+      resolve({ exitCode: 124, stdout: Buffer.concat(out).toString(), stderr: 'Command timed out' });
+    }, timeoutMs);
+
+    stream.on('error', (streamErr) => {
+      clearTimeout(timer);
+      reject(streamErr);
+    });
+    stream.on('end', async () => {
+      clearTimeout(timer);
+      const data = await execInstance.inspect().catch(() => null);
+      resolve({
+        exitCode: data && data.ExitCode !== null ? data.ExitCode : 1,
+        stdout: Buffer.concat(out).toString(),
+        stderr: Buffer.concat(err).toString(),
       });
     });
   });
 }
 
+/**
+ * Attach a terminal: each attachment gets its own interactive shell inside
+ * the container.
+ */
+async function attach(engineId) {
+  const sandbox = sandboxes.get(engineId);
+  if (!sandbox || !sandbox.alive) return null;
+
+  const container = getDocker().getContainer(sandbox.containerId);
+  const execInstance = await container.exec({
+    Cmd: ['/bin/sh', '-c', 'command -v bash >/dev/null 2>&1 && exec bash -l || exec sh -l'],
+    AttachStdin: true,
+    AttachStdout: true,
+    AttachStderr: true,
+    Tty: true,
+    WorkingDir: STUDENT_HOME,
+    Env: ['TERM=xterm-256color'],
+  });
+  const stream = await execInstance.start({ hijack: true, stdin: true, Tty: true });
+
+  return {
+    onData(callback) {
+      stream.on('data', (chunk) => callback(chunk.toString('utf8')));
+    },
+    write(data) {
+      if (!stream.destroyed) stream.write(data);
+    },
+    resize(cols, rows) {
+      execInstance.resize({ h: rows, w: cols }).catch(() => {});
+    },
+    close() {
+      stream.destroy();
+    },
+  };
+}
+
+/** Wipe the student's home directory so the lab can be started over. */
+async function reset(engineId) {
+  await exec(engineId, `find ${STUDENT_HOME} -mindepth 1 -delete`);
+}
+
+function info(engineId) {
+  const sandbox = sandboxes.get(engineId);
+  return { mode: 'docker', containerId: sandbox ? sandbox.containerId.slice(0, 12) : null };
+}
+
+/**
+ * Remove containers and networks left behind by a previous gateway process
+ * (crash or redeploy), found by label.
+ */
+async function cleanupOrphans() {
+  const filters = { label: ['opsacademy.sandbox'] };
+  const containers = await getDocker().listContainers({ all: true, filters });
+  for (const item of containers) {
+    await getDocker().getContainer(item.Id).remove({ force: true }).catch(() => {});
+  }
+  const networks = await getDocker().listNetworks({ filters });
+  for (const item of networks) {
+    await getDocker().getNetwork(item.Id).remove().catch(() => {});
+  }
+  return { containers: containers.length, networks: networks.length };
+}
+
 module.exports = {
-  createSandbox,
-  destroySandbox,
-  getSandbox,
-  getContainerStream,
-  resizeSandbox,
-  listSandboxes,
-  execInSandbox,
-  touchSession,
+  name: 'docker',
+  create,
+  destroy,
+  isAlive,
+  onExit,
+  exec,
+  attach,
+  reset,
+  info,
+  cleanupOrphans,
+  buildContainerOptions,
 };

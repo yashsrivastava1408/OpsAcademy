@@ -5,7 +5,13 @@ metadata:
   namespace: opsacademy
 data:
   PORT: "4000"
-  AI_HUB_PORT: "5000"
+  NODE_ENV: "production"
+  # A pod cannot start sibling containers, so sandboxes here are PTY shells
+  # inside the gateway pod. The pod is the blast radius: keep it unprivileged
+  # (see server.yaml) and treat this as a demo deployment, not a place for
+  # untrusted users. For real isolation run the gateway on a VM with Docker
+  # (SANDBOX_MODE=docker) or use a sandboxed runtime such as gVisor.
   SANDBOX_MODE: "pty"
   AI_HUB_URL: "http://opsacademy-ai-hub.opsacademy.svc.cluster.local:5000"
-  CLIENT_URL: "https://opsacademy.dev"
+  CORS_ORIGINS: "https://opsacademy.dev"
+  DATA_DIR: "/data"

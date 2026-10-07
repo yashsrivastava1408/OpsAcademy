@@ -1,144 +1,95 @@
 /**
- * Sandbox Pool Service — Pre-Warmed Container Standby Engine
- * 
- * Maintains a pool of pre-warmed idle sandboxes in the background.
- * Provides instant (<50ms) sandbox acquisition when users click "Run" or open a lab.
+ * Sandbox Pool — pre-warmed standby sandboxes
+ *
+ * Keeps a few idle sandboxes ready so a student does not wait for a cold
+ * start. The pool only holds engine handles; a sandbox becomes a session
+ * when sandboxManager claims one and binds a session id to it.
  */
 
-const config = require('../config');
 const crypto = require('crypto');
+const config = require('../config');
+const logger = require('../lib/logger');
+const metrics = require('../lib/metrics');
 
-// Array of standby pre-warmed sandboxes: Array<{ standbyId, engineSession, createdAt }>
-const standbyPool = [];
-let isReplenishing = false;
-let engineRef = null;
+function createPool(engine, { size = config.sandbox.poolSize, enabled = config.sandbox.enablePool } = {}) {
+  const standby = []; // engineIds, oldest first
+  let replenishing = null;
 
-function setEngine(engine) {
-  engineRef = engine;
-}
-
-/**
- * Initialize pre-warmed sandbox pool on server startup
- */
-async function initializePool(engine) {
-  if (engine) engineRef = engine;
-  if (!config.sandbox.enablePool) {
-    console.log('[SandboxPool] Standby pool disabled via config.');
-    return;
+  function newEngineId() {
+    return crypto.randomBytes(8).toString('hex');
   }
 
-  console.log(`[SandboxPool] Initializing standby pool (Target size: ${config.sandbox.poolSize})...`);
-  await replenishPool();
-}
+  function publish() {
+    metrics.sandboxPoolAvailable.set(standby.length);
+  }
 
-/**
- * Replenish the standby pool up to config.sandbox.poolSize
- */
-async function replenishPool() {
-  if (!engineRef || isReplenishing || !config.sandbox.enablePool) return;
+  /** Top the pool back up to its target size. Concurrent calls share one run. */
+  function replenish() {
+    if (!enabled) return Promise.resolve();
+    if (replenishing) return replenishing;
 
-  const needed = config.sandbox.poolSize - standbyPool.length;
-  if (needed <= 0) return;
-
-  isReplenishing = true;
-
-  try {
-    for (let i = 0; i < needed; i++) {
-      const standbyId = `pool-${crypto.randomBytes(4).toString('hex')}`;
-      try {
-        const session = await engineRef.createSandbox(standbyId, 'standby-user', 'standby-lab');
-        standbyPool.push({
-          standbyContainerId: session.containerId || standbyId,
-          sessionId: standbyId,
-          session,
-          createdAt: Date.now(),
-        });
-        console.log(`[SandboxPool] Pre-warmed sandbox ready: ${standbyId}`);
-      } catch (err) {
-        console.warn(`[SandboxPool] Failed to create standby sandbox:`, err.message);
-        break; // Stop loop if Docker or PTY engine fails
+    replenishing = (async () => {
+      while (standby.length < size) {
+        const engineId = newEngineId();
+        try {
+          await engine.create(engineId, { labId: 'standby' });
+          standby.push(engineId);
+          publish();
+        } catch (err) {
+          // Stop rather than spin: the engine is unavailable (e.g. Docker is down).
+          logger.warn({ err: err.message }, '[SandboxPool] could not pre-warm a sandbox');
+          break;
+        }
       }
-    }
-  } finally {
-    isReplenishing = false;
+    })().finally(() => {
+      replenishing = null;
+    });
+
+    return replenishing;
   }
-}
 
-/**
- * Acquire a sandbox from the pool (or fallback to on-demand creation)
- */
-async function acquireSandbox(sessionId, userId, labId, createOnDemandFn) {
-  const startTime = Date.now();
+  /**
+   * Hand out a sandbox: a pre-warmed one if a live one is waiting, otherwise
+   * a cold start.
+   * @returns {Promise<{ engineId: string, fromPool: boolean }>}
+   */
+  async function acquire({ labId } = {}) {
+    while (standby.length > 0) {
+      const engineId = standby.shift();
+      publish();
+      if (engine.isAlive(engineId)) {
+        setImmediate(() => replenish().catch(() => {}));
+        return { engineId, fromPool: true };
+      }
+      // A standby shell that died while waiting is discarded, not handed out.
+      await engine.destroy(engineId).catch(() => {});
+    }
 
-  // Try claiming from standby pool
-  if (config.sandbox.enablePool && standbyPool.length > 0) {
-    const standbyItem = standbyPool.shift();
-    console.log(`[SandboxPool] ⚡ Instant claim from pool for session ${sessionId} (Latency: ${Date.now() - startTime}ms)`);
+    const engineId = newEngineId();
+    await engine.create(engineId, { labId });
+    setImmediate(() => replenish().catch(() => {}));
+    return { engineId, fromPool: false };
+  }
 
-    // Re-assign session metadata
-    const session = standbyItem.session;
-    session.sessionId = sessionId;
-    session.userId = userId;
-    session.labId = labId;
-    session.claimedAt = Date.now();
-    session.lastActiveAt = Date.now();
+  /** Destroy all standby sandboxes (shutdown). */
+  async function drain() {
+    if (replenishing) await replenishing.catch(() => {});
+    while (standby.length > 0) {
+      await engine.destroy(standby.pop()).catch(() => {});
+    }
+    publish();
+  }
 
-    // Trigger async pool replenishment
-    setImmediate(() => replenishPool());
-
+  function stats() {
     return {
-      session,
-      claimedFromPool: true,
-      latencyMs: Date.now() - startTime,
+      enabled,
+      targetSize: enabled ? size : 0,
+      available: standby.length,
+      replenishing: Boolean(replenishing),
     };
   }
 
-  // Fallback to on-demand creation if pool is empty or disabled
-  console.log(`[SandboxPool] Pool empty/disabled. Creating sandbox on-demand for ${sessionId}...`);
-  const session = await createOnDemandFn(sessionId, userId, labId);
-  session.claimedAt = Date.now();
-  session.lastActiveAt = Date.now();
-
-  // Trigger pool replenishment asynchronously
-  setImmediate(() => replenishPool());
-
-  return {
-    session,
-    claimedFromPool: false,
-    latencyMs: Date.now() - startTime,
-  };
+  return { acquire, replenish, drain, stats };
 }
 
-/**
- * Return current pool telemetry metrics
- */
-function getPoolStats() {
-  return {
-    enabled: config.sandbox.enablePool,
-    targetPoolSize: config.sandbox.poolSize,
-    availableStandby: standbyPool.length,
-    isReplenishing,
-  };
-}
-
-/**
- * Clear and destroy all standby sandboxes (used during server shutdown)
- */
-async function clearPool(destroyFn) {
-  console.log(`[SandboxPool] Clearing ${standbyPool.length} standby sandboxes...`);
-  while (standbyPool.length > 0) {
-    const item = standbyPool.pop();
-    if (destroyFn) {
-      await destroyFn(item.sessionId).catch(() => {});
-    }
-  }
-}
-
-module.exports = {
-  setEngine,
-  initializePool,
-  replenishPool,
-  acquireSandbox,
-  getPoolStats,
-  clearPool,
-};
+module.exports = { createPool };

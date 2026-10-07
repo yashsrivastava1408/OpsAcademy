@@ -1,94 +1,65 @@
 /**
  * OpsAcademy API Gateway
- * 
+ *
  * Express server with WebSocket support for terminal streaming.
  * Manages sandbox lifecycles (PTY or Docker mode) and lab orchestration.
  */
 
-const express = require('express');
 const http = require('http');
-const cors = require('cors');
-const path = require('path');
 const config = require('./config');
+const logger = require('./lib/logger');
+const { createApp } = require('./app');
+const { getStore } = require('./lib/store');
+const { getManager } = require('./services/sandboxManager');
 const { attachTerminalWebSocket } = require('./services/terminalService');
-const sandboxRoutes = require('./routes/sandboxRoutes');
-const errorHandler = require('./middleware/errorHandler');
+const { startReaper, stopReaper } = require('./services/reaperService');
 
-// Load environment variables
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const SHUTDOWN_TIMEOUT_MS = 10000;
 
-// ── Express App ──────────────────────────────────────────────
-const app = express();
+function start() {
+  const app = createApp();
+  const server = http.createServer(app);
+  const manager = getManager();
 
-// Middleware
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, server-to-server)
-    if (!origin) return callback(null, true);
-    // Allow localhost, any vercel.app domain, and configured CLIENT_URL
-    if (
-      origin.includes('localhost') ||
-      origin.includes('vercel.app') ||
-      origin.includes('onrender.com') ||
-      origin === config.clientUrl
-    ) {
-      return callback(null, true);
-    }
-    return callback(null, true);
-  },
-  credentials: true,
-}));
-app.use(express.json());
+  const wss = attachTerminalWebSocket(server, manager);
+  startReaper(manager);
 
-// ── Health Check ─────────────────────────────────────────────
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'opsacademy-gateway',
-    sandboxMode: config.sandboxMode,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
+  if (config.isProd && config.sandboxMode === 'pty') {
+    logger.warn('SANDBOX_MODE=pty gives students a shell on this host with no isolation. Use SANDBOX_MODE=docker for untrusted users.');
+  }
+
+  manager.init().catch((err) => logger.warn({ err: err.message }, 'sandbox pool did not initialise'));
+
+  server.listen(config.port, '0.0.0.0', () => {
+    logger.info({ port: config.port, sandboxMode: config.sandboxMode, env: config.env }, 'OpsAcademy API Gateway listening');
   });
-});
 
-const unitRoutes = require('./routes/unitRoutes');
-const labRoutes = require('./routes/labRoutes');
-const authRoutes = require('./routes/authRoutes');
-const agentRoutes = require('./routes/agentRoutes');
-const certificateRoutes = require('./routes/certificateRoutes');
-const { startReaper } = require('./services/reaperService');
+  // Stop taking requests, destroy every sandbox, flush the store, then exit.
+  let shuttingDown = false;
+  async function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info({ signal }, 'shutting down');
 
-// ── API Routes ───────────────────────────────────────────────
-app.use('/api/sandbox', sandboxRoutes);
-app.use('/api/units', unitRoutes);
-app.use('/api/labs', labRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/agent', agentRoutes);
-app.use('/api/certificates', certificateRoutes);
+    const force = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS);
+    force.unref();
 
-// Start background auto-reaper for stale sandboxes
-startReaper();
+    stopReaper();
+    server.close();
+    for (const ws of wss.clients) ws.close(1001, 'Server shutting down');
+    await manager.shutdown().catch((err) => logger.warn({ err: err.message }, 'error destroying sandboxes'));
+    getStore().flush();
+    process.exit(0);
+  }
 
-// ── Error Handler ────────────────────────────────────────────
-app.use(errorHandler);
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 
-// ── HTTP + WebSocket Server ──────────────────────────────────
-const server = http.createServer(app);
+  return { app, server };
+}
 
-// Attach WebSocket terminal handler
-attachTerminalWebSocket(server);
+if (require.main === module) {
+  start();
+}
 
-// ── Start Server ─────────────────────────────────────────────
-server.listen(config.port, '0.0.0.0', () => {
-  console.log('');
-  console.log('  ╔═══════════════════════════════════════════════╗');
-  console.log('  ║          🚀 OpsAcademy API Gateway            ║');
-  console.log('  ╠═══════════════════════════════════════════════╣');
-  console.log(`  ║  HTTP:      http://0.0.0.0:${config.port}              ║`);
-  console.log(`  ║  WebSocket: ws://0.0.0.0:${config.port}/api/terminal   ║`);
-  console.log(`  ║  Sandbox:   ${config.sandboxMode.toUpperCase()} mode ${ config.sandboxMode === 'pty' ? '💻' : '🐳'}                    ║`);
-  console.log('  ╚═══════════════════════════════════════════════╝');
-  console.log('');
-});
-
-module.exports = { app, server };
+module.exports = { start };

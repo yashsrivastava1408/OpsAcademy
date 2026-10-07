@@ -1,0 +1,39 @@
+.verify-card {
+  max-width: 520px;
+  justify-items: center;
+  text-align: center;
+}
+
+.verify-card h1 {
+  font-size: 22px;
+  color: var(--text-bright);
+}
+
+.verify-ok { color: var(--accent-green); }
+.verify-bad { color: var(--accent-red); }
+
+.verify-lead,
+.verify-note {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.verify-note { font-size: 12px; color: var(--text-muted); }
+
+.verify-details {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin: 8px 0;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  text-align: left;
+  font-size: 14px;
+}
+
+.verify-details dt { color: var(--text-muted); }
+.verify-details dd { margin: 0; color: var(--text-primary); font-weight: 600; }
+.mono { font-family: var(--font-mono); }

@@ -584,3 +584,150 @@
 }
 
 
+
+/* ── Progress panels ──────────────────────────────────────── */
+.progress-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.progress-panel {
+  padding: 18px 20px;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+
+.panel-title svg { color: var(--accent-cyan); }
+
+.panel-empty,
+.panel-note {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.panel-note {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.panel-note a,
+.cert-link {
+  color: var(--accent-cyan);
+}
+
+.weak-list,
+.leaderboard-list,
+.cert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.weak-list li {
+  display: grid;
+  gap: 2px;
+}
+
+.weak-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.weak-title:hover { color: var(--accent-cyan); }
+
+.weak-meta { font-size: 12px; color: var(--accent-orange); }
+.weak-step { font-size: 12px; color: var(--text-muted); }
+
+.leaderboard-list li {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.leaderboard-list li.you {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.lb-rank {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.lb-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-xp {
+  font-family: var(--font-mono);
+  color: var(--accent-green);
+}
+
+.cert-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.cert-unit { color: var(--text-primary); }
+.cert-link { font-family: var(--font-mono); font-size: 12px; }
+
+/* ── Per-unit progress ────────────────────────────────────── */
+.unit-done-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-green-dim);
+  color: var(--accent-green);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.unit-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.unit-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.15);
+  overflow: hidden;
+}
+
+.unit-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gradient-primary);
+  transition: width var(--transition-smooth);
+}

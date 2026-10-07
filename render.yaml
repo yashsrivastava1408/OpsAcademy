@@ -1,3 +1,22 @@
+# Render blueprint — a public demo deployment.
+#
+# Read before relying on it:
+#  - Sandboxes here are PTY shells inside the gateway's own container (Render
+#    cannot start sibling containers), so students are NOT isolated from the
+#    gateway process. Fine for a demo; for untrusted users run the gateway on
+#    a VM with Docker and SANDBOX_MODE=docker (see docker-compose.yml).
+#  - The free plan has no persistent disk: accounts, progress and certificates
+#    are lost whenever the service restarts. Attach a disk and set DATA_DIR to
+#    keep them.
+#  - Set CORS_ORIGINS on the gateway to your frontend's URL after the first deploy.
+
+envVarGroups:
+  # One generated secret shared by both services, so only the gateway can call the hub.
+  - name: opsacademy-shared
+    envVars:
+      - key: AI_HUB_TOKEN
+        generateValue: true
+
 services:
   # ── API Gateway (Node.js Web Service) ──────────────────────
   - type: web
@@ -5,9 +24,12 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: cd server && npm install
+    buildCommand: cd server && npm ci --omit=dev
     startCommand: cd server && node server.js
+    healthCheckPath: /api/health
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: PORT
         value: 4000
       - key: SANDBOX_MODE
@@ -18,7 +40,10 @@ services:
         fromService:
           type: web
           name: opsacademy-ai-hub
-          property: host
+          property: hostport
+      - key: CORS_ORIGINS
+        sync: false
+      - fromGroup: opsacademy-shared
 
   # ── AI Agent Hub (Python Web Service) ─────────────────────
   - type: web
@@ -27,7 +52,11 @@ services:
     region: oregon
     plan: free
     buildCommand: cd ai-hub && pip install -r requirements.txt
-    startCommand: cd ai-hub && python app.py
+    startCommand: cd ai-hub && gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 30 --keep-alive 15 app:app
+    healthCheckPath: /health
     envVars:
       - key: PORT
         value: 5000
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - fromGroup: opsacademy-shared

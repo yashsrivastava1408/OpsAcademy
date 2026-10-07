@@ -1,198 +1,236 @@
 /**
- * PTY Service — Local shell sandbox engine
- * 
- * Spawns restricted /bin/sh processes via node-pty for each student session.
- * Used when SANDBOX_MODE=pty (local dev + Render deployment).
- * 
- * Provides the same interface as dockerService.js for seamless swapping.
+ * PTY engine — local shell sandbox
+ *
+ * Spawns one shell per sandbox via node-pty, in its own working directory.
+ * Used when SANDBOX_MODE=pty (local development and demos).
+ *
+ * A PTY shell runs as the gateway's own OS user: it is NOT isolated from the
+ * host. Never expose PTY mode to untrusted users — use SANDBOX_MODE=docker.
+ *
+ * Implements the engine interface shared with dockerService.js:
+ *   create, destroy, isAlive, exec, attach, reset, onExit, info
  */
 
 const pty = require('node-pty');
 const path = require('path');
 const fs = require('fs');
+const { exec: execChild } = require('child_process');
 const config = require('../config');
+const logger = require('../lib/logger');
 
-// Active PTY processes: Map<sessionId, { pty, createdAt, userId, labId, cwd }>
-const activeSessions = new Map();
+const STUDENT_HOME = '/home/student';
+const SANDBOX_PATH = '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+const SCROLLBACK_CHARS = 16 * 1024;
+
+// Map<engineId, { pty, cwd, sessionDir, alive, exitListeners }>
+const sandboxes = new Map();
 
 /**
- * Create a new PTY sandbox session
+ * Start each shell without the host's startup files and with the lab prompt,
+ * so the terminal shows `student@opsacademy` rather than the machine's own
+ * user and host name.
  */
-function createSandbox(sessionId, userId, labId) {
-  // Create isolated working directory for this session
-  const sessionDir = path.join(config.sandbox.sandboxesDir, sessionId);
-  const studentHome = path.join(sessionDir, 'home', 'student');
-  
-  fs.mkdirSync(studentHome, { recursive: true });
+function shellProfile(shell) {
+  const name = path.basename(shell);
+  if (name === 'zsh') {
+    return { args: ['-f'], promptEnv: { PROMPT: '%B%F{cyan}student@opsacademy%f%b:%B%F{blue}%~%f%b$ ' } };
+  }
+  if (name === 'bash') {
+    return {
+      args: ['--norc', '--noprofile'],
+      promptEnv: { PS1: '\\[\\033[1;36m\\]student@opsacademy\\[\\033[0m\\]:\\[\\033[1;34m\\]\\w\\[\\033[0m\\]$ ' },
+    };
+  }
+  return { args: [], promptEnv: { PS1: 'student@opsacademy$ ' } };
+}
 
-  // Spawn a restricted shell process
+function create(engineId, { labId } = {}) {
+  const sessionDir = path.join(config.sandbox.sandboxesDir, engineId);
+  fs.mkdirSync(path.join(sessionDir, 'home', 'student'), { recursive: true });
+  // Resolve symlinks (e.g. /var -> /private/var on macOS) so the path the
+  // shell reports is the same one mapStudentHome substitutes.
+  const studentHome = fs.realpathSync(path.join(sessionDir, 'home', 'student'));
+
   const shell = config.sandbox.defaultShell;
-  const ptyProcess = pty.spawn(shell, [], {
+  const { args, promptEnv } = shellProfile(shell);
+  const ptyProcess = pty.spawn(shell, args, {
     name: 'xterm-256color',
     cols: 120,
     rows: 30,
     cwd: studentHome,
     env: {
-      // Minimal, restricted environment
+      // Minimal environment: nothing from the gateway's own env is inherited.
       HOME: studentHome,
       USER: 'student',
       TERM: 'xterm-256color',
-      PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+      PATH: SANDBOX_PATH,
       SHELL: shell,
-      PS1: '\\[\\033[1;36m\\]student@opsacademy\\[\\033[0m\\]:\\[\\033[1;34m\\]\\w\\[\\033[0m\\]$ ',
+      ...promptEnv,
       LANG: 'en_US.UTF-8',
-      // Lab context
       LAB_ID: labId || 'sandbox',
-      SESSION_ID: sessionId,
     },
   });
 
-  const session = {
-    pty: ptyProcess,
-    createdAt: Date.now(),
-    lastActiveAt: Date.now(),
-    userId,
-    labId,
-    cwd: studentHome,
-    sessionDir,
-  };
+  const sandbox = { pty: ptyProcess, cwd: studentHome, sessionDir, alive: true, exitListeners: [], scrollback: '' };
+  // Keep the tail of the output so a terminal that attaches later (a
+  // pre-warmed shell, or a page reload) is shown the prompt and recent lines.
+  ptyProcess.onData((data) => {
+    sandbox.scrollback = (sandbox.scrollback + data).slice(-SCROLLBACK_CHARS);
+  });
+  ptyProcess.onExit(() => {
+    sandbox.alive = false;
+    for (const listener of sandbox.exitListeners) listener();
+  });
 
-  activeSessions.set(sessionId, session);
-
-  console.log(`[PTY] Created sandbox ${sessionId} for user ${userId} (lab: ${labId})`);
-  return session;
+  sandboxes.set(engineId, sandbox);
+  logger.debug({ engineId }, '[PTY] sandbox created');
+  return Promise.resolve();
 }
 
-/**
- * Update last active timestamp on session activity
- */
-function touchSession(sessionId) {
-  const session = activeSessions.get(sessionId);
-  if (session) {
-    session.lastActiveAt = Date.now();
-  }
-}
+const EXIT_WAIT_MS = 2000;
 
 /**
- * Destroy a PTY sandbox session
+ * Kill the shell and remove its directory. The directory is removed only
+ * after the shell has exited: a shell that is still shutting down can write
+ * into its home (zsh saves history on exit) and leave the folder behind.
  */
-function destroySandbox(sessionId) {
-  const session = activeSessions.get(sessionId);
-  if (!session) return false;
+async function destroy(engineId) {
+  const sandbox = sandboxes.get(engineId);
+  if (!sandbox) return false;
+  sandboxes.delete(engineId);
+  sandbox.exitListeners = [];
 
-  // Kill the PTY process
-  try {
-    session.pty.kill();
-  } catch (err) {
-    console.warn(`[PTY] Error killing process for ${sessionId}:`, err.message);
+  if (sandbox.alive) {
+    const exited = new Promise((resolve) => {
+      sandbox.exitListeners.push(resolve);
+      setTimeout(resolve, EXIT_WAIT_MS).unref();
+    });
+    try {
+      sandbox.pty.kill();
+    } catch (err) {
+      logger.warn({ engineId, err: err.message }, '[PTY] error killing shell');
+    }
+    await exited;
   }
 
-  // Clean up the session directory
   try {
-    fs.rmSync(session.sessionDir, { recursive: true, force: true });
+    await fs.promises.rm(sandbox.sessionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   } catch (err) {
-    console.warn(`[PTY] Error cleaning dir for ${sessionId}:`, err.message);
+    logger.warn({ engineId, err: err.message }, '[PTY] error cleaning directory');
   }
 
-  activeSessions.delete(sessionId);
-  console.log(`[PTY] Destroyed sandbox ${sessionId}`);
   return true;
 }
 
-/**
- * Get sandbox session info
- */
-function getSandbox(sessionId) {
-  const session = activeSessions.get(sessionId);
-  if (!session) return null;
-  
-  const now = Date.now();
-  return {
-    sessionId,
-    userId: session.userId,
-    labId: session.labId,
-    createdAt: session.createdAt,
-    lastActiveAt: session.lastActiveAt || session.createdAt,
-    idleMs: now - (session.lastActiveAt || session.createdAt),
-    uptime: now - session.createdAt,
-    mode: 'pty',
-  };
+function isAlive(engineId) {
+  const sandbox = sandboxes.get(engineId);
+  return Boolean(sandbox && sandbox.alive);
+}
+
+/** Register a callback for when the shell exits on its own (e.g. the student typed `exit`). */
+function onExit(engineId, listener) {
+  const sandbox = sandboxes.get(engineId);
+  if (sandbox) sandbox.exitListeners.push(listener);
 }
 
 /**
- * Get the raw PTY process for terminal piping
+ * Labs are written against the container layout, where the student's home
+ * is /home/student. In PTY mode that home is a per-session directory, so
+ * point those paths at it.
  */
-function getPtyProcess(sessionId) {
-  const session = activeSessions.get(sessionId);
-  return session ? session.pty : null;
+function mapStudentHome(command, cwd) {
+  return command.split(STUDENT_HOME).join(cwd);
 }
 
 /**
- * Resize the PTY terminal
+ * Run a command in the sandbox's working directory and capture its output.
+ * Used for lab verification and telemetry.
  */
-function resizeSandbox(sessionId, cols, rows) {
-  const session = activeSessions.get(sessionId);
-  if (session) {
-    session.pty.resize(cols, rows);
-  }
-}
+function exec(engineId, command, { timeoutMs = config.sandbox.execTimeoutMs } = {}) {
+  const sandbox = sandboxes.get(engineId);
+  if (!sandbox) return Promise.reject(new Error('Sandbox not found'));
 
-/**
- * List all active sandbox sessions
- */
-function listSandboxes() {
-  const list = [];
-  const now = Date.now();
-  for (const [sessionId, session] of activeSessions) {
-    list.push({
-      sessionId,
-      userId: session.userId,
-      labId: session.labId,
-      createdAt: session.createdAt,
-      lastActiveAt: session.lastActiveAt || session.createdAt,
-      idleMs: now - (session.lastActiveAt || session.createdAt),
-      uptime: now - session.createdAt,
-      mode: 'pty',
-    });
-  }
-  return list;
-}
-
-/**
- * Execute a command inside a sandbox and return output
- * Used for lab verification
- */
-function execInSandbox(sessionId, command) {
-  return new Promise((resolve, reject) => {
-    const session = activeSessions.get(sessionId);
-    if (!session) return reject(new Error('Sandbox not found'));
-
-    session.lastActiveAt = Date.now();
-    const { exec } = require('child_process');
-    exec(command, { 
-      cwd: session.cwd,
-      timeout: 10000,
-      env: {
-        HOME: session.cwd,
-        PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+  return new Promise((resolve) => {
+    execChild(
+      mapStudentHome(command, sandbox.cwd),
+      {
+        cwd: sandbox.cwd,
+        timeout: timeoutMs,
+        maxBuffer: 1024 * 1024,
+        shell: '/bin/sh',
+        env: { HOME: sandbox.cwd, PATH: SANDBOX_PATH },
+      },
+      (err, stdout, stderr) => {
+        resolve({
+          exitCode: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
+          stdout: mapHomeBack(String(stdout), sandbox.cwd),
+          stderr: String(stderr),
+        });
       }
-    }, (err, stdout, stderr) => {
-      resolve({
-        exitCode: err ? err.code || 1 : 0,
-        stdout: stdout.toString(),
-        stderr: stderr.toString(),
-      });
-    });
+    );
   });
 }
 
-module.exports = {
-  createSandbox,
-  destroySandbox,
-  getSandbox,
-  getPtyProcess,
-  resizeSandbox,
-  listSandboxes,
-  execInSandbox,
-  touchSession,
-};
+/** Show the student's home as /home/student in captured output, matching the labs. */
+function mapHomeBack(output, cwd) {
+  return output.split(cwd).join(STUDENT_HOME);
+}
+
+/**
+ * Attach a terminal to the sandbox shell. Several terminals may attach to
+ * the same shell (e.g. after a page reload).
+ */
+function attach(engineId) {
+  const sandbox = sandboxes.get(engineId);
+  if (!sandbox || !sandbox.alive) return Promise.resolve(null);
+
+  const disposables = [];
+  return Promise.resolve({
+    onData(callback) {
+      if (sandbox.scrollback) callback(sandbox.scrollback);
+      disposables.push(sandbox.pty.onData(callback));
+    },
+    write(data) {
+      if (sandbox.alive) sandbox.pty.write(data);
+    },
+    resize(cols, rows) {
+      if (sandbox.alive) sandbox.pty.resize(cols, rows);
+    },
+    close() {
+      for (const disposable of disposables) disposable.dispose();
+    },
+  });
+}
+
+/** Wipe the student's home directory so the lab can be started over. */
+function reset(engineId) {
+  const sandbox = sandboxes.get(engineId);
+  if (!sandbox) return Promise.reject(new Error('Sandbox not found'));
+
+  for (const entry of fs.readdirSync(sandbox.cwd)) {
+    fs.rmSync(path.join(sandbox.cwd, entry), { recursive: true, force: true });
+  }
+  sandbox.scrollback = '';
+  if (sandbox.alive) sandbox.pty.write('\x03cd ~ && clear\r');
+  return Promise.resolve();
+}
+
+function info() {
+  return { mode: 'pty' };
+}
+
+/** Remove working directories left behind by a previous gateway process. */
+function cleanupOrphans() {
+  const dir = config.sandbox.sandboxesDir;
+  if (!fs.existsSync(dir)) return Promise.resolve({ directories: 0 });
+
+  let removed = 0;
+  for (const entry of fs.readdirSync(dir)) {
+    if (sandboxes.has(entry)) continue;
+    fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
+    removed += 1;
+  }
+  return Promise.resolve({ directories: removed });
+}
+
+module.exports = { name: 'pty', create, destroy, isAlive, onExit, exec, attach, reset, info, cleanupOrphans, mapStudentHome };

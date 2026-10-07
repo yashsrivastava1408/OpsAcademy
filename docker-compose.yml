@@ -1,6 +1,23 @@
-version: '3.8'
+# OpsAcademy — full stack with Docker sandboxes
+#
+#   export JWT_SECRET=$(openssl rand -hex 48) AI_HUB_TOKEN=$(openssl rand -hex 24)
+#   docker compose build
+#   docker compose up -d
+#   open http://localhost:5173
+#
+# Add metrics dashboards (Prometheus :9090, Grafana :3000) with:
+#   docker compose --profile observability up -d
 
 services:
+  # ── Sandbox image (built here, run by the gateway per student) ──
+  sandbox-image:
+    build:
+      context: ./sandbox-image
+    image: opsacademy-sandbox:latest
+    # Only needs to exist as an image; the gateway starts the containers.
+    entrypoint: ["true"]
+    restart: "no"
+
   # ── API Gateway (Node.js) ──────────────────────────────────
   server:
     build:
@@ -11,28 +28,41 @@ services:
       - "4000:4000"
     environment:
       - PORT=4000
-      - SANDBOX_MODE=pty
-      - JWT_SECRET=opsacademy-dev-secret-key-change-in-production
+      - NODE_ENV=production
+      - SANDBOX_MODE=docker
+      - SANDBOX_IMAGE=opsacademy-sandbox:latest
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET, e.g. export JWT_SECRET=$(openssl rand -hex 48)}
       - AI_HUB_URL=http://ai-hub:5000
-      - CLIENT_URL=http://localhost:5173
+      - AI_HUB_TOKEN=${AI_HUB_TOKEN:?Set AI_HUB_TOKEN, e.g. export AI_HUB_TOKEN=$(openssl rand -hex 24)}
+      - CORS_ORIGINS=http://localhost:5173
+      - DATA_DIR=/data
     volumes:
-      - ./server:/app
-      - /app/node_modules
+      - server-data:/data
+      # The gateway starts sandbox containers through the host's Docker daemon.
+      # This socket is root-equivalent on the host: see docs/THREAT_MODEL.md.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      sandbox-image:
+        condition: service_completed_successfully
+      ai-hub:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - opsacademy-net
 
   # ── AI Agent Hub (Python / Flask) ──────────────────────────
+  # Not published on the host: only the gateway talks to it.
   ai-hub:
     build:
       context: ./ai-hub
       dockerfile: Dockerfile
     container_name: opsacademy-ai-hub
-    ports:
-      - "5000:5000"
     environment:
       - PORT=5000
       - FLASK_ENV=production
+      - AI_HUB_TOKEN=${AI_HUB_TOKEN:?Set AI_HUB_TOKEN}
+      # Optional LLM mentor; leave unset for the rule-based mentor.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     restart: unless-stopped
     networks:
       - opsacademy-net
@@ -42,15 +72,50 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:4000
     container_name: opsacademy-client
     ports:
       - "5173:80"
     depends_on:
       - server
-      - ai-hub
     restart: unless-stopped
     networks:
       - opsacademy-net
+
+  # ── Observability (optional) ───────────────────────────────
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: ["observability"]
+    container_name: opsacademy-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - opsacademy-net
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    profiles: ["observability"]
+    container_name: opsacademy-grafana
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/opsacademy.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - opsacademy-net
+
+volumes:
+  server-data:
 
 networks:
   opsacademy-net:

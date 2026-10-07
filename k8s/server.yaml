@@ -6,7 +6,12 @@ metadata:
   labels:
     app: opsacademy-server
 spec:
-  replicas: 2
+  # One replica on purpose: sandbox sessions, the terminal WebSockets and the
+  # JSON data store all live in this process. Scaling out needs a shared
+  # store and session affinity first.
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: opsacademy-server
@@ -14,7 +19,20 @@ spec:
     metadata:
       labels:
         app: opsacademy-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"
+        prometheus.io/path: "/metrics"
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: server
           image: opsacademy/server:latest
@@ -24,13 +42,38 @@ spec:
           envFrom:
             - configMapRef:
                 name: opsacademy-config
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: opsacademy-secrets, key: JWT_SECRET }
+            - name: AI_HUB_TOKEN
+              valueFrom:
+                secretKeyRef: { name: opsacademy-secrets, key: AI_HUB_TOKEN }
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef: { name: opsacademy-secrets, key: ADMIN_TOKEN, optional: true }
+            - name: SANDBOXES_DIR
+              value: /sandboxes
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
+              memory: "256Mi"
+              cpu: "250m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: sandboxes
+              mountPath: /sandboxes
+            - name: tmp
+              mountPath: /tmp
+          # Liveness: the process answers. Readiness: it can also do useful work.
           livenessProbe:
             httpGet:
               path: /api/health
@@ -39,10 +82,31 @@ spec:
             periodSeconds: 15
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /api/ready
               port: 4000
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: opsacademy-data
+        - name: sandboxes
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opsacademy-data
+  namespace: opsacademy
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
 ---
 apiVersion: v1
 kind: Service

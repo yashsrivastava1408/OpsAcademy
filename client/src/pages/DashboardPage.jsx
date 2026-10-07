@@ -10,8 +10,15 @@ import {
   BookOpen,
   Sparkles,
   Award,
+  Flame,
+  Trophy,
+  Target,
+  Zap,
 } from 'lucide-react';
-import { unitApi } from '../services/api';
+import { unitApi, progressApi, certificateApi } from '../services/api';
+import useAuth from '../hooks/useAuth';
+import useProgress from '../hooks/useProgress';
+import CertificateModal from '../components/CertificateModal/CertificateModal';
 import './DashboardPage.css';
 
 const CATEGORIES = [
@@ -59,14 +66,27 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [certificates, setCertificates] = useState([]);
+  const [certificateUnit, setCertificateUnit] = useState(null);
+
+  const { user } = useAuth();
+  const progress = useProgress();
+
+  // Reload when the signed-in user or their XP changes.
+  useEffect(() => {
+    progressApi.leaderboard().then((res) => setLeaderboard(res.data.data)).catch(() => {});
+    certificateApi.list().then((res) => setCertificates(res.data.data)).catch(() => {});
+  }, [user?.id, progress.xp]);
 
   useEffect(() => {
     async function loadUnits() {
       try {
         const res = await unitApi.list();
         if (res.data?.data && res.data.data.length > 0) {
-          const sorted = res.data.data.sort((a, b) => (b.id === 'realworld-internship-case-study' ? 1 : -1));
-          setUnits(sorted);
+          // The case study is featured first; everything else keeps its order.
+          const featured = (unit) => (unit.id === 'realworld-internship-case-study' ? 0 : 1);
+          setUnits([...res.data.data].sort((a, b) => featured(a) - featured(b)));
         }
       } catch (err) {
         console.warn('Using fallback local unit definitions:', err.message);
@@ -98,17 +118,28 @@ export default function DashboardPage() {
               <BookOpen size={20} />
             </div>
             <div className="stat-info">
-              <span className="stat-value">{units.length}</span>
-              <span className="stat-label">Learning Units</span>
+              <span className="stat-value">{progress.completedUnits.length} / {units.length}</span>
+              <span className="stat-label">Labs Completed</span>
             </div>
           </div>
           <div className="stat-card glass-card">
             <div className="stat-icon icon-green">
-              <CheckCircle2 size={20} />
+              <Zap size={20} />
             </div>
             <div className="stat-info">
-              <span className="stat-value">3 Modes</span>
-              <span className="stat-label">Learn • Practice • Prepare</span>
+              <span className="stat-value">{progress.xp} XP</span>
+              <span className="stat-label">Level {progress.level} • {progress.xpToNextLevel} XP to next</span>
+            </div>
+          </div>
+          <div className="stat-card glass-card">
+            <div className="stat-icon icon-orange">
+              <Flame size={20} />
+            </div>
+            <div className="stat-info">
+              <span className="stat-value">{progress.streak.current} day{progress.streak.current === 1 ? '' : 's'}</span>
+              <span className="stat-label">
+                {progress.streak.current > 0 && !progress.streak.activeToday ? 'Streak • practise today to keep it' : `Streak • best ${progress.streak.longest}`}
+              </span>
             </div>
           </div>
           <div className="stat-card glass-card">
@@ -116,18 +147,76 @@ export default function DashboardPage() {
               <BarChart3 size={20} />
             </div>
             <div className="stat-info">
-              <span className="stat-value">100%</span>
-              <span className="stat-label">Placement Ready</span>
+              <span className="stat-value">{progress.readiness}%</span>
+              <span className="stat-label">{progress.totals.stepsPassed} of {progress.totals.steps} lab steps verified</span>
             </div>
           </div>
-          <div className="stat-card glass-card">
-            <div className="stat-icon icon-orange">
-              <Sparkles size={20} />
-            </div>
-            <div className="stat-info">
-              <span className="stat-value">AI Guided</span>
-              <span className="stat-label">Smart Hints & Mentoring</span>
-            </div>
+        </div>
+
+        {/* ── Your Progress ──────────────────────────────── */}
+        <div className="progress-panels animate-fade-in">
+          <div className="progress-panel glass-card">
+            <h3 className="panel-title"><Target size={16} /> Focus Areas</h3>
+            {progress.weakTopics.length === 0 ? (
+              <p className="panel-empty">
+                Nothing flagged yet. Topics where your checks fail or you need hints will show up here.
+              </p>
+            ) : (
+              <ul className="weak-list">
+                {progress.weakTopics.map((topic) => (
+                  <li key={topic.unitId}>
+                    <Link to={`/unit/${topic.unitId}/practice`} className="weak-title">{topic.title}</Link>
+                    <span className="weak-meta">
+                      {topic.fails} failed check{topic.fails === 1 ? '' : 's'} • {topic.hints} hint{topic.hints === 1 ? '' : 's'}
+                    </span>
+                    {topic.steps[0] && <span className="weak-step">Hardest: {topic.steps[0].title}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {progress.cardsDue > 0 && (
+              <p className="panel-note">{progress.cardsDue} flashcard{progress.cardsDue === 1 ? '' : 's'} due for review.</p>
+            )}
+          </div>
+
+          <div className="progress-panel glass-card">
+            <h3 className="panel-title"><Trophy size={16} /> Leaderboard</h3>
+            {leaderboard.length === 0 ? (
+              <p className="panel-empty">No one has earned XP yet. Verify a lab step to get on the board.</p>
+            ) : (
+              <ol className="leaderboard-list">
+                {leaderboard.slice(0, 8).map((row) => (
+                  <li key={row.rank} className={row.you ? 'you' : ''}>
+                    <span className="lb-rank">{row.rank}</span>
+                    <span className="lb-name">{row.name}{row.you ? ' (you)' : ''}</span>
+                    <span className="lb-xp">{row.xp} XP</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+
+          <div className="progress-panel glass-card">
+            <h3 className="panel-title"><Award size={16} /> Certificates</h3>
+            {certificates.length === 0 ? (
+              <p className="panel-empty">
+                Verify every step of a lab to earn its certificate. Each one has an ID anyone can check.
+              </p>
+            ) : (
+              <ul className="cert-list">
+                {certificates.map((cert) => (
+                  <li key={cert.id}>
+                    <span className="cert-unit">{cert.unitTitle}</span>
+                    <Link to={`/verify/${cert.id}`} className="cert-link">{cert.id}</Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {user?.guest && (
+              <p className="panel-note">
+                <Link to="/login">Create an account</Link> to keep your progress and get certificates in your name.
+              </p>
+            )}
           </div>
         </div>
 
@@ -205,8 +294,30 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="lab-card-body">
-                  <h3 className="lab-card-title">{unit.title}</h3>
+                  <h3 className="lab-card-title">
+                    {unit.title}
+                    {progress.completedUnits.includes(unit.id) && (
+                      <span className="unit-done-badge" title="Every lab step verified"><CheckCircle2 size={14} /> Completed</span>
+                    )}
+                  </h3>
                   <p className="lab-card-desc">{unit.description}</p>
+
+                  {progress.unitProgress[unit.id] && (
+                    <div className="unit-progress" title={`${progress.unitProgress[unit.id].passedSteps} of ${progress.unitProgress[unit.id].totalSteps} lab steps verified`}>
+                      <div className="unit-progress-bar">
+                        <div
+                          className="unit-progress-fill"
+                          style={{ width: `${(progress.unitProgress[unit.id].passedSteps / Math.max(1, progress.unitProgress[unit.id].totalSteps)) * 100}%` }}
+                        />
+                      </div>
+                      <span>{progress.unitProgress[unit.id].passedSteps}/{progress.unitProgress[unit.id].totalSteps} steps</span>
+                      {progress.completedUnits.includes(unit.id) && (
+                        <button className="btn btn-ghost btn-xs" onClick={() => setCertificateUnit(unit)}>
+                          <Award size={12} /> Certificate
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   <div className="lab-objectives">
                     {unit.objectives?.slice(0, 3).map((obj, i) => (
@@ -268,6 +379,13 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+      {certificateUnit && (
+        <CertificateModal
+          unit={certificateUnit}
+          onClose={() => setCertificateUnit(null)}
+          onIssued={(cert) => setCertificates((prev) => (prev.some((c) => c.id === cert.id) ? prev : [...prev, cert]))}
+        />
+      )}
     </div>
   );
 }

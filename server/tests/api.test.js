@@ -1,0 +1,784 @@
+const request = require('supertest');
+const config = require('../config');
+const units = require('../lib/units');
+const pty = require('../services/ptyService');
+const { createApp } = require('../app');
+const { fakeEngine, install } = require('./helpers');
+
+let app;
+let ctx;
+
+/** A fake engine that makes every lab check pass or fail on demand. */
+function labEngine() {
+  const engine = fakeEngine();
+  engine.passing = true;
+  engine.exec = (engineId, command) => {
+    for (const meta of units.listMeta()) {
+      const step = units.getSteps(meta.id).find((s) => s.verification.command === command);
+      if (step) {
+        return Promise.resolve({ exitCode: 0, stdout: engine.passing ? step.verification.expectedOutput : 'FAIL', stderr: '' });
+      }
+    }
+    return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
+  };
+  return engine;
+}
+
+function setup(options = {}) {
+  ctx = install({ engine: labEngine(), ...options });
+  app = createApp();
+}
+
+async function guest() {
+  const res = await request(app).post('/api/auth/guest');
+  return { token: res.body.token, user: res.body.user, auth: { Authorization: `Bearer ${res.body.token}` } };
+}
+
+async function registered(overrides = {}) {
+  const body = { name: 'Asha Rao', email: `asha${Math.random().toString(36).slice(2)}@example.com`, password: 'correct-horse', ...overrides };
+  const res = await request(app).post('/api/auth/register').send(body);
+  return { ...body, token: res.body.token, user: res.body.user, auth: { Authorization: `Bearer ${res.body.token}` }, res };
+}
+
+async function startSandbox(who, labId = 'linux-basics') {
+  const res = await request(app).post('/api/sandbox/start').set(who.auth).send({ labId });
+  return res.body.data;
+}
+
+beforeEach(() => setup());
+afterEach(async () => { await ctx.manager.shutdown(); });
+
+describe('health and readiness', () => {
+  test('health is public and reports the sandbox mode', async () => {
+    const res = await request(app).get('/api/health');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'ok', sandboxMode: config.sandboxMode });
+  });
+
+  test('ready reports degraded, not failed, when the AI hub is down', async () => {
+    expect((await request(app).get('/api/ready')).body.status).toBe('ready');
+    ctx.hub.down = true;
+    const res = await request(app).get('/api/ready');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'degraded', checks: { store: true, aiHub: false } });
+  });
+
+  test('ready fails when the store cannot be written', async () => {
+    ctx.store.isWritable = () => false;
+    const res = await request(app).get('/api/ready');
+    expect(res.status).toBe(503);
+    expect(res.body.status).toBe('not_ready');
+  });
+
+  test('unknown API paths return a JSON 404', async () => {
+    const res = await request(app).get('/api/nope');
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ success: false, error: 'Not found' });
+  });
+
+  test('sets security headers and hides the framework', async () => {
+    const res = await request(app).get('/api/health');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-powered-by']).toBeUndefined();
+  });
+});
+
+describe('auth', () => {
+  test('guest tokens identify a distinct user', async () => {
+    const a = await guest();
+    const b = await guest();
+    expect(a.user).toMatchObject({ guest: true, email: null });
+    expect(a.user.id).not.toBe(b.user.id);
+
+    const me = await request(app).get('/api/auth/me').set(a.auth);
+    expect(me.body.user).toEqual(a.user);
+  });
+
+  test('register returns a token and never returns the password hash', async () => {
+    const user = await registered();
+    expect(user.res.status).toBe(201);
+    expect(user.user).toEqual({ id: expect.any(String), name: 'Asha Rao', email: user.email, guest: false });
+    expect(JSON.stringify(user.res.body)).not.toMatch(/password|\$2[aby]\$/);
+  });
+
+  test('passwords are stored hashed', async () => {
+    const user = await registered();
+    const stored = ctx.store.get('users', user.user.id);
+    expect(stored.password).not.toBe(user.password);
+    expect(stored.password).toMatch(/^\$2[aby]\$/);
+  });
+
+  test('registering as a guest keeps the same account and its progress', async () => {
+    const visitor = await guest();
+    const session = await startSandbox(visitor);
+    await request(app).post('/api/labs/linux-basics/verify').set(visitor.auth).send({ sessionId: session.sessionId, stepNumber: 1 });
+
+    const res = await request(app).post('/api/auth/register').set(visitor.auth)
+      .send({ name: 'Asha', email: 'asha@example.com', password: 'correct-horse' });
+
+    expect(res.body.user).toMatchObject({ id: visitor.user.id, guest: false, name: 'Asha' });
+    const progress = await request(app).get('/api/progress').set({ Authorization: `Bearer ${res.body.token}` });
+    expect(progress.body.data.xp).toBe(20);
+  });
+
+  test.each([
+    [{ email: 'a@example.com', password: 'correct-horse' }, /Name/],
+    [{ name: 'A', email: 'not-an-email', password: 'correct-horse' }, /email/],
+    [{ name: 'A', email: 'a@example.com', password: 'short' }, /at least 8/],
+    [{ name: 'A', email: 'a@example.com' }, /Password/],
+    [{ name: { $gt: '' }, email: 'a@example.com', password: 'correct-horse' }, /Name/],
+  ])('register rejects %j', async (body, message) => {
+    const res = await request(app).post('/api/auth/register').send(body);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(message);
+  });
+
+  test('register rejects a duplicate email, case-insensitively', async () => {
+    const user = await registered({ email: 'dup@example.com' });
+    expect(user.res.status).toBe(201);
+    const res = await request(app).post('/api/auth/register').send({ name: 'B', email: 'DUP@Example.com', password: 'correct-horse' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/already exists/);
+  });
+
+  test('login works with the right password and fails the same way for wrong password or unknown email', async () => {
+    const user = await registered();
+
+    const ok = await request(app).post('/api/auth/login').send({ email: user.email.toUpperCase(), password: user.password });
+    expect(ok.status).toBe(200);
+    expect(ok.body.user.id).toBe(user.user.id);
+
+    const wrong = await request(app).post('/api/auth/login').send({ email: user.email, password: 'wrong-password' });
+    const unknown = await request(app).post('/api/auth/login').send({ email: 'nobody@example.com', password: 'wrong-password' });
+    expect(wrong.status).toBe(401);
+    expect(unknown.status).toBe(401);
+    expect(wrong.body).toEqual(unknown.body);
+  });
+
+  test('login without credentials is a 400', async () => {
+    expect((await request(app).post('/api/auth/login').send({})).status).toBe(400);
+  });
+
+  test.each([
+    ['no header', {}],
+    ['garbage token', { Authorization: 'Bearer not.a.jwt' }],
+    ['wrong scheme', { Authorization: 'Basic abc' }],
+  ])('protected routes reject %s', async (_label, headers) => {
+    const res = await request(app).get('/api/auth/me').set(headers);
+    expect(res.status).toBe(401);
+  });
+
+  test('a token signed with another secret is rejected', async () => {
+    const forged = require('jsonwebtoken').sign({ id: 'u_admin', name: 'x' }, 'some-other-secret');
+    const res = await request(app).get('/api/progress').set({ Authorization: `Bearer ${forged}` });
+    expect(res.status).toBe(401);
+  });
+
+  test('an unsigned (alg none) token is rejected', async () => {
+    const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+    const token = `${b64({ alg: 'none', typ: 'JWT' })}.${b64({ id: 'u_admin' })}.`;
+    const res = await request(app).get('/api/progress').set({ Authorization: `Bearer ${token}` });
+    expect(res.status).toBe(401);
+  });
+
+  test('sign-in attempts are rate limited', async () => {
+    // Build a separate app in its own module registry so the low limit
+    // does not leak into the other tests.
+    process.env.RATE_LIMIT_AUTH = '3';
+    let limitedApp;
+    jest.isolateModules(() => {
+      limitedApp = require('../app').createApp();
+    });
+    delete process.env.RATE_LIMIT_AUTH;
+
+    const statuses = [];
+    for (let i = 0; i < 5; i += 1) {
+      statuses.push((await request(limitedApp).post('/api/auth/login').send({ email: 'a@example.com', password: 'x' })).status);
+    }
+    expect(statuses).toEqual([401, 401, 401, 429, 429]);
+  });
+});
+
+describe('units', () => {
+  test('lists every unit', async () => {
+    const res = await request(app).get('/api/units');
+    expect(res.body.count).toBe(units.listMeta().length);
+    expect(res.body.data.map((u) => u.id)).toContain('linux-basics');
+  });
+
+  test('practice content does not include the verification commands', async () => {
+    const res = await request(app).get('/api/units/linux-basics/practice');
+    expect(res.status).toBe(200);
+    expect(res.body.data.steps[0]).toMatchObject({ step: 1, autoVerified: true });
+    expect(JSON.stringify(res.body)).not.toContain('verification');
+  });
+
+  test('learn and prepare content are served', async () => {
+    expect((await request(app).get('/api/units/linux-basics/learn')).body.data.sections.length).toBeGreaterThan(0);
+    expect((await request(app).get('/api/units/linux-basics/prepare')).body.data.flashcards.length).toBeGreaterThan(0);
+  });
+
+  test.each([
+    ['/api/units/does-not-exist', 404],
+    ['/api/units/linux-basics/secrets', 400],
+    ['/api/units/linux-basics/casestudy', 404],
+    ['/api/units/..%2F..%2Fconfig/learn', 404],
+    ['/api/units/%2e%2e/practice', 404],
+  ])('GET %s -> %i', async (url, status) => {
+    expect((await request(app).get(url)).status).toBe(status);
+  });
+});
+
+describe('sandbox ownership', () => {
+  test('starting a sandbox needs a token', async () => {
+    expect((await request(app).post('/api/sandbox/start').send({})).status).toBe(401);
+  });
+
+  test('the owner can use their sandbox', async () => {
+    const owner = await guest();
+    const session = await startSandbox(owner);
+    expect(session).toMatchObject({ labId: 'linux-basics', userId: owner.user.id, wsUrl: `/api/terminal?sessionId=${session.sessionId}` });
+
+    for (const path of ['status', 'telemetry', 'history']) {
+      expect((await request(app).get(`/api/sandbox/${session.sessionId}/${path}`).set(owner.auth)).status).toBe(200);
+    }
+    expect((await request(app).post(`/api/sandbox/${session.sessionId}/reset`).set(owner.auth)).status).toBe(200);
+  });
+
+  test("another user gets 404 for someone else's sandbox on every route", async () => {
+    const owner = await guest();
+    const intruder = await guest();
+    const { sessionId } = await startSandbox(owner);
+
+    const attempts = [
+      request(app).get(`/api/sandbox/${sessionId}/status`),
+      request(app).get(`/api/sandbox/${sessionId}/telemetry`),
+      request(app).get(`/api/sandbox/${sessionId}/history`),
+      request(app).post(`/api/sandbox/${sessionId}/reset`),
+      request(app).delete(`/api/sandbox/${sessionId}`),
+      request(app).post('/api/labs/linux-basics/verify').send({ sessionId }),
+    ];
+    for (const attempt of attempts) {
+      expect((await attempt.set(intruder.auth)).status).toBe(404);
+    }
+    expect(ctx.manager.getSession(sessionId)).not.toBeNull();
+  });
+
+  test('listing shows only your own sandboxes', async () => {
+    const a = await guest();
+    const b = await guest();
+    const mine = await startSandbox(a);
+    await startSandbox(b);
+
+    const res = await request(app).get('/api/sandbox').set(a.auth);
+    expect(res.body.data.map((s) => s.sessionId)).toEqual([mine.sessionId]);
+  });
+
+  test('public stats expose no session or user ids', async () => {
+    const owner = await guest();
+    const session = await startSandbox(owner);
+    const res = await request(app).get('/api/sandbox/stats');
+    expect(res.status).toBe(200);
+    expect(res.body.data.activeSessions).toBe(1);
+    expect(JSON.stringify(res.body)).not.toContain(session.sessionId);
+    expect(JSON.stringify(res.body)).not.toContain(owner.user.id);
+  });
+
+  test('stop destroys the sandbox', async () => {
+    const owner = await guest();
+    const { sessionId } = await startSandbox(owner);
+    expect((await request(app).delete(`/api/sandbox/${sessionId}`).set(owner.auth)).status).toBe(200);
+    expect((await request(app).get(`/api/sandbox/${sessionId}/status`).set(owner.auth)).status).toBe(404);
+  });
+
+  test('the per-user limit returns 429 with a clear message', async () => {
+    const owner = await guest();
+    for (let i = 0; i < config.sandbox.maxPerUser; i += 1) await startSandbox(owner);
+    const res = await request(app).post('/api/sandbox/start').set(owner.auth).send({});
+    expect(res.status).toBe(429);
+    expect(res.body.error).toMatch(/Stop one first/);
+  });
+
+  test('an invalid labId falls back to a plain sandbox', async () => {
+    const owner = await guest();
+    expect((await startSandbox(owner, '../../etc')).labId).toBe('sandbox');
+  });
+});
+
+describe('admin', () => {
+  test('admin routes do not exist unless ADMIN_TOKEN is configured', async () => {
+    expect((await request(app).get('/api/admin/sandboxes').set('x-admin-token', 'anything')).status).toBe(404);
+  });
+
+  describe('with ADMIN_TOKEN set', () => {
+    beforeEach(() => { config.adminToken = 'operator-secret'; });
+    afterEach(() => { config.adminToken = null; });
+
+    test('rejects a missing or wrong token', async () => {
+      expect((await request(app).get('/api/admin/sandboxes')).status).toBe(403);
+      expect((await request(app).get('/api/admin/sandboxes').set('x-admin-token', 'operator-secreT')).status).toBe(403);
+    });
+
+    test('lists and stops any sandbox', async () => {
+      const owner = await guest();
+      const { sessionId } = await startSandbox(owner);
+      const admin = { 'x-admin-token': 'operator-secret' };
+
+      const list = await request(app).get('/api/admin/sandboxes').set(admin);
+      expect(list.body.data.map((s) => s.sessionId)).toEqual([sessionId]);
+
+      expect((await request(app).delete(`/api/admin/sandboxes/${sessionId}`).set(admin)).status).toBe(200);
+      expect((await request(app).delete(`/api/admin/sandboxes/${sessionId}`).set(admin)).status).toBe(404);
+      expect((await request(app).post('/api/admin/pool/refill').set(admin)).status).toBe(200);
+    });
+  });
+});
+
+describe('metrics', () => {
+  test('exposes Prometheus metrics including sandbox gauges', async () => {
+    const owner = await guest();
+    await startSandbox(owner);
+    const res = await request(app).get('/metrics');
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/opsacademy_sandboxes_active 1/);
+    expect(res.text).toMatch(/opsacademy_http_request_duration_seconds_count\{[^}]*route="\/api\/sandbox\/start"/);
+    expect(res.text).toMatch(/opsacademy_sandbox_claim_duration_seconds_count\{source="cold"\}/);
+  });
+
+  test('requires the bearer token when METRICS_TOKEN is set', async () => {
+    config.metricsToken = 'scrape-me';
+    try {
+      expect((await request(app).get('/metrics')).status).toBe(401);
+      expect((await request(app).get('/metrics').set('Authorization', 'Bearer scrape-me')).status).toBe(200);
+    } finally {
+      config.metricsToken = null;
+    }
+  });
+});
+
+describe('lab verification and progress', () => {
+  test('verifying one step records it and awards XP once', async () => {
+    const student = await guest();
+    const { sessionId } = await startSandbox(student);
+
+    const first = await request(app).post('/api/labs/linux-basics/verify').set(student.auth).send({ sessionId, stepNumber: 2 });
+    expect(first.body).toMatchObject({ allPassed: true, score: 100, xpEarned: 20, passedCount: 1, totalCount: 1, unitCompleted: false });
+    expect(first.body.results[0]).toMatchObject({ step: 2, passed: true });
+    expect(first.body.results[0]).not.toHaveProperty('expectedOutput');
+
+    const again = await request(app).post('/api/labs/linux-basics/verify').set(student.auth).send({ sessionId, stepNumber: 2 });
+    expect(again.body.xpEarned).toBe(0);
+  });
+
+  test('a failing check is reported and counted as a weak spot', async () => {
+    const student = await guest();
+    const { sessionId } = await startSandbox(student);
+    setFailing(true);
+    const res = await request(app).post('/api/labs/linux-basics/verify').set(student.auth).send({ sessionId, stepNumber: 3 });
+    expect(res.body).toMatchObject({ allPassed: false, score: 0, xpEarned: 0 });
+
+    const progress = (await request(app).get('/api/progress').set(student.auth)).body.data;
+    expect(progress.xp).toBe(0);
+    expect(progress.weakTopics[0]).toMatchObject({ unitId: 'linux-basics', fails: 1 });
+    expect(progress.weakTopics[0].steps[0]).toMatchObject({ step: 3, fails: 1 });
+  });
+
+  test('completing every step completes the unit and pays the bonus once', async () => {
+    const student = await guest();
+    const { sessionId } = await startSandbox(student);
+    const stepCount = units.getSteps('linux-basics').length;
+
+    const res = await request(app).post('/api/labs/linux-basics/verify').set(student.auth).send({ sessionId });
+    expect(res.body).toMatchObject({ allPassed: true, unitCompleted: true, newlyCompleted: true, totalCount: stepCount });
+    expect(res.body.xpEarned).toBe(stepCount * 20 + 100);
+
+    const repeat = await request(app).post('/api/labs/linux-basics/verify').set(student.auth).send({ sessionId });
+    expect(repeat.body).toMatchObject({ unitCompleted: true, newlyCompleted: false, xpEarned: 0 });
+
+    const progress = (await request(app).get('/api/progress').set(student.auth)).body.data;
+    expect(progress.completedUnits).toEqual(['linux-basics']);
+    expect(progress.unitProgress['linux-basics']).toMatchObject({ passedSteps: stepCount, totalSteps: stepCount });
+    expect(progress.streak).toMatchObject({ current: 1, activeToday: true });
+    expect(progress.readiness).toBe(Math.round((stepCount / units.totalSteps()) * 100));
+  });
+
+  test.each([
+    [{}, 400],
+    [{ sessionId: 'no-such-session' }, 404],
+  ])('verify with body %j -> %i', async (body, status) => {
+    const student = await guest();
+    expect((await request(app).post('/api/labs/linux-basics/verify').set(student.auth).send(body)).status).toBe(status);
+  });
+
+  test('verify rejects unknown units, unknown steps and path traversal', async () => {
+    const student = await guest();
+    const { sessionId } = await startSandbox(student);
+    const post = (unit, body) => request(app).post(`/api/labs/${unit}/verify`).set(student.auth).send(body);
+
+    expect((await post('nope', { sessionId })).status).toBe(404);
+    expect((await post('..%2F..%2Fconfig', { sessionId })).status).toBe(404);
+    expect((await post('linux-basics', { sessionId, stepNumber: 99 })).status).toBe(404);
+  });
+
+  test('quiz answers are checked on the server', async () => {
+    const student = await guest();
+    const section = units.getLearnSections('linux-basics').find((s) => s.quiz);
+    const send = (answerIndex) => request(app).post('/api/progress/quiz').set(student.auth)
+      .send({ unitId: 'linux-basics', sectionId: section.id, answerIndex });
+
+    const wrongIndex = (section.quiz.correctIndex + 1) % section.quiz.options.length;
+    expect((await send(wrongIndex)).body).toMatchObject({ correct: false, xpAwarded: 0 });
+    expect((await send(section.quiz.correctIndex)).body).toMatchObject({ correct: true, xpAwarded: 25 });
+    expect((await send(section.quiz.correctIndex)).body).toMatchObject({ correct: true, xpAwarded: 0 });
+
+    const missing = await request(app).post('/api/progress/quiz').set(student.auth).send({ unitId: 'linux-basics', sectionId: 'nope', answerIndex: 0 });
+    expect(missing.status).toBe(404);
+  });
+
+  test('the leaderboard ranks by XP and marks the caller', async () => {
+    const top = await registered({ name: 'Top Learner' });
+    const other = await guest();
+    const idle = await guest();
+
+    const a = await startSandbox(top);
+    await request(app).post('/api/labs/linux-basics/verify').set(top.auth).send({ sessionId: a.sessionId });
+    const b = await startSandbox(other);
+    await request(app).post('/api/labs/linux-basics/verify').set(other.auth).send({ sessionId: b.sessionId, stepNumber: 1 });
+
+    const res = await request(app).get('/api/progress/leaderboard').set(other.auth);
+    expect(res.body.data).toHaveLength(2);
+    expect(res.body.data[0]).toMatchObject({ rank: 1, name: 'Top Learner', you: false, completedUnits: 1 });
+    expect(res.body.data[1]).toMatchObject({ rank: 2, you: true, xp: 20 });
+    expect(JSON.stringify(res.body)).not.toContain(top.user.id);
+    expect(JSON.stringify(res.body)).not.toContain(idle.user.id);
+  });
+});
+
+/** Flip the lab engine between passing and failing checks. */
+function setFailing(failing) {
+  const session = ctx.manager.listSessions()[0];
+  if (!session) throw new Error('start a sandbox first');
+  ctx.engine.passing = !failing;
+}
+
+describe('flashcards (spaced repetition)', () => {
+  test('a new deck is entirely due; reviewing a card schedules it', async () => {
+    const student = await guest();
+    const deck = (await request(app).get('/api/progress/flashcards/linux-basics').set(student.auth)).body.data;
+    expect(deck.total).toBe(units.getFlashcards('linux-basics').length);
+    expect(deck.dueCount).toBe(deck.total);
+
+    const card = deck.cards[0];
+    const review = await request(app).post(`/api/progress/flashcards/linux-basics/${card.id}/review`).set(student.auth).send({ grade: 4 });
+    expect(review.body.data).toMatchObject({ reps: 1, intervalDays: 1 });
+
+    const after = (await request(app).get('/api/progress/flashcards/linux-basics').set(student.auth)).body.data;
+    expect(after.dueCount).toBe(deck.total - 1);
+    expect(after.cards[after.cards.length - 1]).toMatchObject({ id: card.id, due: false, seen: true });
+  });
+
+  test('"again" keeps the card due soon', async () => {
+    const student = await guest();
+    const cardId = units.getFlashcards('linux-basics')[0].id;
+    const review = await request(app).post(`/api/progress/flashcards/linux-basics/${cardId}/review`).set(student.auth).send({ grade: 1 });
+    expect(review.body.data.intervalDays).toBe(0);
+    expect(review.body.data.due - Date.now()).toBeLessThan(11 * 60 * 1000);
+  });
+
+  test.each([
+    ['fc-does-not-exist', { grade: 4 }, 404],
+    [null, { grade: 9 }, 400],
+    [null, { grade: 'good' }, 400],
+    [null, { grade: 2.5 }, 400],
+    [null, {}, 400],
+  ])('review of %s with %j -> %i', async (cardId, body, status) => {
+    const student = await guest();
+    const id = cardId || units.getFlashcards('linux-basics')[0].id;
+    const res = await request(app).post(`/api/progress/flashcards/linux-basics/${id}/review`).set(student.auth).send(body);
+    expect(res.status).toBe(status);
+  });
+
+  test('unknown unit deck is a 404', async () => {
+    const student = await guest();
+    expect((await request(app).get('/api/progress/flashcards/nope').set(student.auth)).status).toBe(404);
+  });
+});
+
+describe('certificates', () => {
+  async function completeUnit(who, unitId = 'linux-basics') {
+    const { sessionId } = await startSandbox(who, unitId);
+    await request(app).post(`/api/labs/${unitId}/verify`).set(who.auth).send({ sessionId });
+    await request(app).delete(`/api/sandbox/${sessionId}`).set(who.auth);
+  }
+
+  test('cannot be issued for a unit that was not completed', async () => {
+    const user = await registered();
+    const res = await request(app).post('/api/certificates').set(user.auth).send({ unitId: 'linux-basics' });
+    expect(res.status).toBe(403);
+    expect(ctx.store.all('certificates')).toEqual([]);
+  });
+
+  test('guests must create an account first', async () => {
+    const visitor = await guest();
+    await completeUnit(visitor);
+    const res = await request(app).post('/api/certificates').set(visitor.auth).send({ unitId: 'linux-basics' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/account/);
+  });
+
+  test('anonymous callers cannot issue certificates', async () => {
+    const res = await request(app).post('/api/certificates').send({ unitId: 'linux-basics', studentName: 'Anyone', score: 100 });
+    expect(res.status).toBe(401);
+  });
+
+  test('is issued once for a completed unit, in the account name, and verifies publicly', async () => {
+    const user = await registered({ name: 'Asha Rao' });
+    await completeUnit(user);
+
+    const issued = await request(app).post('/api/certificates').set(user.auth)
+      .send({ unitId: 'linux-basics', studentName: 'Someone Else', score: 1000 });
+    expect(issued.status).toBe(201);
+    expect(issued.body.data).toMatchObject({
+      id: expect.stringMatching(/^OPS-[0-9A-F]{12}$/),
+      studentName: 'Asha Rao',
+      unitId: 'linux-basics',
+      unitTitle: 'Linux Fundamentals',
+      score: 100,
+      algorithm: 'HMAC-SHA256',
+    });
+    expect(issued.body.data).not.toHaveProperty('userId');
+
+    const again = await request(app).post('/api/certificates').set(user.auth).send({ unitId: 'linux-basics' });
+    expect(again.body.data.id).toBe(issued.body.data.id);
+    expect(ctx.store.all('certificates')).toHaveLength(1);
+
+    const verified = await request(app).get(`/api/certificates/verify/${issued.body.data.id}`);
+    expect(verified.body).toMatchObject({ verified: true, data: { studentName: 'Asha Rao', signature: issued.body.data.signature } });
+
+    const mine = await request(app).get('/api/certificates').set(user.auth);
+    expect(mine.body.data.map((c) => c.id)).toEqual([issued.body.data.id]);
+  });
+
+  test('a certificate edited in the store no longer verifies', async () => {
+    const user = await registered();
+    await completeUnit(user);
+    const { id } = (await request(app).post('/api/certificates').set(user.auth).send({ unitId: 'linux-basics' })).body.data;
+
+    const stored = ctx.store.get('certificates', id);
+    ctx.store.set('certificates', id, { ...stored, studentName: 'Forged Name' });
+
+    const res = await request(app).get(`/api/certificates/verify/${id}`);
+    expect(res.status).toBe(404);
+    expect(res.body.verified).toBe(false);
+  });
+
+  test.each(['OPS-000000000000', 'not-an-id', '..%2F..%2Fusers'])('verify %s -> 404', async (id) => {
+    expect((await request(app).get(`/api/certificates/verify/${id}`)).status).toBe(404);
+  });
+
+  test('unknown unit is a 404', async () => {
+    const user = await registered();
+    expect((await request(app).post('/api/certificates').set(user.auth).send({ unitId: 'nope' })).status).toBe(404);
+  });
+});
+
+describe('AI mentor hints', () => {
+  const ask = (who, body) => request(app).post('/api/agent/hint').set(who.auth)
+    .send({ query: 'my check keeps failing', unitId: 'linux-basics', stepNumber: 2, ...body });
+
+  test('hints escalate one tier per request and cannot be skipped ahead', async () => {
+    const student = await guest();
+
+    const jump = await ask(student, { tier: 3 });
+    expect(jump.body.data).toMatchObject({ tier: 1, nextTier: 2, maxTier: 3, hint: 'tier 1 hint' });
+    expect((await ask(student)).body.data).toMatchObject({ tier: 2, nextTier: 3 });
+    expect((await ask(student)).body.data).toMatchObject({ tier: 3, nextTier: null });
+    expect((await ask(student)).body.data.tier).toBe(3);
+    // An earlier tier can always be asked for again.
+    expect((await ask(student, { tier: 1 })).body.data.tier).toBe(1);
+  });
+
+  test('tiers are tracked separately for each step', async () => {
+    const student = await guest();
+    await ask(student);
+    await ask(student);
+    expect((await ask(student, { stepNumber: 3 })).body.data.tier).toBe(1);
+  });
+
+  test('the hub receives the step, the typed commands and the sandbox files', async () => {
+    const student = await guest();
+    const { sessionId } = await startSandbox(student);
+    ctx.manager.recordCommand(sessionId, 'mkdir webapp');
+
+    await ask(student, { sessionId });
+
+    const { payload } = ctx.hub.calls.find((c) => c.endpoint === 'hint');
+    expect(payload).toMatchObject({
+      unitId: 'linux-basics',
+      stepNumber: 2,
+      tier: 1,
+      commandHistory: ['mkdir webapp'],
+      step: { title: units.getStep('linux-basics', 2).title, verificationCommand: units.getStep('linux-basics', 2).verification.command },
+    });
+    expect(payload.containerTelemetry).toHaveProperty('fileTree');
+  });
+
+  test("another user's session id adds no context", async () => {
+    const owner = await guest();
+    const other = await guest();
+    const { sessionId } = await startSandbox(owner);
+    ctx.manager.recordCommand(sessionId, 'cat secret-notes.txt');
+
+    await ask(other, { sessionId });
+
+    const { payload } = ctx.hub.calls.find((c) => c.endpoint === 'hint');
+    expect(payload.commandHistory).toEqual([]);
+    expect(payload.containerTelemetry).toBeNull();
+  });
+
+  test('falls back to the step instructions when the hub is down, without leaking the check', async () => {
+    const student = await guest();
+    ctx.hub.down = true;
+    const step = units.getStep('linux-basics', 2);
+
+    const res = await ask(student);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ fallback: true, source: 'fallback', tier: 1 });
+    expect(res.body.data.hint).toContain(step.description);
+    expect(res.body.data.hint).not.toContain(step.verification.command);
+
+    const second = await ask(student);
+    expect(second.body.data.hint).toContain(step.tasks[0]);
+  });
+
+  test('a blocked question is not counted as a used hint', async () => {
+    const student = await guest();
+    ctx.hub.hintResponse = { blocked: true, message: 'no' };
+    const blocked = await ask(student);
+    expect(blocked.body.data).toMatchObject({ blocked: true, nextTier: null });
+
+    ctx.hub.hintResponse = null;
+    expect((await ask(student)).body.data.tier).toBe(1);
+  });
+
+  test('hints used show up as a weak topic', async () => {
+    const student = await guest();
+    await ask(student);
+    await ask(student);
+    const progress = (await request(app).get('/api/progress').set(student.auth)).body.data;
+    expect(progress.weakTopics[0]).toMatchObject({ unitId: 'linux-basics', hints: 2, fails: 0 });
+  });
+
+  test('requires a question and a token', async () => {
+    const student = await guest();
+    expect((await ask(student, { query: '   ' })).status).toBe(400);
+    expect((await request(app).post('/api/agent/hint').send({ query: 'hi' })).status).toBe(401);
+  });
+
+  test('scan reports unavailable instead of "safe" when the hub is down', async () => {
+    const student = await guest();
+    expect((await request(app).post('/api/agent/scan').set(student.auth).send({ command: 'ls' })).body.data).toEqual({ safe: true });
+    ctx.hub.down = true;
+    expect((await request(app).post('/api/agent/scan').set(student.auth).send({ command: 'ls' })).status).toBe(503);
+  });
+});
+
+describe('mock interview', () => {
+  const question = () => units.getInterviewQuestions('linux-basics')[0];
+  const answer = (who, text) => request(app).post(`/api/interview/linux-basics/${question().id}/answer`).set(who.auth).send({ answer: text });
+  const longAnswer = 'I would start with df -h to find the full partition, then du to find the big directories.';
+
+  test('questions are listed without their model answers', async () => {
+    const student = await guest();
+    const res = await request(app).get('/api/interview/linux-basics/questions').set(student.auth);
+    expect(res.body.data[0]).toEqual({ id: question().id, question: question().question, difficulty: question().difficulty });
+    expect(JSON.stringify(res.body)).not.toContain('modelAnswer');
+  });
+
+  test('scores an answer, reveals the model answer and awards XP once for a pass', async () => {
+    const student = await guest();
+    const res = await answer(student, longAnswer);
+    expect(res.body.data).toMatchObject({ score: 80, xpAwarded: 30, passScore: 70, modelAnswer: question().modelAnswer });
+    expect(ctx.hub.calls.find((c) => c.endpoint === 'score').payload).toMatchObject({ answer: longAnswer, keyPoints: question().keyPoints });
+
+    expect((await answer(student, longAnswer)).body.data.xpAwarded).toBe(0);
+    const progress = (await request(app).get('/api/progress').set(student.auth)).body.data;
+    expect(progress.interviews).toEqual({ answered: 2, averageScore: 80 });
+  });
+
+  test('a low score earns no XP', async () => {
+    const student = await guest();
+    ctx.hub.scoreResponse = { score: 40, covered: [], missed: ['x'], feedback: 'Thin', source: 'rules' };
+    expect((await answer(student, longAnswer)).body.data.xpAwarded).toBe(0);
+  });
+
+  test.each([
+    ['too short', 'df -h', 400],
+    ['too long', 'x'.repeat(4001), 400],
+    ['missing', undefined, 400],
+  ])('rejects a %s answer', async (_label, text, status) => {
+    const student = await guest();
+    expect((await answer(student, text)).status).toBe(status);
+  });
+
+  test('says scoring is unavailable when the hub is down', async () => {
+    const student = await guest();
+    ctx.hub.down = true;
+    expect((await answer(student, longAnswer)).status).toBe(503);
+  });
+
+  test('unknown question or unit is a 404', async () => {
+    const student = await guest();
+    expect((await request(app).post('/api/interview/linux-basics/iq-nope/answer').set(student.auth).send({ answer: longAnswer })).status).toBe(404);
+    expect((await request(app).get('/api/interview/nope/questions').set(student.auth)).status).toBe(404);
+  });
+});
+
+describe('real shell: a lab step verified end to end', () => {
+  beforeEach(() => setup({ engine: pty }));
+
+  test('file preview reads files in the student home and nothing else', async () => {
+    const student = await guest();
+    const other = await guest();
+    const { sessionId } = await startSandbox(student);
+    await ctx.manager.exec(sessionId, "mkdir -p webapp && printf 'hello world' > webapp/a.txt && mkdir 'my dir' && printf 'spaced' > 'my dir/b.txt'");
+    const read = (path, who = student) => request(app).get(`/api/sandbox/${sessionId}/file`).query({ path }).set(who.auth);
+
+    expect((await read('webapp/a.txt')).body.data).toEqual({ path: 'webapp/a.txt', content: 'hello world', truncated: false });
+    expect((await read('my dir/b.txt')).body.data.content).toBe('spaced');
+
+    expect((await read('webapp/missing.txt')).status).toBe(404);
+    expect((await read('webapp')).status).toBe(404); // a directory
+    for (const bad of ['../../../etc/passwd', '/etc/passwd', 'webapp/../../x', "a'; cat /etc/passwd; echo '", 'a$(id)', 'a`id`', 'a;id', '', 'a\nb']) {
+      expect((await read(bad)).status).toBe(400);
+    }
+    expect((await read('webapp/a.txt', other)).status).toBe(404);
+  });
+
+  test('file preview is capped at 20 KB', async () => {
+    const student = await guest();
+    const { sessionId } = await startSandbox(student);
+    await ctx.manager.exec(sessionId, 'head -c 30000 /dev/zero | tr "\\0" "x" > big.txt');
+    const res = await request(app).get(`/api/sandbox/${sessionId}/file`).query({ path: 'big.txt' }).set(student.auth);
+    expect(res.body.data.truncated).toBe(true);
+    expect(res.body.data.content).toHaveLength(20 * 1024);
+  });
+
+  test('step 2 of linux-basics fails on an empty sandbox and passes once the files exist', async () => {
+    const student = await guest();
+    const { sessionId } = await startSandbox(student);
+    const verify = () => request(app).post('/api/labs/linux-basics/verify').set(student.auth).send({ sessionId, stepNumber: 2 });
+
+    expect((await verify()).body).toMatchObject({ allPassed: false, results: [{ step: 2, passed: false, stdout: 'FAIL' }] });
+
+    await ctx.manager.exec(sessionId, 'mkdir -p webapp/src webapp/public webapp/config && touch webapp/src/index.js webapp/public/index.html webapp/config/app.conf');
+
+    expect((await verify()).body).toMatchObject({ allPassed: true, xpEarned: 20, results: [{ step: 2, passed: true, stdout: 'PASS' }] });
+
+    const telemetry = await request(app).get(`/api/sandbox/${sessionId}/telemetry`).set(student.auth);
+    expect(telemetry.body.data.fileTree.map((f) => f.path)).toContain('webapp/config/app.conf');
+
+    await request(app).post(`/api/sandbox/${sessionId}/reset`).set(student.auth);
+    expect((await verify()).body.allPassed).toBe(false);
+  });
+});

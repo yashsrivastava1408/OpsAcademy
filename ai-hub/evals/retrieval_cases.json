@@ -1,0 +1,66 @@
+[
+  {"query": "how do I make a script executable", "unit": "linux-basics", "section": "permissions"},
+  {"query": "what does 755 mean on a file", "unit": "linux-basics", "section": "permissions"},
+  {"query": "send the output of one command into another", "unit": "linux-basics", "section": "pipes-redirection"},
+  {"query": "run a job every night at 2am", "unit": "linux-basics", "section": "cron-jobs"},
+  {"query": "how to stop a process that is hanging", "unit": "linux-basics", "section": "processes"},
+  {"query": "count lines matching ERROR in a log", "unit": "linux-basics", "section": "text-processing"},
+  {"query": "where am i in the filesystem and how do i move around", "unit": "linux-basics", "section": "filesystem-navigation"},
+
+  {"query": "I have a merge conflict, what do the <<<<<<< markers mean", "unit": "git-basics", "section": "merge-conflicts"},
+  {"query": "difference between rebase and merge", "unit": "git-basics", "section": "rebase-vs-merge"},
+  {"query": "save my uncommitted work temporarily without committing", "unit": "git-basics", "section": "stash-tags"},
+  {"query": "what is the staging area", "unit": "git-basics", "section": "staging-commits"},
+  {"query": "how do I open a pull request for review", "unit": "git-basics", "section": "github-prs"},
+
+  {"query": "how is a container different from a virtual machine", "unit": "docker-basics", "section": "what-are-containers"},
+  {"query": "make my image smaller with multiple build stages", "unit": "docker-basics", "section": "multistage-builds"},
+  {"query": "my data disappears when the container restarts", "unit": "docker-basics", "section": "networking-volumes"},
+  {"query": "run several services together from one yaml file", "unit": "docker-basics", "section": "docker-compose"},
+  {"query": "container exits immediately, how do I see why", "unit": "docker-basics", "section": "container-debugging"},
+  {"query": "why should a container not run as root", "unit": "docker-basics", "section": "docker-security"},
+
+  {"query": "what is a pod", "unit": "kubernetes-basics", "section": "pods"},
+  {"query": "expose my deployment inside the cluster", "unit": "kubernetes-basics", "section": "services"},
+  {"query": "route external http traffic by hostname to services", "unit": "kubernetes-basics", "section": "ingress"},
+  {"query": "liveness and readiness probes", "unit": "kubernetes-basics", "section": "rolling-updates-probes"},
+  {"query": "store database password for my pods", "unit": "kubernetes-basics", "section": "configmaps-secrets"},
+  {"query": "scale my app to 5 replicas", "unit": "kubernetes-basics", "section": "deployments"},
+
+  {"query": "what happens in the tcp three way handshake", "unit": "networking-fundamentals", "section": "tcp-udp"},
+  {"query": "what is a CNAME record", "unit": "networking-fundamentals", "section": "dns"},
+  {"query": "what does /24 mean in an ip address", "unit": "networking-fundamentals", "section": "ip-addressing-ports"},
+  {"query": "difference between 404 and 502 status codes", "unit": "networking-fundamentals", "section": "http-https"},
+
+  {"query": "blue green versus canary release", "unit": "cicd-pipelines", "section": "deployment-strategies"},
+  {"query": "where do I keep api keys for my github workflow", "unit": "cicd-pipelines", "section": "environments-secrets"},
+  {"query": "trigger a workflow on every push to main", "unit": "cicd-pipelines", "section": "github-actions"},
+
+  {"query": "least privilege access policies for users and roles", "unit": "aws-cloud-essentials", "section": "iam"},
+  {"query": "public and private subnets", "unit": "aws-cloud-essentials", "section": "vpc"},
+  {"query": "object storage bucket for static files", "unit": "aws-cloud-essentials", "section": "s3"},
+
+  {"query": "terraform state file locking with a remote backend", "unit": "terraform-iac", "section": "state-management"},
+  {"query": "someone changed infrastructure by hand in the console", "unit": "terraform-iac", "section": "modules-drift"},
+
+  {"query": "difference between SLI SLO and SLA", "unit": "monitoring-observability", "section": "sli-slo-sla"},
+  {"query": "logs metrics and traces", "unit": "monitoring-observability", "section": "three-pillars"},
+  {"query": "counter versus gauge versus histogram", "unit": "monitoring-observability", "section": "prometheus-metrics"},
+
+  {"query": "consistency availability partition tolerance tradeoff", "unit": "system-design-scalability", "section": "cap-theorem"},
+  {"query": "when should I add a redis cache in front of the database", "unit": "system-design-scalability", "section": "caching-strategies"},
+  {"query": "sharding and read replicas", "unit": "system-design-scalability", "section": "database-scaling"},
+
+  {"query": "stop my bash script when any command fails", "unit": "bash-automation", "section": "defensive-bash"},
+  {"query": "clean up temp files when the script exits or is interrupted", "unit": "bash-automation", "section": "error-trapping"},
+  {"query": "parse command line flags in a shell script", "unit": "bash-automation", "section": "argument-parsing"},
+
+  {"query": "pod stuck in CrashLoopBackOff", "unit": "sre-incident-response", "section": "k8s-crashloop-debugging"},
+  {"query": "git as the single source of truth for deployments", "unit": "gitops-argocd", "section": "what-is-gitops"},
+  {"query": "scan container images for vulnerabilities early in the pipeline", "unit": "devsecops-security", "section": "shift-left"},
+  {"query": "software bill of materials", "unit": "devsecops-security", "section": "sbom-supply-chain"},
+  {"query": "restrict which system calls a container can make", "unit": "cloud-security-hardening", "section": "kernel-security-mechanisms"},
+  {"query": "list ec2 instances from a python script", "unit": "python-devops-automation", "section": "boto3-aws"},
+  {"query": "chain of custody for digital evidence", "unit": "digital-forensics", "section": null},
+  {"query": "difference between EDR and XDR", "unit": "endpoint-security", "section": null}
+]

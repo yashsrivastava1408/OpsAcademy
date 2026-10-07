@@ -454,3 +454,15 @@
     justify-content: flex-end;
   }
 }
+
+/* ── Inline commands in task text ─────────────────────────── */
+.task-code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 212, 255, 0.08);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  word-break: break-word;
+}

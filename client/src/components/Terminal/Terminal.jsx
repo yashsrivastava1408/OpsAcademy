@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -7,75 +7,28 @@ import { Wifi, WifiOff, Loader, Play } from 'lucide-react';
 import { getTerminalWsUrl } from '../../services/api';
 import './Terminal.css';
 
-export default function Terminal({ sessionId, onDisconnect, onStartLab }) {
+const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStartLab }, ref) {
   const termRef = useRef(null);
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
   const wsRef = useRef(null);
   const [status, setStatus] = useState('disconnected'); // disconnected | connecting | connected
 
-  const connectWebSocket = useCallback(() => {
-    if (!sessionId || sessionId.startsWith('local-lab-')) {
-      if (xtermRef.current) {
-        xtermRef.current.clear();
-        xtermRef.current.writeln('\x1b[1;36m[OpsAcademy Sandbox Gateway]\x1b[0m');
-        xtermRef.current.writeln('\x1b[33m⚡ Click "Start Lab" above to launch a live interactive shell session.\x1b[0m');
+  // Kept in a ref so a new callback from the parent does not reconnect the socket.
+  const onDisconnectRef = useRef(onDisconnect);
+  useEffect(() => {
+    onDisconnectRef.current = onDisconnect;
+  }, [onDisconnect]);
+
+  // Lets the lab page type into the shell, e.g. to re-run a command from history.
+  useImperativeHandle(ref, () => ({
+    send(text) {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(text);
+        if (xtermRef.current) xtermRef.current.focus();
       }
-      setStatus('disconnected');
-      return;
-    }
-
-    setStatus('connecting');
-    const wsUrl = getTerminalWsUrl(sessionId);
-    let ws;
-    try {
-      ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-    } catch (e) {
-      console.warn('[Terminal] Failed to construct WebSocket:', e);
-      setStatus('disconnected');
-      return;
-    }
-
-    if (xtermRef.current) {
-      xtermRef.current.clear();
-      xtermRef.current.writeln('\x1b[1;36m[OpsAcademy Sandbox Gateway]\x1b[0m');
-      xtermRef.current.writeln('\x1b[90mConnecting to live container sandbox...\x1b[0m');
-    }
-
-    ws.onopen = () => {
-      setStatus('connected');
-      if (xtermRef.current) {
-        xtermRef.current.clear();
-      }
-      if (fitAddonRef.current) {
-        const dims = fitAddonRef.current.proposeDimensions();
-        if (dims) {
-          try {
-            ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
-          } catch { /* ignore */ }
-        }
-      }
-    };
-
-    ws.onmessage = (event) => {
-      if (xtermRef.current) {
-        xtermRef.current.write(event.data);
-      }
-    };
-
-    ws.onerror = (err) => {
-      setStatus('disconnected');
-    };
-
-    ws.onclose = () => {
-      setStatus('disconnected');
-      if (xtermRef.current) {
-        xtermRef.current.writeln('\r\n\x1b[31m[Sandbox Disconnected]\x1b[0m \x1b[90mSession closed. Click "Start Lab" to launch a new session.\x1b[0m');
-      }
-      if (onDisconnect) onDisconnect();
-    };
-  }, [sessionId, onDisconnect]);
+    },
+  }), []);
 
   // Initialize xterm.js
   useEffect(() => {
@@ -155,34 +108,88 @@ export default function Terminal({ sessionId, onDisconnect, onStartLab }) {
       window.removeEventListener('resize', handleResize);
       observer.disconnect();
       term.dispose();
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
     };
   }, []);
 
-  // Connect when sessionId is available
+  // Connect when sessionId is available. Each run of this effect owns one
+  // socket and closes exactly that one on cleanup, so a quick change of
+  // session (or React re-running the effect) can never leave a stray
+  // connection or drop the live one.
   useEffect(() => {
-    if (sessionId) {
-      connectWebSocket();
-    } else {
+    if (!sessionId) {
       setStatus('disconnected');
+      return undefined;
     }
 
+    let cancelled = false;
+    let ws = null;
+
+    setStatus('connecting');
+    if (xtermRef.current) {
+      xtermRef.current.clear();
+      xtermRef.current.writeln('\x1b[1;36m[OpsAcademy Sandbox Gateway]\x1b[0m');
+      xtermRef.current.writeln('\x1b[90mConnecting to your sandbox...\x1b[0m');
+    }
+
+    getTerminalWsUrl(sessionId)
+      .then((url) => {
+        if (cancelled) return;
+        ws = new WebSocket(url);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          setStatus('connected');
+          if (xtermRef.current) {
+            xtermRef.current.clear();
+          }
+          if (fitAddonRef.current) {
+            const dims = fitAddonRef.current.proposeDimensions();
+            if (dims) {
+              try {
+                ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+              } catch { /* ignore */ }
+            }
+          }
+        };
+
+        ws.onmessage = (event) => {
+          if (xtermRef.current) {
+            xtermRef.current.write(event.data);
+          }
+        };
+
+        ws.onerror = () => {
+          setStatus('disconnected');
+        };
+
+        ws.onclose = (event) => {
+          setStatus('disconnected');
+          if (xtermRef.current) {
+            // The gateway says why it closed the session (stopped, idle, max_age, ...).
+            const reason = event.reason ? `${event.reason}.` : 'Session closed.';
+            xtermRef.current.writeln(`\r\n\x1b[31m[Sandbox Disconnected]\x1b[0m \x1b[90m${reason} Click "Start Lab" to launch a new session.\x1b[0m`);
+          }
+          if (onDisconnectRef.current) onDisconnectRef.current();
+        };
+      })
+      .catch((err) => {
+        console.warn('[Terminal] Failed to open WebSocket:', err);
+        if (!cancelled) setStatus('disconnected');
+      });
+
     return () => {
-      if (wsRef.current) {
-        const ws = wsRef.current;
-        ws.onopen = null;
-        ws.onerror = null;
-        ws.onclose = null;
-        ws.onmessage = null;
-        if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
-          try { ws.close(); } catch { /* ignore */ }
-        }
-        wsRef.current = null;
+      cancelled = true;
+      if (!ws) return;
+      ws.onopen = null;
+      ws.onerror = null;
+      ws.onclose = null;
+      ws.onmessage = null;
+      if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
+        try { ws.close(); } catch { /* ignore */ }
       }
+      if (wsRef.current === ws) wsRef.current = null;
     };
-  }, [sessionId, connectWebSocket]);
+  }, [sessionId]);
 
   const statusIcon = {
     connected: <Wifi size={12} />,
@@ -234,4 +241,6 @@ export default function Terminal({ sessionId, onDisconnect, onStartLab }) {
       </div>
     </div>
   );
-}
+});
+
+export default Terminal;

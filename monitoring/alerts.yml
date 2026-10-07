@@ -1,0 +1,53 @@
+groups:
+  - name: opsacademy
+    rules:
+      - alert: GatewayDown
+        expr: up{job="opsacademy-gateway"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: The OpsAcademy gateway is not answering scrapes.
+
+      - alert: SandboxCapacityNearlyFull
+        expr: opsacademy_sandboxes_active >= 20
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} sandboxes in use; the default capacity is 25."
+
+      - alert: SandboxPoolEmpty
+        expr: opsacademy_sandbox_pool_available == 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: No pre-warmed sandboxes are available, so every student gets a cold start.
+
+      - alert: AIHubFailing
+        expr: |
+          sum(rate(opsacademy_ai_hub_request_duration_seconds_count{outcome!="ok"}[5m]))
+            / sum(rate(opsacademy_ai_hub_request_duration_seconds_count[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: More than 20% of AI hub calls are failing; students are getting fallback hints.
+
+      - alert: AbuseSpike
+        expr: sum(increase(opsacademy_commands_blocked_total[10m])) > 20
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} terminal commands blocked in 10 minutes."
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(opsacademy_http_request_duration_seconds_count{status=~"5.."}[5m]))
+            / sum(rate(opsacademy_http_request_duration_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: More than 5% of gateway requests are failing with a 5xx.

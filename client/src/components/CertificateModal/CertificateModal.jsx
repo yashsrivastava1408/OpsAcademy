@@ -1,99 +1,137 @@
-import { useState } from 'react';
-import { Download, Share2, X, ShieldCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Download, Share2, X, ShieldCheck, Loader } from 'lucide-react';
+import { certificateApi, errorMessage } from '../../services/api';
+import useAuth from '../../hooks/useAuth';
 import './CertificateModal.css';
 
-export default function CertificateModal({ studentName = 'Student', score = 100, onClose }) {
-  const [name, setName] = useState(studentName);
-  const certId = `OPS-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-  const issueDate = new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+/**
+ * Issues (or fetches) the signed certificate for a completed unit and shows
+ * it. Everything printed on it comes from the server record.
+ */
+export default function CertificateModal({ unit, onClose, onIssued }) {
+  const { isRegistered } = useAuth();
+  const [certificate, setCertificate] = useState(null);
+  const [error, setError] = useState(null);
+  const [copied, setCopied] = useState(false);
 
-  const handlePrint = () => {
-    window.print();
+  useEffect(() => {
+    if (!isRegistered) return;
+    let cancelled = false;
+    certificateApi
+      .issue(unit.id)
+      .then((res) => {
+        if (cancelled) return;
+        setCertificate(res.data.data);
+        if (onIssued) onIssued(res.data.data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorMessage(err, 'Could not issue the certificate.'));
+      });
+    return () => { cancelled = true; };
+    // onIssued is a fresh function each render; the unit is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unit.id, isRegistered]);
+
+  const verifyUrl = certificate ? `${window.location.origin}/verify/${certificate.id}` : '';
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(verifyUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard blocked: the link is visible on the certificate */ }
   };
 
   return (
     <div className="cert-modal-overlay" onClick={onClose}>
       <div className="cert-modal glass-card animate-scale-in" onClick={(e) => e.stopPropagation()}>
-        <button className="cert-close-btn" onClick={onClose}>
+        <button className="cert-close-btn" onClick={onClose} aria-label="Close">
           <X size={20} />
         </button>
 
-        {/* Name input */}
-        <div className="cert-input-row no-print">
-          <label>Your Name on Certificate:</label>
-          <input
-            type="text"
-            className="input cert-name-input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Enter your full name"
-          />
-        </div>
+        {!isRegistered && (
+          <div className="cert-message">
+            <ShieldCheck size={32} />
+            <h3>Create an account to get your certificate</h3>
+            <p>
+              A certificate is issued in your name and can be checked by anyone, so it needs an account.
+              Your progress so far moves to the account automatically.
+            </p>
+            <Link to="/login" className="btn btn-primary">Create account</Link>
+          </div>
+        )}
 
-        {/* Certificate Frame */}
-        <div className="certificate-frame" id="printable-cert">
-          <div className="cert-border-outer">
-            <div className="cert-border-inner">
-              <div className="cert-header">
-                <div className="cert-logo">
-                  <ShieldCheck size={32} />
-                  <span>OpsAcademy</span>
-                </div>
-                <div className="cert-id">ID: {certId}</div>
-              </div>
+        {isRegistered && error && (
+          <div className="cert-message">
+            <h3>Certificate not available</h3>
+            <p>{error}</p>
+          </div>
+        )}
 
-              <div className="cert-body">
-                <span className="cert-subtitle">CERTIFICATE OF COMPLETION</span>
-                <h1 className="cert-title">DevOps Engineering Foundations</h1>
+        {isRegistered && !error && !certificate && (
+          <div className="cert-message">
+            <Loader size={28} className="spin" />
+            <p>Issuing your certificate...</p>
+          </div>
+        )}
 
-                <p className="cert-text-lead">This is to certify that</p>
-                <h2 className="cert-recipient">{name || 'DevOps Student'}</h2>
+        {certificate && (
+          <>
+            {/* Certificate Frame */}
+            <div className="certificate-frame" id="printable-cert">
+              <div className="cert-border-outer">
+                <div className="cert-border-inner">
+                  <div className="cert-header">
+                    <div className="cert-logo">
+                      <ShieldCheck size={32} />
+                      <span>OpsAcademy</span>
+                    </div>
+                    <div className="cert-id">ID: {certificate.id}</div>
+                  </div>
 
-                <p className="cert-description">
-                  has successfully demonstrated practical competence in Linux Systems, Docker Containerization, Git Version Control, and Kubernetes Orchestration with a Placement Readiness Score of <strong>{score}%</strong>.
-                </p>
+                  <div className="cert-body">
+                    <span className="cert-subtitle">CERTIFICATE OF COMPLETION</span>
+                    <h1 className="cert-title">{certificate.unitTitle}</h1>
 
-                <div className="cert-badges">
-                  <span className="cert-badge-tag">Linux</span>
-                  <span className="cert-badge-tag">Docker</span>
-                  <span className="cert-badge-tag">Git</span>
-                  <span className="cert-badge-tag">Kubernetes</span>
-                </div>
-              </div>
+                    <p className="cert-text-lead">This is to certify that</p>
+                    <h2 className="cert-recipient">{certificate.studentName}</h2>
 
-              <div className="cert-footer">
-                <div className="cert-sign">
-                  <div className="sign-line">OpsAcademy Evaluation Engine</div>
-                  <span className="sign-label">Automated Assessment</span>
-                </div>
-                <div className="cert-date">
-                  <div className="date-value">{issueDate}</div>
-                  <span className="sign-label">Issue Date</span>
+                    <p className="cert-description">
+                      completed every hands-on lab step of this unit. Each step was checked automatically
+                      inside a live sandbox, with a first-attempt accuracy of <strong>{certificate.score}%</strong>.
+                    </p>
+
+                    <p className="cert-verify">Verify at {verifyUrl}</p>
+                  </div>
+
+                  <div className="cert-footer">
+                    <div className="cert-sign">
+                      <div className="sign-line">OpsAcademy</div>
+                      <span className="sign-label">Automated Assessment</span>
+                    </div>
+                    <div className="cert-date">
+                      <div className="date-value">
+                        {new Date(certificate.issuedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </div>
+                      <span className="sign-label">Issue Date</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Actions */}
-        <div className="cert-actions no-print">
-          <button className="btn btn-primary" onClick={handlePrint}>
-            <Download size={16} /> Print / Save PDF
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => {
-              navigator.clipboard.writeText(`I just completed OpsAcademy DevOps Foundations certification with ${score}% score!`);
-              alert('Copied certificate announcement to clipboard!');
-            }}
-          >
-            <Share2 size={16} /> Share Achievement
-          </button>
-        </div>
+            {/* Actions */}
+            <div className="cert-actions no-print">
+              <button className="btn btn-primary" onClick={() => window.print()}>
+                <Download size={16} /> Print / Save PDF
+              </button>
+              <button className="btn btn-secondary" onClick={copyLink}>
+                <Share2 size={16} /> {copied ? 'Link copied' : 'Copy verification link'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

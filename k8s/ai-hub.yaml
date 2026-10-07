@@ -6,6 +6,7 @@ metadata:
   labels:
     app: opsacademy-ai-hub
 spec:
+  # Stateless apart from a per-pod hint cache, so it can scale out.
   replicas: 2
   selector:
     matchLabels:
@@ -15,12 +16,32 @@ spec:
       labels:
         app: opsacademy-ai-hub
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ai-hub
           image: opsacademy/ai-hub:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
+          env:
+            - name: PORT
+              value: "5000"
+            - name: AI_HUB_TOKEN
+              valueFrom:
+                secretKeyRef: { name: opsacademy-secrets, key: AI_HUB_TOKEN }
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef: { name: opsacademy-secrets, key: ANTHROPIC_API_KEY, optional: true }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
               memory: "256Mi"
@@ -28,12 +49,24 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "1000m"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /health
               port: 5000
             initialDelaySeconds: 15
             periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

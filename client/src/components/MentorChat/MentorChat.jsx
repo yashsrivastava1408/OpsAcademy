@@ -1,63 +1,59 @@
 import { useState } from 'react';
-import { Bot, Send, X, Sparkles, AlertOctagon, Loader } from 'lucide-react';
-import { agentApi } from '../../services/api';
+import { Bot, Send, X, Sparkles, AlertOctagon, Loader, ChevronsUp } from 'lucide-react';
+import { agentApi, errorMessage } from '../../services/api';
 import './MentorChat.css';
 
-export default function MentorChat({ unitId, currentStep, onClose }) {
+const TIER_LABELS = { 1: 'Nudge', 2: 'Diagnostic', 3: 'Syntax help' };
+
+/** Render `backticked` parts of a hint as inline code. */
+function renderInlineCode(text) {
+  return String(text).split('`').map((part, i) => (i % 2 === 1 ? <code key={i}>{part}</code> : part));
+}
+
+export default function MentorChat({ unitId, currentStep, stepTitle, sessionId, onClose }) {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState([
     {
       sender: 'mentor',
-      text: "👋 Hi! I'm your OpsAcademy AI Mentor. Stuck on a command or concept? Ask me for a hint anytime!",
+      text: "Hi! I'm your OpsAcademy mentor. Tell me where you're stuck. I start with a nudge, and you can ask for a stronger hint if you need one.",
     },
   ]);
   const [loading, setLoading] = useState(false);
+  const [lastQuestion, setLastQuestion] = useState('');
+  const [nextTier, setNextTier] = useState(null);
 
-  const handleSend = async (e) => {
-    e?.preventDefault();
-    if (!query.trim() || loading) return;
-
-    const userText = query.trim();
-    setQuery('');
-
-    // Append user message
-    setMessages((prev) => [...prev, { sender: 'user', text: userText }]);
+  const ask = async (text, tier) => {
+    setMessages((prev) => [...prev, { sender: 'user', text: tier ? `I need a stronger hint (${TIER_LABELS[tier]}).` : text }]);
     setLoading(true);
+    setNextTier(null);
 
     try {
-      const res = await agentApi.getHint(userText, unitId, currentStep);
-      const data = res.data?.data;
+      const res = await agentApi.getHint({ query: text, unitId, stepNumber: currentStep, sessionId, tier });
+      const data = res.data?.data || {};
 
-      if (data?.blocked) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            sender: 'mentor',
-            text: data.message || '🚫 Security Warning: Suspicious command detected.',
-            blocked: true,
-          },
-        ]);
+      if (data.blocked) {
+        setMessages((prev) => [...prev, { sender: 'mentor', text: data.message || 'I can\'t help with that command.', blocked: true }]);
       } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            sender: 'mentor',
-            text: data?.hint || '💡 Review the step instructions and check for syntax typos.',
-          },
-        ]);
+        setMessages((prev) => [...prev, { sender: 'mentor', text: data.hint, tier: data.tier, fallback: data.fallback }]);
+        setNextTier(data.nextTier);
       }
     } catch (err) {
-      console.error('Failed to get AI hint:', err);
       setMessages((prev) => [
         ...prev,
-        {
-          sender: 'mentor',
-          text: '💡 **Hint:** Check permissions with `ls -la` or verify command syntax.',
-        },
+        { sender: 'mentor', text: errorMessage(err, 'The mentor is unavailable right now. Please try again in a moment.'), blocked: true },
       ]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSend = (e) => {
+    e?.preventDefault();
+    const text = query.trim();
+    if (!text || loading) return;
+    setQuery('');
+    setLastQuestion(text);
+    ask(text);
   };
 
   return (
@@ -70,11 +66,11 @@ export default function MentorChat({ unitId, currentStep, onClose }) {
           <div>
             <h3>AI Mentor</h3>
             <span className="mentor-status-text">
-              <Sparkles size={12} /> RAG Guided (Multi-Agent)
+              <Sparkles size={12} /> Step {currentStep}{stepTitle ? `: ${stepTitle}` : ''}
             </span>
           </div>
         </div>
-        <button className="btn btn-ghost btn-icon" onClick={onClose}>
+        <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Close mentor">
           <X size={18} />
         </button>
       </div>
@@ -93,7 +89,13 @@ export default function MentorChat({ unitId, currentStep, onClose }) {
               </div>
             )}
             <div className="msg-bubble">
-              <p>{msg.text}</p>
+              {msg.tier && (
+                <span className={`msg-tier tier-${msg.tier}`}>
+                  Hint {msg.tier} of 3 · {TIER_LABELS[msg.tier]}
+                  {msg.fallback ? ' · offline mode' : ''}
+                </span>
+              )}
+              <p>{renderInlineCode(msg.text)}</p>
             </div>
           </div>
         ))}
@@ -105,9 +107,15 @@ export default function MentorChat({ unitId, currentStep, onClose }) {
             </div>
             <div className="msg-bubble loading-bubble">
               <Loader size={16} className="spin" />
-              <span>Analyzing container state & retrieving docs...</span>
+              <span>{sessionId ? 'Looking at your sandbox...' : 'Thinking...'}</span>
             </div>
           </div>
+        )}
+
+        {!loading && nextTier && lastQuestion && (
+          <button className="btn btn-secondary btn-sm mentor-escalate" onClick={() => ask(lastQuestion, nextTier)}>
+            <ChevronsUp size={14} /> Still stuck? Get a stronger hint ({TIER_LABELS[nextTier]})
+          </button>
         )}
       </div>
 
@@ -115,11 +123,12 @@ export default function MentorChat({ unitId, currentStep, onClose }) {
         <input
           type="text"
           className="input mentor-input"
-          placeholder="Ask AI mentor for a hint..."
+          placeholder="Describe where you're stuck, or paste the error..."
           value={query}
+          maxLength={1000}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <button type="submit" className="btn btn-primary btn-icon" disabled={loading || !query.trim()}>
+        <button type="submit" className="btn btn-primary btn-icon" disabled={loading || !query.trim()} aria-label="Send">
           <Send size={16} />
         </button>
       </form>

@@ -2,13 +2,18 @@ import { useState } from 'react';
 import { RotateCw, Sparkles } from 'lucide-react';
 import './Flashcard.css';
 
-export default function Flashcard({ card }) {
+export default function Flashcard({ card, onFlip }) {
   const [isFlipped, setIsFlipped] = useState(false);
 
   if (!card) return null;
 
+  const flip = () => {
+    setIsFlipped(!isFlipped);
+    if (onFlip) onFlip(!isFlipped);
+  };
+
   return (
-    <div className="flashcard-container" onClick={() => setIsFlipped(!isFlipped)}>
+    <div className="flashcard-container" onClick={flip}>
       <div className={`flashcard ${isFlipped ? 'flipped' : ''}`}>
         {/* Front */}
         <div className="flashcard-face flashcard-front glass-card">

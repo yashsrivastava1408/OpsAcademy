@@ -1,6 +1,7 @@
 .mentor-chat-drawer {
-  position: absolute;
-  top: 12px;
+  /* Sits below the navbar and the lab header so neither covers its title bar. */
+  position: fixed;
+  top: 142px;
   right: 12px;
   bottom: 12px;
   width: 360px;
@@ -139,4 +140,46 @@
   flex: 1;
   font-size: 0.82rem !important;
   padding: 8px 12px !important;
+}
+
+/* ── Hint tiers ───────────────────────────────────────────── */
+.msg-bubble p {
+  white-space: pre-wrap;
+}
+
+.msg-tier {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.msg-tier.tier-1 { background: var(--accent-cyan-dim); color: var(--accent-cyan); }
+.msg-tier.tier-2 { background: var(--accent-orange-dim); color: var(--accent-orange); }
+.msg-tier.tier-3 { background: var(--accent-purple-dim); color: #a78bfa; }
+
+.mentor-escalate {
+  align-self: flex-start;
+  margin-left: 36px;
+}
+
+.mentor-escalate {
+  max-width: calc(100% - 36px);
+  height: auto;
+  white-space: normal;
+  text-align: left;
+}
+
+.msg-bubble code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  word-break: break-word;
 }
