@@ -1,4 +1,4 @@
 # Optional: sentence embeddings for the knowledge retriever (agents/embedder.py).
 # Install on top of requirements.txt. The first start downloads the model
 # (about 90 MB) into MODEL_CACHE_DIR; the hub needs about 450 MB more memory.
-fastembed>=0.4,<1
+fastembed>=0.8.1,<1
