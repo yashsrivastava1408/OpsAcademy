@@ -69,8 +69,8 @@ export default function DevOpsInspector({
   const [isMinimized, setIsMinimized] = useState(false);
 
   // Draggable State
-  // Starts below the lab header so it does not cover the Start / Verify buttons.
-  const [pos, setPos] = useState(() => ({ x: Math.max(10, window.innerWidth - 370), y: 160 }));
+  // Starts below the lab header and its warning banners, so it covers none of their buttons.
+  const [pos, setPos] = useState(() => ({ x: Math.max(10, window.innerWidth - 370), y: 200 }));
 
   const tipData = RECRUITER_QUICK_TIPS[unitId] || RECRUITER_QUICK_TIPS.default;
 

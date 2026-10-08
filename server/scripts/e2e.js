@@ -124,6 +124,8 @@ async function main() {
   await term.run('pwd');
   await term.run('ls -la');
   check('terminal runs commands and streams output', term.output.includes('__done_2_2'));
+  // Step 1 is checked through the saved listing of the top-level directories.
+  await term.run(`ls / > ${home}/root-dirs.txt`);
 
   await term.run('mkdir webapp');
   await term.run('mkdir webapp/src');
@@ -160,6 +162,11 @@ async function main() {
   await term.run(`for i in $(seq 1 50); do echo "Line $i: $([ $((i % 3)) -eq 0 ] && echo ERROR || echo INFO) message" >> ${home}/app.log; done`);
   await term.run(`grep ERROR ${home}/app.log | wc -l`);
   check('step 5 passes after creating the log', await stepPassed(5));
+
+  // Step 6: start a background process, record it in a file, then stop it (one line, so $! is that process).
+  check('step 6 fails before the process is recorded', (await stepPassed(6)) === false);
+  await term.run(`sleep 300 & sleep 1; ps aux | grep '[s]leep 300' > ${home}/sleep-proc.txt; kill $!`);
+  check('step 6 passes after recording the background process', await stepPassed(6));
 
   check('step 7 fails before the script exists', (await stepPassed(7)) === false);
   await term.run(`cd ${home} && echo '#!/bin/bash' > heartbeat.sh && echo 'date >> ${home}/heartbeat.log' >> heartbeat.sh`);

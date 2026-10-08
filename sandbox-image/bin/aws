@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""
+aws: the OpsAcademy simulator.
+
+The sandbox has no network, so there is no AWS to talk to. This script keeps
+a pretend account in ~/.opsacademy/aws.json: one IAM user called `student`,
+and whatever S3 buckets and objects the student creates. Object contents
+are stored, so a file copied up can be copied back down.
+"""
+
+import sys
+
+sys.dont_write_bytecode = True
+
+import base64
+import json
+import os
+import re
+import time
+
+import _opsim
+
+TOOL = "aws"
+VERSION = "2.17.0"
+ACCOUNT = "123456789012"
+USER = "student"
+USER_ARN = "arn:aws:iam::%s:user/%s" % (ACCOUNT, USER)
+REGION = "us-east-1"
+SUPPORTED = ["--version", "sts get-caller-identity", "s3 ls", "s3 mb", "s3 cp", "s3 rm", "s3 rb", "iam list-users",
+             "iam get-user", "iam list-attached-user-policies", "iam get-policy", "iam get-policy-version", "configure list"]
+
+MAX_OBJECT_BYTES = 1024 * 1024       # one object
+MAX_ACCOUNT_BYTES = 5 * 1024 * 1024  # everything the student stores (the home directory is a small tmpfs)
+
+USERS = [
+    {"Path": "/", "UserName": USER, "UserId": "AIDAOPSACADEMYSTUDENT", "Arn": USER_ARN, "CreateDate": "2026-01-15T09:30:00+00:00"},
+    {"Path": "/service/", "UserName": "ci-deployer", "UserId": "AIDAOPSACADEMYCIDEPLOY",
+     "Arn": "arn:aws:iam::%s:user/service/ci-deployer" % ACCOUNT, "CreateDate": "2026-02-03T14:05:00+00:00"},
+]
+
+# The managed policies attached to each user, with the document `get-policy-version` shows.
+POLICIES = {
+    "AmazonS3FullAccess": {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": ["s3:*", "s3-object-lambda:*"], "Resource": "*"}]},
+    "IAMReadOnlyAccess": {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": ["iam:GenerateCredentialReport", "iam:GenerateServiceLastAccessedDetails", "iam:Get*",
+                                       "iam:List*", "iam:SimulateCustomPolicy", "iam:SimulatePrincipalPolicy"], "Resource": "*"}]},
+    "AmazonEC2ContainerRegistryPowerUser": {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": ["ecr:GetAuthorizationToken", "ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer",
+                                       "ecr:BatchGetImage", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart",
+                                       "ecr:CompleteLayerUpload", "ecr:PutImage"], "Resource": "*"}]},
+}
+ATTACHED = {USER: ["AmazonS3FullAccess", "IAMReadOnlyAccess"], "ci-deployer": ["AmazonEC2ContainerRegistryPowerUser"]}
+
+
+class Failure(Exception):
+    """An error to print and exit with, the way the real CLI reports it."""
+
+    def __init__(self, message, code=254):
+        Exception.__init__(self, message)
+        self.code = code
+
+
+def api_error(code, operation, message):
+    return Failure("\nAn error occurred (%s) when calling the %s operation: %s" % (code, operation, message))
+
+
+def usage_error(message):
+    return Failure("\nusage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]\n"
+                   "To see help text, you can run:\n\n  aws help\n  aws <command> help\n  aws <command> <subcommand> help\n\n"
+                   "aws: error: %s\n" % message, 252)
+
+
+# ── --query and --output ─────────────────────────────────────
+
+def query(data, expression):
+    """
+    A small part of JMESPath: Key, A.B, Users[0].Arn, Users[*].UserName, Users[].Arn.
+    Once a [*] or [] has been passed, the rest applies to every element.
+    """
+    if not re.match(r"^([A-Za-z_][\w-]*)?(\[(-?\d+|\*)?\])*(\.[A-Za-z_][\w-]*(\[(-?\d+|\*)?\])*)*$", expression):
+        raise Failure("\nBad value for --query %s: the %s understands paths such as Arn, User.Arn, Users[0].Arn "
+                      "and Users[*].UserName\n" % (expression, _opsim.SIM_NAME), 255)
+    current, projecting = data, False
+    for name, index in re.findall(r"([A-Za-z_][\w-]*)|\[(-?\d+|\*|)\]", expression):
+        def step(node):
+            if name:
+                return node.get(name) if isinstance(node, dict) else None
+            if not isinstance(node, list):
+                return None
+            if index in ("*", ""):
+                return node
+            return node[int(index)] if -len(node) <= int(index) < len(node) else None
+        if projecting:
+            current = [value for value in (step(item) for item in current) if value is not None]
+        else:
+            current = step(current)
+            if current is None:
+                return None
+        if not name and index in ("*", "") and not projecting:
+            projecting = True
+    return current
+
+
+def text_cell(value):
+    if value is None:
+        return "None"
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    return str(value)
+
+
+def to_text(value, label=None):
+    """The CLI's --output text: tab-separated values, nested lists on their own labelled lines."""
+    lines = []
+    if isinstance(value, dict):
+        scalars = [text_cell(value[key]) for key in sorted(value) if not isinstance(value[key], (dict, list))]
+        if scalars or label:
+            lines.append("\t".join(([label] if label else []) + scalars))
+        for key in sorted(value):
+            if isinstance(value[key], (dict, list)):
+                lines += to_text(value[key], key.upper())
+    elif isinstance(value, list):
+        if all(not isinstance(item, (dict, list)) for item in value):
+            lines.append("\t".join(([label] if label else []) + [text_cell(item) for item in value]))
+        else:
+            for item in value:
+                lines += to_text(item, label)
+    else:
+        lines.append(text_cell(value))
+    return lines
+
+
+def emit(data, options):
+    """Print an API answer the way --query and --output ask."""
+    if "query" in options:
+        data = query(data, options["query"])
+    output = options.get("output", "json")
+    if output == "text":
+        print("\n".join(to_text(data)))
+    elif output == "json":
+        print(json.dumps(data, indent=4))
+    else:
+        raise Failure("\n--output %s is not available in the %s. Supported: json, text\n" % (output, _opsim.SIM_NAME), 252)
+
+
+# ── S3 ───────────────────────────────────────────────────────
+
+def bucket_name_ok(name):
+    """The real S3 naming rules for general purpose buckets."""
+    if not 3 <= len(name) <= 63:
+        return False
+    if not re.match(r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$", name):
+        return False
+    if ".." in name or re.match(r"^\d{1,3}(\.\d{1,3}){3}$", name):
+        return False
+    if name.startswith(("xn--", "sthree-", "amzn-s3-demo-")):
+        return False
+    return not name.endswith(("-s3alias", "--ol-s3", ".mrap", "--x-s3"))
+
+
+def split_uri(uri):
+    """'s3://bucket/some/key' -> ('bucket', 'some/key')."""
+    bucket, _, key = uri[len("s3://"):].partition("/")
+    return bucket, key
+
+
+def stamp(seconds):
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(seconds))
+
+
+def need_bucket(state, name, operation):
+    if name not in state["buckets"]:
+        raise api_error("NoSuchBucket", operation, "The specified bucket does not exist")
+    return state["buckets"][name]
+
+
+def shown_path(path):
+    """Local paths are printed relative to the current folder, as the real CLI does."""
+    relative = os.path.relpath(path)
+    return relative if relative.startswith("..") else "./" + relative
+
+
+def s3_ls(state, words, flags):
+    if not words:
+        for name in sorted(state["buckets"]):
+            print("%s %s" % (stamp(state["buckets"][name]["created"]), name))
+        return 0
+    if not words[0].startswith("s3://"):
+        words[0] = "s3://" + words[0]
+    name, prefix = split_uri(words[0])
+    objects = need_bucket(state, name, "ListObjectsV2")["objects"]
+    folders, rows = set(), []
+    for key in sorted(objects):
+        if not key.startswith(prefix):
+            continue
+        rest = key[len(prefix):]
+        if "/" in rest and "--recursive" not in flags:
+            folders.add(rest.split("/")[0] + "/")
+        else:
+            rows.append("%s %10d %s" % (stamp(objects[key]["modified"]), objects[key]["size"], key if "--recursive" in flags else rest))
+    for folder in sorted(folders):
+        print("%s PRE %s" % (" " * 26, folder))
+    for row in rows:
+        print(row)
+    # Like the real CLI: asking for a prefix that matches nothing exits 1.
+    return 0 if folders or rows or not prefix else 1
+
+
+def s3_mb(state, words, _flags):
+    if len(words) != 1 or not words[0].startswith("s3://"):
+        raise usage_error("the following arguments are required: paths" if not words else "Invalid argument type")
+    name = split_uri(words[0])[0]
+    if not bucket_name_ok(name):
+        raise Failure("make_bucket failed: %s An error occurred (InvalidBucketName) when calling the CreateBucket operation: "
+                      "The specified bucket is not valid." % words[0], 1)
+    if name in state["buckets"]:
+        raise Failure("make_bucket failed: %s An error occurred (BucketAlreadyOwnedByYou) when calling the CreateBucket operation: "
+                      "Your previous request to create the named bucket succeeded and you already own it." % words[0], 1)
+    state["buckets"][name] = {"created": time.time(), "objects": {}}
+    print("make_bucket: %s" % name)
+    return 0
+
+
+def stored_bytes(state):
+    return sum(item["size"] for bucket in state["buckets"].values() for item in bucket["objects"].values())
+
+
+def put_object(state, bucket, key, data, label):
+    if len(data) > MAX_OBJECT_BYTES:
+        raise Failure("upload failed: %s (%s: objects are limited to 1 MB)" % (label, _opsim.SIM_NAME), 1)
+    if stored_bytes(state) + len(data) > MAX_ACCOUNT_BYTES:
+        raise Failure("upload failed: %s (%s: this account can store 5 MB in total)" % (label, _opsim.SIM_NAME), 1)
+    bucket["objects"][key] = {"size": len(data), "modified": time.time(), "body": base64.b64encode(data).decode()}
+
+
+def get_object(state, uri):
+    name, key = split_uri(uri)
+    objects = need_bucket(state, name, "HeadObject")["objects"]
+    if key not in objects:
+        raise Failure('fatal error: An error occurred (404) when calling the HeadObject operation: Key "%s" does not exist' % key, 1)
+    return base64.b64decode(objects[key]["body"])
+
+
+def s3_cp(state, words, flags):
+    if len(words) != 2:
+        raise usage_error("the following arguments are required: paths")
+    source, dest = words
+    from_s3, to_s3 = source.startswith("s3://"), dest.startswith("s3://")
+    if not from_s3 and not to_s3:
+        raise Failure("\nusage: aws s3 cp <LocalPath> <S3Uri> or <S3Uri> <LocalPath> or <S3Uri> <S3Uri>\n"
+                      "Error: Invalid argument type", 252)
+
+    def target_key(uri, filename):
+        name, key = split_uri(uri)
+        return name, key + filename if key == "" or key.endswith("/") else key
+
+    if to_s3 and not from_s3:
+        if not os.path.exists(source):
+            raise Failure("\nThe user-provided path %s does not exist." % source, 255)
+        if os.path.isdir(source):
+            if "--recursive" not in flags:
+                raise Failure("upload failed: %s to %s Parameter validation failed:\nInvalid length for parameter Key, value: 0, valid min length: 1"
+                              % (shown_path(source), dest), 1)
+            name, prefix = split_uri(dest)
+            bucket = need_bucket(state, name, "PutObject")
+            if prefix and not prefix.endswith("/"):
+                prefix += "/"
+            for folder, _dirs, names in os.walk(source):
+                for filename in sorted(names):
+                    path = os.path.join(folder, filename)
+                    key = prefix + os.path.relpath(path, source).replace(os.sep, "/")
+                    label = "%s to s3://%s/%s" % (shown_path(path), name, key)
+                    with open(path, "rb") as handle:
+                        put_object(state, bucket, key, handle.read(MAX_OBJECT_BYTES + 1), label)
+                    print("upload: " + label)
+            return 0
+        name, key = target_key(dest, os.path.basename(source))
+        bucket = need_bucket(state, name, "PutObject")
+        label = "%s to s3://%s/%s" % (shown_path(source), name, key)
+        with open(source, "rb") as handle:
+            put_object(state, bucket, key, handle.read(MAX_OBJECT_BYTES + 1), label)
+        print("upload: " + label)
+    elif from_s3 and not to_s3:
+        data = get_object(state, source)
+        if dest == "-":
+            sys.stdout.flush()
+            sys.stdout.buffer.write(data)
+            return 0
+        filename = split_uri(source)[1].split("/")[-1]
+        path = os.path.join(dest, filename) if os.path.isdir(dest) or dest.endswith("/") else dest
+        folder = os.path.dirname(path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        with open(path, "wb") as handle:
+            handle.write(data)
+        print("download: %s to %s" % (source, shown_path(path)))
+    else:
+        data = get_object(state, source)
+        name, key = target_key(dest, split_uri(source)[1].split("/")[-1])
+        put_object(state, need_bucket(state, name, "CopyObject"), key, data, "%s to s3://%s/%s" % (source, name, key))
+        print("copy: %s to s3://%s/%s" % (source, name, key))
+    return 0
+
+
+def s3_rm(state, words, flags):
+    if len(words) != 1 or not words[0].startswith("s3://"):
+        raise usage_error("the following arguments are required: paths")
+    name, key = split_uri(words[0])
+    objects = need_bucket(state, name, "DeleteObject")["objects"]
+    if "--recursive" in flags:
+        for existing in sorted(k for k in objects if k.startswith(key)):
+            del objects[existing]
+            print("delete: s3://%s/%s" % (name, existing))
+        return 0
+    if not key:
+        raise Failure("\nParameter validation failed:\nInvalid length for parameter Key, value: 0, valid min length: 1", 252)
+    # Deleting a key that is not there succeeds, as in S3.
+    objects.pop(key, None)
+    print("delete: s3://%s/%s" % (name, key))
+    return 0
+
+
+def s3_rb(state, words, flags):
+    if len(words) != 1 or not words[0].startswith("s3://"):
+        raise usage_error("the following arguments are required: path")
+    name = split_uri(words[0])[0]
+    if name not in state["buckets"]:
+        raise Failure("remove_bucket failed: %s An error occurred (NoSuchBucket) when calling the DeleteBucket operation: "
+                      "The specified bucket does not exist" % words[0], 1)
+    objects = state["buckets"][name]["objects"]
+    if objects and "--force" not in flags:
+        raise Failure("remove_bucket failed: %s An error occurred (BucketNotEmpty) when calling the DeleteBucket operation: "
+                      "The bucket you tried to delete is not empty" % words[0], 1)
+    for key in sorted(objects):
+        print("delete: s3://%s/%s" % (name, key))
+    del state["buckets"][name]
+    print("remove_bucket: %s" % name)
+    _opsim.record(state, "s3.rb:" + name)
+    return 0
+
+
+# ── IAM and STS ──────────────────────────────────────────────
+
+def find_user(name, operation):
+    for user in USERS:
+        if user["UserName"] == name:
+            return user
+    raise api_error("NoSuchEntity", operation, "The user with name %s cannot be found." % name)
+
+
+def policy_from_arn(arn, operation):
+    name = (arn or "").rsplit("/", 1)[-1]
+    if not (arn or "").startswith("arn:aws:iam::aws:policy/") or name not in POLICIES:
+        raise api_error("NoSuchEntity", operation, "Policy %s was not found." % arn)
+    return name
+
+
+def required(params, name):
+    if name not in params:
+        raise usage_error("the following arguments are required: --%s" % name)
+    return params[name]
+
+
+def iam(state, operation, params, options):
+    if operation == "list-users":
+        emit({"Users": USERS}, options)
+    elif operation == "get-user":
+        emit({"User": find_user(params.get("user-name", USER), "GetUser")}, options)
+    elif operation == "list-attached-user-policies":
+        user = find_user(required(params, "user-name"), "ListAttachedUserPolicies")
+        emit({"AttachedPolicies": [{"PolicyName": name, "PolicyArn": "arn:aws:iam::aws:policy/" + name}
+                                   for name in ATTACHED[user["UserName"]]]}, options)
+    elif operation == "get-policy":
+        arn = required(params, "policy-arn")
+        name = policy_from_arn(arn, "GetPolicy")
+        emit({"Policy": {"PolicyName": name, "PolicyId": "ANPA" + _opsim.hex_id(name, 17).upper(), "Arn": arn, "Path": "/",
+                         "DefaultVersionId": "v1", "AttachmentCount": len([u for u in ATTACHED.values() if name in u]),
+                         "IsAttachable": True, "CreateDate": "2015-02-06T18:40:58+00:00"}}, options)
+    elif operation == "get-policy-version":
+        name = policy_from_arn(required(params, "policy-arn"), "GetPolicyVersion")
+        version = required(params, "version-id")
+        if version != "v1":
+            raise api_error("NoSuchEntity", "GetPolicyVersion", "Policy version %s was not found." % version)
+        emit({"PolicyVersion": {"Document": POLICIES[name], "VersionId": "v1", "IsDefaultVersion": True,
+                                "CreateDate": "2015-02-06T18:40:58+00:00"}}, options)
+    else:
+        return None
+    return 0
+
+
+def configure(args):
+    if args[:1] == ["list"]:
+        print("      Name                    Value             Type    Location\n"
+              "      ----                    -----             ----    --------\n"
+              "   profile                <not set>             None    None\n"
+              "access_key     ****************SIMU      simulator    %s\n"
+              "secret_key     ****************SIMU      simulator    %s\n"
+              "    region                %s      simulator    %s" % (_opsim.SIM_NAME, _opsim.SIM_NAME, REGION, _opsim.SIM_NAME))
+        return 0
+    if args[:2] == ["get", "region"]:
+        print(REGION)
+        return 0
+    return None
+
+
+# ── Entry point ──────────────────────────────────────────────
+
+GLOBAL_VALUE_FLAGS = ("--query", "--output", "--region", "--profile", "--endpoint-url", "--color", "--cli-read-timeout", "--cli-connect-timeout")
+GLOBAL_BOOL_FLAGS = ("--no-cli-pager", "--debug", "--no-verify-ssl", "--no-paginate", "--no-sign-request", "--no-cli-auto-prompt")
+
+
+def main(argv):
+    state = _opsim.load_state(TOOL, {"ran": {}, "buckets": {}})
+    if argv and argv[0] == "__ran":
+        return _opsim.ran_check(state, argv[1:])
+    if "--version" in argv:
+        print("aws-cli/%s Python/%d.%d.%d %s (%s)" % ((VERSION,) + tuple(sys.version_info[:3]) + ("Linux/sandbox exe/x86_64", _opsim.SIM_NAME)))
+        _opsim.record(state, "--version")
+        _opsim.save_state(TOOL, state)
+        return 0
+
+    # Global options may appear anywhere; everything else is words, --flags and --name value pairs.
+    options, words, flags, params = {}, [], [], {}
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        key, has_value, value = arg.partition("=")
+        if key in GLOBAL_VALUE_FLAGS or (key.startswith("--") and key not in GLOBAL_BOOL_FLAGS
+                                         and key not in ("--recursive", "--force", "--quiet", "--dryrun", "--only-show-errors")):
+            if not has_value:
+                index += 1
+                if index >= len(argv):
+                    raise usage_error("argument %s: expected one argument" % key)
+                value = argv[index]
+            (options if key in GLOBAL_VALUE_FLAGS else params)[key[2:]] = value
+        elif arg.startswith("--"):
+            flags.append(arg)
+        else:
+            words.append(arg)
+        index += 1
+
+    if not words or words[0] == "help":
+        if not words:
+            raise usage_error("the following arguments are required: command")
+        print("aws: the %s.\n\nSupported commands:\n  aws %s" % (_opsim.SIM_NAME, "\n  aws ".join(SUPPORTED)))
+        return 0
+    service, operation, rest = words[0], (words[1] if len(words) > 1 else ""), words[2:]
+    code = None
+    if service == "s3" and operation in ("ls", "mb", "cp", "rm", "rb"):
+        code = {"ls": s3_ls, "mb": s3_mb, "cp": s3_cp, "rm": s3_rm, "rb": s3_rb}[operation](state, rest, flags)
+    elif service == "sts" and operation == "get-caller-identity":
+        emit({"UserId": USERS[0]["UserId"], "Account": ACCOUNT, "Arn": USER_ARN}, options)
+        code = 0
+    elif service == "iam":
+        code = iam(state, operation, params, options)
+    elif service == "configure":
+        code = configure(words[1:])
+        operation = operation or "interactive"
+    if code is None:
+        return _opsim.unsupported(TOOL, " ".join(words[:2]), SUPPORTED)
+    if code == 0:
+        _opsim.record(state, "%s.%s" % (service, operation))
+    _opsim.save_state(TOOL, state)
+    return code
+
+
+def guarded(argv):
+    try:
+        return main(argv)
+    except Failure as error:
+        sys.stderr.write(str(error).rstrip("\n") + "\n")
+        return error.code
+
+
+if __name__ == "__main__":
+    _opsim.run(guarded)

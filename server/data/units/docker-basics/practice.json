@@ -9,8 +9,8 @@
         "Run `docker info` to check Docker status"
       ],
       "verification": {
-        "command": "docker --version",
-        "expectedOutput": "Docker version",
+        "command": "docker __ran --version && docker __ran info && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
         "check": "contains"
       }
     },
@@ -24,7 +24,7 @@
         "List all containers (even stopped ones): `docker ps -a`"
       ],
       "verification": {
-        "command": "docker ps -a | grep alpine && echo PASS || echo FAIL",
+        "command": "docker images | grep -q alpine && docker ps -a | grep alpine | grep -q Exited && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -34,12 +34,12 @@
       "title": "Run a Background Web Server",
       "description": "Launch an Nginx web server container running in the background (detached mode) and map port 8080 on your host to port 80 in the container.",
       "tasks": [
-        "Run Nginx in detached mode: `docker run -d --name my-webserver -p 8080:80 nginx`",
+        "Run Nginx in detached mode: `docker run -d --name my-webserver -p 8080:80 nginx` (if Docker reports that the port is already allocated, pick another host port, for example 8081, and use it in the next tasks)",
         "Check running containers with `docker ps`",
         "Test the web server response: `curl localhost:8080`"
       ],
       "verification": {
-        "command": "docker ps | grep my-webserver && echo PASS || echo FAIL",
+        "command": "p=$(docker port my-webserver 80 2>/dev/null | cut -d: -f2) && test -n \"$p\" && curl -s -m 2 \"http://127.0.0.1:$p/\" | grep -qi nginx && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -55,7 +55,7 @@
         "View container logs: `docker logs my-webserver`"
       ],
       "verification": {
-        "command": "docker logs my-webserver 2>&1 | head -1 | grep -q '' && echo PASS || echo FAIL",
+        "command": "docker __ran exec && docker __ran logs && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -69,10 +69,11 @@
         "Create an index.html: `echo '<h1>Built with OpsAcademy!</h1>' > index.html`",
         "Create a Dockerfile: `echo 'FROM nginx:alpine' > Dockerfile && echo 'COPY index.html /usr/share/nginx/html/' >> Dockerfile`",
         "Build the image: `docker build -t myapp:v1 .`",
-        "Run it: `docker run -d --name myapp -p 9090:80 myapp:v1`"
+        "Run it: `docker run -d --name myapp -p 9090:80 myapp:v1`",
+        "Check that it serves your page: `curl localhost:9090`"
       ],
       "verification": {
-        "command": "docker images | grep myapp && docker ps | grep myapp && echo PASS || echo FAIL",
+        "command": "docker images | grep -q myapp && p=$(docker port myapp 80 2>/dev/null | cut -d: -f2) && test -n \"$p\" && curl -s -m 2 \"http://127.0.0.1:$p/\" | grep -q OpsAcademy && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -85,10 +86,10 @@
         "Check container resource usage: `docker stats --no-stream`",
         "Stop all running containers: `docker stop my-webserver myapp`",
         "Remove stopped containers: `docker rm my-webserver myapp`",
-        "Verify cleanup: `docker ps -a` should show no containers"
+        "Verify cleanup: `docker ps -a` should no longer list `my-webserver` or `myapp`"
       ],
       "verification": {
-        "command": "docker ps -a | grep -E 'my-webserver|myapp' && echo FAIL || echo PASS",
+        "command": "docker __ran stats && docker __ran rm:my-webserver && docker __ran rm:myapp && ! docker ps -a | grep -qE 'my-webserver|myapp' && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

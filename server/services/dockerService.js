@@ -11,6 +11,7 @@
 
 const Docker = require('dockerode');
 const fs = require('fs');
+const { StringDecoder } = require('string_decoder');
 const config = require('../config');
 const logger = require('../lib/logger');
 
@@ -218,7 +219,13 @@ async function attach(engineId) {
 
   return {
     onData(callback) {
-      stream.on('data', (chunk) => callback(chunk.toString('utf8')));
+      // A chunk can end in the middle of a multi-byte character (an accented
+      // letter, a box-drawing line); the decoder holds the tail until the rest arrives.
+      const decoder = new StringDecoder('utf8');
+      stream.on('data', (chunk) => {
+        const text = decoder.write(chunk);
+        if (text) callback(text);
+      });
     },
     write(data) {
       if (!stream.destroyed) stream.write(data);

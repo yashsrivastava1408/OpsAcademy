@@ -6,10 +6,51 @@
 
 const express = require('express');
 const { requireAdmin } = require('../middleware/auth');
+const config = require('../config');
 const { getManager } = require('../services/sandboxManager');
+const { getHubClient } = require('../services/aiHubClient');
+const { getStore } = require('../lib/store');
+const { getMailer } = require('../lib/mailer');
+const userService = require('../services/userService');
+const progressService = require('../services/progressService');
 
 const router = express.Router();
 router.use(requireAdmin);
+
+/**
+ * GET /api/admin/overview
+ * One screen of operator numbers: sandboxes, accounts, and what is configured
+ */
+router.get('/overview', async (req, res, next) => {
+  try {
+    const manager = getManager();
+    res.json({
+      success: true,
+      data: {
+        uptimeSeconds: Math.round(process.uptime()),
+        sandbox: manager.stats(),
+        sandboxes: manager.listSessions(),
+        users: userService.counts(),
+        progress: progressService.totals(),
+        certificates: getStore().all('certificates').length,
+        services: {
+          aiHub: await getHubClient().isHealthy(),
+          storeDriver: config.storeDriver,
+          storeWritable: getStore().isWritable(),
+          emailDelivers: getMailer().delivers,
+        },
+        limits: {
+          maxPerUser: config.sandbox.maxPerUser,
+          maxTotal: config.sandbox.maxTotal,
+          maxSessionMinutes: config.sandbox.maxSessionMinutes,
+          maxInactivityMinutes: config.sandbox.maxInactivityMinutes,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * GET /api/admin/sandboxes

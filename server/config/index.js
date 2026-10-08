@@ -62,6 +62,15 @@ const config = {
   // If set, /metrics requires `Authorization: Bearer <token>`.
   metricsToken: process.env.METRICS_TOKEN || null,
 
+  // Email. Without a provider key the links are only written to the log.
+  mail: {
+    driver: (process.env.MAIL_DRIVER || (process.env.RESEND_API_KEY ? 'resend' : (env === 'test' ? 'memory' : 'log'))).toLowerCase(),
+    resendApiKey: process.env.RESEND_API_KEY || null,
+    from: process.env.MAIL_FROM || 'OpsAcademy <onboarding@resend.dev>',
+  },
+  // Where links in emails point (the web app, not this API).
+  appUrl: (process.env.APP_URL || process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, ''),
+
   // AI Hub
   aiHubUrl: normaliseUrl(process.env.AI_HUB_URL, int('AI_HUB_PORT', 5000)),
   aiHubToken: process.env.AI_HUB_TOKEN || null,
@@ -75,8 +84,13 @@ const config = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   corsOrigins: list('CORS_ORIGINS', process.env.CLIENT_URL ? [process.env.CLIENT_URL] : null),
 
-  // Persistence (JSON file store). Set DATA_DIR to a mounted volume in production.
+  // "Lab of the day" bonus on the dashboard. DAILY_CHALLENGE=off disables it.
+  dailyChallenge: process.env.DAILY_CHALLENGE !== 'off',
+
+  // Persistence. Set DATA_DIR to a mounted volume in production.
+  // STORE_DRIVER: 'json' (one file, the default) or 'sqlite' (one row per document).
   dataDir: process.env.DATA_DIR || path.join(__dirname, '..', '.data'),
+  storeDriver: (process.env.STORE_DRIVER || 'json').toLowerCase(),
 
   rateLimit: {
     windowMs: 60 * 1000,
@@ -108,6 +122,9 @@ const config = {
     dockerImage: process.env.SANDBOX_IMAGE || 'opsacademy-sandbox:latest',
     dockerSeccompProfile: process.env.SANDBOX_SECCOMP_PROFILE || null,
     sandboxesDir: process.env.SANDBOXES_DIR || path.join(__dirname, '..', 'sandboxes'),
+    // The lab simulators (docker, kubectl, aws). The sandbox image has them in
+    // /usr/local/bin; PTY shells get this folder put first on their PATH.
+    toolsDir: process.env.SANDBOX_TOOLS_DIR || path.join(__dirname, '..', '..', 'sandbox-image', 'bin'),
     defaultShell: process.env.SANDBOX_SHELL || (os.platform() === 'darwin' ? '/bin/zsh' : '/bin/sh'),
     // Commands blocked by the terminal tripwire before the session is reaped.
     maxStrikes: 3,

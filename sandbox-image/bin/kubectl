@@ -1,0 +1,1087 @@
+#!/usr/bin/env python3
+"""
+kubectl: the OpsAcademy simulator.
+
+There is no cluster in the sandbox. This script keeps a one-node pretend
+cluster in ~/.opsacademy/kubectl.json and answers the kubectl commands the
+labs teach. Deployments own pods, scaling adds and removes them, and a
+deleted pod that a Deployment owns is replaced, as in a real cluster.
+"""
+
+import sys
+
+sys.dont_write_bytecode = True
+
+import json
+import random
+import re
+import time
+
+import _opsim
+from _opsim import FakeShell, ShellExit, hex_id, k8s_age, table
+
+TOOL = "kubectl"
+VERSION = "v1.30.2"
+NODE = "opsacademy-control-plane"
+SUPPORTED = ["version", "cluster-info", "get", "run", "create", "scale", "expose", "describe", "logs", "exec",
+             "top", "delete", "apply", "rollout", "config"]
+
+# How long a new pod shows ContainerCreating before it is Running.
+STARTUP_SECONDS = 2.0
+
+# Every spelling of a resource type -> (plural, singular, name used in messages and `-o name`).
+KINDS = {}
+for _plural, _singular, _short, _api in (
+        ("pods", "pod", "po", "pod"), ("deployments", "deployment", "deploy", "deployment.apps"),
+        ("services", "service", "svc", "service"), ("nodes", "node", "no", "node"),
+        ("namespaces", "namespace", "ns", "namespace"), ("replicasets", "replicaset", "rs", "replicaset.apps")):
+    for _alias in (_plural, _singular, _short, _plural + ".apps", _singular + ".apps"):
+        KINDS[_alias] = (_plural, _singular, _api)
+NOT_FOUND_GROUP = {"pods": "pods", "deployments": "deployments.apps", "services": "services", "nodes": "nodes",
+                   "namespaces": "namespaces", "replicasets": "replicasets.apps"}
+SYSTEM_NAMESPACES = ["default", "kube-node-lease", "kube-public", "kube-system"]
+SYSTEM_PODS = ["coredns-7db6d8ff4d-4xk2p", "coredns-7db6d8ff4d-9tq7m", "etcd-" + NODE, "kube-apiserver-" + NODE,
+               "kube-controller-manager-" + NODE, "kube-proxy-x7kqp", "kube-scheduler-" + NODE]
+SUFFIX_LETTERS = "bcdfghjklmnpqrstvwxz2456789"
+
+
+class Failure(Exception):
+    """An error to show the student as it is, with exit code 1."""
+
+
+class UsageError(Exception):
+    """A bad flag on the command line."""
+
+
+def fail(message, code=1):
+    sys.stderr.write(message.rstrip("\n") + "\n")
+    return code
+
+
+def load():
+    state = _opsim.load_state(TOOL, {"ran": {}, "pods": [], "deployments": [], "services": [], "namespaces": [], "started": 0.0})
+    if not state["started"]:
+        # The pretend cluster has been up for three days when first used.
+        state["started"] = time.time() - 3 * 86400
+    return state
+
+
+def iso(stamp):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(stamp))
+
+
+# ── Argument parsing ─────────────────────────────────────────
+
+VALUE_FLAGS = {"-n": "namespace", "--namespace": "namespace", "-l": "selector", "--selector": "selector", "-o": "output",
+               "--output": "output", "-f": "filename", "--filename": "filename", "--image": "image", "--replicas": "replicas",
+               "--port": "port", "--target-port": "target-port", "--type": "type", "--name": "name", "-c": "container",
+               "--container": "container", "--tail": "tail", "--labels": "labels", "--restart": "restart",
+               "--grace-period": "grace-period", "--since": "since"}
+BOOL_FLAGS = {"-A": "all-namespaces", "--all-namespaces": "all-namespaces", "--client": "client", "--all": "all",
+              "--show-labels": "show-labels", "--no-headers": "no-headers", "-w": "watch", "--watch": "watch",
+              "-f": "follow", "--follow": "follow", "-i": "stdin", "-t": "tty", "-it": "tty", "-ti": "tty",
+              "--stdin": "stdin", "--tty": "tty", "--force": "force", "--now": "now", "--short": "short", "--containers": "containers"}
+
+
+def parse(args, file_flag=True):
+    """Split args into (positional words, options, words after `--`)."""
+    words, options, after = [], {}, []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            after = args[index + 1:]
+            break
+        key, has_value, value = arg.partition("=")
+        if arg == "-f" and not file_flag:
+            options["follow"] = True
+        elif key in VALUE_FLAGS:
+            if not has_value:
+                index += 1
+                if index >= len(args):
+                    raise UsageError("flag needs an argument: %s" % arg)
+                value = args[index]
+            options[VALUE_FLAGS[key]] = value
+        elif arg.startswith("-o") and len(arg) > 2 and not arg.startswith("--"):
+            options["output"] = arg[2:]
+        elif arg.startswith("-n") and len(arg) > 2 and not arg.startswith("--"):
+            options["namespace"] = arg[2:]
+        elif key in BOOL_FLAGS:
+            options[BOOL_FLAGS[key]] = value != "false"
+        elif arg.startswith("-") and arg != "-":
+            raise UsageError("unknown flag: %s" % (key if arg.startswith("--") else arg))
+        else:
+            words.append(arg)
+        index += 1
+    return words, options, after
+
+
+def namespace_of(state, options):
+    namespace = options.get("namespace", "default")
+    if namespace not in SYSTEM_NAMESPACES + state["namespaces"]:
+        raise Failure('Error from server (NotFound): namespaces "%s" not found' % namespace)
+    return namespace
+
+
+def parse_labels(text):
+    labels = {}
+    for pair in (text or "").split(","):
+        if "=" in pair:
+            key, value = pair.split("=", 1)
+            labels[key.strip()] = value.strip().lstrip("=")
+    return labels
+
+
+# ── The cluster ──────────────────────────────────────────────
+
+def pod_phase(pod):
+    return "Running" if time.time() - pod["created"] >= STARTUP_SECONDS else "Pending"
+
+
+def pod_status(pod):
+    return "Running" if pod_phase(pod) == "Running" else "ContainerCreating"
+
+
+def new_pod(state, name, namespace, image, labels, owner=None):
+    used = len(state["pods"]) + state.get("pod_counter", 0)
+    state["pod_counter"] = state.get("pod_counter", 0) + 1
+    pod = {"name": name, "namespace": namespace, "image": image, "labels": labels, "owner": owner,
+           "created": time.time(), "ip": "10.244.0.%d" % (5 + used % 240)}
+    state["pods"].append(pod)
+    return pod
+
+
+def reconcile(state, deployment):
+    """Make the Deployment's pods match its replica count, as its controller would."""
+    owned = [p for p in state["pods"] if p["owner"] == deployment["name"] and p["namespace"] == deployment["namespace"]]
+    while len(owned) > deployment["replicas"]:
+        # Newest pods go first when scaling down.
+        victim = max(owned, key=lambda p: p["created"])
+        owned.remove(victim)
+        state["pods"].remove(victim)
+    names = set(p["name"] for p in state["pods"])
+    while len(owned) < deployment["replicas"]:
+        name = "%s-%s-%s" % (deployment["name"], deployment["hash"], "".join(random.choice(SUFFIX_LETTERS) for _ in range(5)))
+        if name not in names:
+            names.add(name)
+            owned.append(new_pod(state, name, deployment["namespace"], deployment["image"],
+                                 dict(deployment["labels"], **{"pod-template-hash": deployment["hash"]}), deployment["name"]))
+
+
+def container_name(image):
+    return re.split(r"[:@]", image.split("/")[-1])[0] or "app"
+
+
+def system_pod(name, state):
+    return {"name": name, "namespace": "kube-system", "image": "registry.k8s.io/%s:%s" % (name.split("-")[0], VERSION),
+            "labels": {"tier": "control-plane"}, "owner": None, "created": state["started"], "ip": "172.18.0.2"}
+
+
+def kubernetes_service(state):
+    return {"name": "kubernetes", "namespace": "default", "type": "ClusterIP", "port": 443, "target_port": 6443,
+            "node_port": None, "cluster_ip": "10.96.0.1", "selector": {}, "created": state["started"],
+            "labels": {"component": "apiserver", "provider": "kubernetes"}}
+
+
+def items_of(state, plural, namespace, all_namespaces):
+    """Stored records of one kind, in the namespace asked for."""
+    if plural == "nodes":
+        return [{"name": NODE, "created": state["started"]}]
+    if plural == "namespaces":
+        return [{"name": n, "created": state["started"]} for n in SYSTEM_NAMESPACES] + \
+               [{"name": n, "created": state["started"]} for n in state["namespaces"]]
+    if plural == "pods":
+        records = state["pods"] + [system_pod(n, state) for n in SYSTEM_PODS]
+    elif plural == "deployments":
+        records = state["deployments"]
+    elif plural == "replicasets":
+        records = [dict(d, name="%s-%s" % (d["name"], d["hash"]), deployment=d["name"]) for d in state["deployments"]]
+    else:
+        records = [kubernetes_service(state)] + state["services"]
+    records = [r for r in records if all_namespaces or r["namespace"] == namespace]
+    return sorted(records, key=lambda r: (r["namespace"], r["name"]))
+
+
+def ready_count(state, deployment):
+    return len([p for p in state["pods"] if p["owner"] == deployment["name"] and p["namespace"] == deployment["namespace"]
+                and pod_phase(p) == "Running"])
+
+
+# ── Real-shaped objects, for -o json / yaml / jsonpath ───────
+
+def to_object(state, plural, record):
+    meta = {"name": record["name"], "creationTimestamp": iso(record["created"]),
+            "uid": "%s-%s-%s-%s-%s" % tuple(hex_id("uid:%s:%s" % (plural, record["name"]), 32)[a:b] for a, b in
+                                              ((0, 8), (8, 12), (12, 16), (16, 20), (20, 32))),
+            "resourceVersion": str(1000 + int(record["created"]) % 9000)}
+    if plural not in ("nodes", "namespaces"):
+        meta["namespace"] = record["namespace"]
+        meta["labels"] = record.get("labels", {})
+    if plural == "pods":
+        running = pod_phase(record) == "Running"
+        name = container_name(record["image"])
+        if record.get("owner"):
+            deployment = [d for d in state["deployments"] if d["name"] == record["owner"]]
+            if deployment:
+                meta["ownerReferences"] = [{"apiVersion": "apps/v1", "kind": "ReplicaSet", "controller": True,
+                                            "name": "%s-%s" % (record["owner"], deployment[0]["hash"])}]
+        container_state = {"running": {"startedAt": iso(record["created"] + STARTUP_SECONDS)}} if running else \
+            {"waiting": {"reason": "ContainerCreating"}}
+        return {"apiVersion": "v1", "kind": "Pod", "metadata": meta,
+                "spec": {"containers": [{"name": name, "image": record["image"], "imagePullPolicy": "IfNotPresent"}],
+                         "nodeName": NODE, "restartPolicy": "Always"},
+                "status": {"phase": pod_phase(record), "hostIP": "172.18.0.2", "podIP": record["ip"] if running else "",
+                           "startTime": iso(record["created"]),
+                           "containerStatuses": [{"name": name, "image": record["image"], "ready": running,
+                                                  "restartCount": 0, "state": container_state}]}}
+    if plural in ("deployments", "replicasets"):
+        ready = ready_count(state, dict(record, name=record.get("deployment", record["name"])))
+        selector = {"matchLabels": {"app": record.get("deployment", record["name"])}}
+        template = {"metadata": {"labels": dict(selector["matchLabels"])},
+                    "spec": {"containers": [{"name": container_name(record["image"]), "image": record["image"]}]}}
+        kind = "Deployment" if plural == "deployments" else "ReplicaSet"
+        spec = {"replicas": record["replicas"], "selector": selector, "template": template}
+        if kind == "Deployment":
+            spec["strategy"] = {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"}}
+        return {"apiVersion": "apps/v1", "kind": kind, "metadata": meta, "spec": spec,
+                "status": {"replicas": record["replicas"], "readyReplicas": ready, "availableReplicas": ready,
+                           "updatedReplicas": record["replicas"]}}
+    if plural == "services":
+        port = {"port": record["port"], "protocol": "TCP", "targetPort": record["target_port"]}
+        if record.get("node_port"):
+            port["nodePort"] = record["node_port"]
+        return {"apiVersion": "v1", "kind": "Service", "metadata": meta,
+                "spec": {"type": record["type"], "clusterIP": record["cluster_ip"], "ports": [port], "selector": record["selector"]},
+                "status": {"loadBalancer": {}}}
+    if plural == "nodes":
+        meta["labels"] = {"kubernetes.io/hostname": NODE, "kubernetes.io/os": "linux", "node-role.kubernetes.io/control-plane": ""}
+        return {"apiVersion": "v1", "kind": "Node", "metadata": meta, "spec": {"podCIDR": "10.244.0.0/24"},
+                "status": {"addresses": [{"type": "InternalIP", "address": "172.18.0.2"}, {"type": "Hostname", "address": NODE}],
+                           "capacity": {"cpu": "2", "memory": "2038Mi", "pods": "110"},
+                           "conditions": [{"type": "Ready", "status": "True", "reason": "KubeletReady"}],
+                           "nodeInfo": {"kubeletVersion": VERSION, "osImage": _opsim.SIM_NAME, "containerRuntimeVersion": "simulated://1.0"}}}
+    return {"apiVersion": "v1", "kind": "Namespace", "metadata": meta, "spec": {"finalizers": ["kubernetes"]}, "status": {"phase": "Active"}}
+
+
+def to_yaml(value, indent=0):
+    """A small YAML writer: enough for the objects above."""
+    pad = "  " * indent
+    if isinstance(value, dict):
+        if not value:
+            return pad + "{}\n"
+        text = ""
+        for key, item in value.items():
+            if isinstance(item, (dict, list)) and item:
+                text += "%s%s:\n%s" % (pad, key, to_yaml(item, indent + (0 if isinstance(item, list) else 1)))
+            else:
+                text += "%s%s: %s\n" % (pad, key, scalar_yaml(item))
+        return text
+    text = ""
+    for item in value:
+        if isinstance(item, (dict, list)) and item:
+            body = to_yaml(item, indent + 1)
+            text += pad + "- " + body[len(pad) + 2:]
+        else:
+            text += "%s- %s\n" % (pad, scalar_yaml(item))
+    return text
+
+
+def scalar_yaml(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, (dict, list)):
+        return "{}" if isinstance(value, dict) else "[]"
+    text = str(value)
+    if isinstance(value, str) and (text == "" or re.match(r"^[\d.]+$", text) or text[0] in "{[*&!%@`'\"#" or ": " in text):
+        return json.dumps(text)
+    return text
+
+
+class JsonPathError(Exception):
+    pass
+
+
+def jsonpath_values(data, path):
+    """Evaluate one path like .items[*].metadata.name. Returns the list of matches."""
+    current = [data]
+    for field, quoted, index in re.findall(r"\.([\w-]+)|\['([^']+)'\]|\[(-?\d+|\*)\]", path):
+        following = []
+        for node in current:
+            key = field or quoted
+            if key:
+                if isinstance(node, dict) and key in node:
+                    following.append(node[key])
+            elif index == "*":
+                following.extend(node if isinstance(node, list) else node.values() if isinstance(node, dict) else [])
+            elif isinstance(node, list):
+                position = int(index)
+                if not -len(node) <= position < len(node):
+                    raise JsonPathError("array index out of bounds: index %d, length %d" % (position, len(node)))
+                following.append(node[position])
+        current = following
+    return current
+
+
+def jsonpath(data, template):
+    """Fill a kubectl jsonpath template such as '{.spec.replicas}' or '{.items[*].metadata.name}{"\\n"}'."""
+    def fill(match):
+        expression = match.group(1).strip()
+        if expression.startswith('"') and expression.endswith('"'):
+            return expression[1:-1].replace("\\n", "\n").replace("\\t", "\t")
+        if expression.startswith(("range", "end")):
+            raise JsonPathError("range is not available in the %s" % _opsim.SIM_NAME)
+        if expression and not re.match(r"^\$?((\.[\w-]+)|(\['[^']+'\])|(\[(-?\d+|\*)\]))*$", expression):
+            raise JsonPathError("unrecognized character in action: %s" % expression)
+        values = jsonpath_values(data, expression.lstrip("$"))
+        return " ".join(v if isinstance(v, str) else json.dumps(v, separators=(",", ":")) for v in values)
+    return re.sub(r"\{([^{}]*)\}", fill, template).replace("\\n", "\n")
+
+
+# ── get ──────────────────────────────────────────────────────
+
+def matches(record, selector):
+    labels = record.get("labels", {})
+    return all(labels.get(key) == value for key, value in selector.items())
+
+
+def table_for(state, plural, records, options):
+    """(headers, rows) for one kind, the way kubectl prints it."""
+    now, wide, rows = time.time(), options.get("output") == "wide", []
+    age = lambda r: k8s_age(now - r["created"])
+    if plural == "pods":
+        headers = ["NAME", "READY", "STATUS", "RESTARTS", "AGE"] + (["IP", "NODE", "NOMINATED NODE", "READINESS GATES"] if wide else [])
+        for r in records:
+            running = pod_phase(r) == "Running"
+            row = [r["name"], "1/1" if running else "0/1", pod_status(r), "0", age(r)]
+            rows.append(row + ([r["ip"] if running else "<none>", NODE, "<none>", "<none>"] if wide else []))
+    elif plural == "deployments":
+        headers = ["NAME", "READY", "UP-TO-DATE", "AVAILABLE", "AGE"] + (["CONTAINERS", "IMAGES", "SELECTOR"] if wide else [])
+        for r in records:
+            ready = ready_count(state, r)
+            row = [r["name"], "%d/%d" % (ready, r["replicas"]), str(r["replicas"]), str(ready), age(r)]
+            rows.append(row + ([container_name(r["image"]), r["image"], "app=" + r["name"]] if wide else []))
+    elif plural == "replicasets":
+        headers = ["NAME", "DESIRED", "CURRENT", "READY", "AGE"]
+        for r in records:
+            rows.append([r["name"], str(r["replicas"]), str(r["replicas"]), str(ready_count(state, dict(r, name=r["deployment"]))), age(r)])
+    elif plural == "services":
+        headers = ["NAME", "TYPE", "CLUSTER-IP", "EXTERNAL-IP", "PORT(S)", "AGE"] + (["SELECTOR"] if wide else [])
+        for r in records:
+            ports = "%d:%d/TCP" % (r["port"], r["node_port"]) if r.get("node_port") else "%d/TCP" % r["port"]
+            external = "<pending>" if r["type"] == "LoadBalancer" else "<none>"
+            selector = ",".join("%s=%s" % kv for kv in sorted(r["selector"].items())) or "<none>"
+            rows.append([r["name"], r["type"], r["cluster_ip"], external, ports, age(r)] + ([selector] if wide else []))
+    elif plural == "nodes":
+        headers = ["NAME", "STATUS", "ROLES", "AGE", "VERSION"] + (["INTERNAL-IP", "EXTERNAL-IP", "OS-IMAGE", "CONTAINER-RUNTIME"] if wide else [])
+        for r in records:
+            rows.append([r["name"], "Ready", "control-plane", age(r), VERSION] + (["172.18.0.2", "<none>", _opsim.SIM_NAME, "simulated://1.0"] if wide else []))
+    else:
+        headers = ["NAME", "STATUS", "AGE"]
+        rows = [[r["name"], "Active", age(r)] for r in records]
+    if options.get("show-labels") and plural not in ("nodes", "namespaces"):
+        headers.append("LABELS")
+        for row, r in zip(rows, records):
+            row.append(",".join("%s=%s" % kv for kv in sorted(r.get("labels", {}).items())) or "<none>")
+    if options.get("all-namespaces") and plural not in ("nodes", "namespaces"):
+        headers.insert(0, "NAMESPACE")
+        for row, r in zip(rows, records):
+            row.insert(0, r["namespace"])
+    return headers, rows
+
+
+def print_table(headers, rows, options, prefix=""):
+    if prefix:
+        rows = [[prefix + row[0]] + row[1:] for row in rows]
+    text = table(headers, rows)
+    if options.get("no-headers"):
+        text = "\n".join(text.split("\n")[1:])
+    if text:
+        print(text)
+
+
+def cmd_get(state, args):
+    words, options, _ = parse(args)
+    if not words:
+        return fail("You must specify the type of resource to get. Use \"kubectl api-resources\" for a complete list of supported resources.\n\n"
+                    "error: Required resource not specified.")
+    namespace = namespace_of(state, options)
+    everywhere = bool(options.get("all-namespaces"))
+    selector = parse_labels(options.get("selector"))
+    output = options.get("output", "")
+
+    # `get all`, `get pods,svc`, `get pod/NAME` and `get pod NAME...` all end up as (kind, names) requests.
+    requests = []
+    if "/" in words[0]:
+        for word in words:
+            kind, _, name = word.partition("/")
+            requests.append((kind, [name]))
+    elif words[0] == "all":
+        requests = [(kind, []) for kind in ("pods", "services", "deployments", "replicasets")]
+    else:
+        requests = [(kind, words[1:]) for kind in words[0].split(",")]
+    several = len(requests) > 1
+    keys, objects, printed, code = [], [], 0, 0
+
+    for kind, names in requests:
+        if kind not in KINDS:
+            return fail('error: the server doesn\'t have a resource type "%s"' % kind)
+        plural, singular, api_name = KINDS[kind]
+        records = [r for r in items_of(state, plural, namespace, everywhere) if matches(r, selector)]
+        keys += ["get-" + plural, "get-" + singular]
+        if names:
+            by_name = dict((r["name"], r) for r in records)
+            records = []
+            for name in names:
+                if name in by_name:
+                    records.append(by_name[name])
+                else:
+                    code = fail('Error from server (NotFound): %s "%s" not found' % (NOT_FOUND_GROUP[plural], name))
+        if output in ("json", "yaml") or output.startswith("jsonpath") or output.startswith("custom"):
+            objects += [to_object(state, plural, r) for r in records]
+        elif output == "name":
+            for r in records:
+                print("%s/%s" % (api_name, r["name"]))
+        elif records:
+            if several and printed:
+                print("")
+            headers, rows = table_for(state, plural, records, options)
+            print_table(headers, rows, options, api_name + "/" if several else "")
+            printed += 1
+
+    single = len(requests) == 1 and len(requests[0][1]) == 1
+    if output in ("json", "yaml") or output.startswith("jsonpath"):
+        if single and not objects:
+            return code
+        data = objects[0] if single else {"apiVersion": "v1", "kind": "List", "items": objects, "metadata": {"resourceVersion": ""}}
+        if output == "json":
+            print(json.dumps(data, indent=4))
+        elif output == "yaml":
+            sys.stdout.write(to_yaml(data))
+        else:
+            template = output.partition("=")[2]
+            try:
+                sys.stdout.write(jsonpath(data, template))
+            except JsonPathError as error:
+                return fail('error: error executing jsonpath "%s": Error executing template: %s. Printing more information for debugging '
+                            "the template:\n\ttemplate was:\n\t\t%s" % (template, error, template))
+    elif output and output not in ("wide", "name"):
+        return fail('error: unable to match a printer suitable for the output format "%s", allowed formats are: '
+                    "json,jsonpath,name,wide,yaml" % output)
+    elif not printed and not output and code == 0 and not any(names for _k, names in requests):
+        sys.stderr.write("No resources found\n" if everywhere or requests[0][0] in ("nodes", "node", "no", "namespaces", "namespace", "ns")
+                         else "No resources found in %s namespace.\n" % namespace)
+    if code == 0:
+        _opsim.record(state, *keys)
+    return code
+
+
+# ── Creating things ──────────────────────────────────────────
+
+def valid_name(name):
+    return bool(re.match(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", name)) and len(name) <= 63
+
+
+def find(state, plural, name, namespace):
+    for record in state[plural]:
+        if record["name"] == name and record["namespace"] == namespace:
+            return record
+    return None
+
+
+def make_pod(state, name, namespace, image, labels):
+    if find(state, "pods", name, namespace):
+        return 'Error from server (AlreadyExists): pods "%s" already exists' % name
+    new_pod(state, name, namespace, image, labels)
+    return None
+
+
+def make_deployment(state, name, namespace, image, replicas):
+    if find(state, "deployments", name, namespace):
+        return 'error: failed to create deployment: deployments.apps "%s" already exists' % name
+    deployment = {"name": name, "namespace": namespace, "image": image, "replicas": replicas, "created": time.time(),
+                  "hash": hex_id("rs:%s:%s" % (name, image), 10), "labels": {"app": name}}
+    state["deployments"].append(deployment)
+    reconcile(state, deployment)
+    return None
+
+
+def make_service(state, name, namespace, port, target_port, kind, selector):
+    if find(state, "services", name, namespace) or (name == "kubernetes" and namespace == "default"):
+        return 'Error from server (AlreadyExists): services "%s" already exists' % name
+    seed = int(hex_id("svc:%s:%s" % (namespace, name), 8), 16)
+    state["services"].append({
+        "name": name, "namespace": namespace, "type": kind, "port": port, "target_port": target_port,
+        "node_port": 30000 + seed % 2768 if kind in ("NodePort", "LoadBalancer") else None,
+        "cluster_ip": "10.96.%d.%d" % (1 + seed // 7 % 250, 2 + seed % 250), "selector": selector,
+        "created": time.time(), "labels": dict(selector)})
+    return None
+
+
+def cmd_run(state, args):
+    words, options, _ = parse(args)
+    if not words:
+        return fail("error: NAME is required for run")
+    if "image" not in options:
+        return fail('error: required flag(s) "image" not set')
+    name, namespace = words[0], namespace_of(state, options)
+    if not valid_name(name):
+        return fail('The Pod "%s" is invalid: metadata.name: Invalid value: "%s": a lowercase RFC 1123 subdomain must consist of lower case '
+                    "alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character" % (name, name))
+    error = make_pod(state, name, namespace, options["image"], parse_labels(options.get("labels")) or {"run": name})
+    if error:
+        return fail(error)
+    print("pod/%s created" % name)
+    _opsim.record(state, "run:" + name)
+    return 0
+
+
+def cmd_create(state, args):
+    words, options, _ = parse(args)
+    if "filename" in options:
+        return apply_files(state, options, "created")
+    if not words:
+        return fail("error: must specify one of -f and -k")
+    kind = KINDS.get(words[0], (words[0],))[0]
+    if kind not in ("deployments", "namespaces") or len(words) < 2:
+        return fail("error: `kubectl create %s` is not available in the %s. Supported: create deployment NAME --image=IMG "
+                    "[--replicas=N], create namespace NAME, create -f FILE" % (words[0], _opsim.SIM_NAME))
+    name = words[1]
+    if not valid_name(name):
+        return fail('error: invalid name "%s": use lower case letters, digits and \'-\'' % name)
+    if kind == "namespaces":
+        if name in SYSTEM_NAMESPACES + state["namespaces"]:
+            return fail('Error from server (AlreadyExists): namespaces "%s" already exists' % name)
+        state["namespaces"].append(name)
+        print("namespace/%s created" % name)
+        return 0
+    if "image" not in options:
+        return fail('error: required flag(s) "image" not set')
+    replicas = options.get("replicas", "1")
+    if not replicas.isdigit():
+        return fail('error: invalid argument "%s" for "-r, --replicas" flag: strconv.ParseInt: parsing "%s": invalid syntax' % (replicas, replicas))
+    error = make_deployment(state, name, namespace_of(state, options), options["image"], int(replicas))
+    if error:
+        return fail(error)
+    print("deployment.apps/%s created" % name)
+    _opsim.record(state, "create-deployment", "create-deployment:" + name)
+    return 0
+
+
+def kind_and_name(words):
+    """('deployment', 'web-app') from either `deployment web-app` or `deployment/web-app`."""
+    if words and "/" in words[0]:
+        kind, _, name = words[0].partition("/")
+        return kind, [name] + words[1:]
+    return (words[0] if words else ""), words[1:]
+
+
+def cmd_scale(state, args):
+    words, options, _ = parse(args)
+    kind, names = kind_and_name(words)
+    if "replicas" not in options or not options["replicas"].isdigit():
+        return fail("error: The --replicas=COUNT flag is required, and COUNT must be greater than or equal to 0")
+    if KINDS.get(kind, ("",))[0] != "deployments" or not names:
+        return fail("error: `kubectl scale` works on deployments in the %s: kubectl scale deployment NAME --replicas=N" % _opsim.SIM_NAME)
+    deployment = find(state, "deployments", names[0], namespace_of(state, options))
+    if not deployment:
+        return fail('Error from server (NotFound): deployments.apps "%s" not found' % names[0])
+    deployment["replicas"] = int(options["replicas"])
+    reconcile(state, deployment)
+    print("deployment.apps/%s scaled" % names[0])
+    return 0
+
+
+def cmd_expose(state, args):
+    words, options, _ = parse(args)
+    kind, names = kind_and_name(words)
+    plural = KINDS.get(kind, ("",))[0]
+    if plural not in ("deployments", "pods") or not names:
+        return fail("error: `kubectl expose` works on deployments and pods in the %s: kubectl expose deployment NAME --port=P" % _opsim.SIM_NAME)
+    namespace = namespace_of(state, options)
+    target = find(state, plural, names[0], namespace)
+    if not target:
+        return fail('Error from server (NotFound): %s "%s" not found' % (NOT_FOUND_GROUP[plural], names[0]))
+    if not options.get("port", "").isdigit():
+        return fail("error: couldn't find port via --port flag or introspection\nSee 'kubectl expose -h' for help and examples")
+    kind_of_service = options.get("type", "ClusterIP")
+    if kind_of_service not in ("ClusterIP", "NodePort", "LoadBalancer"):
+        return fail('The Service "%s" is invalid: spec.type: Unsupported value: "%s": supported values: "ClusterIP", "LoadBalancer", "NodePort"'
+                    % (names[0], kind_of_service))
+    target_port = options.get("target-port", options["port"])
+    name = options.get("name", names[0])
+    error = make_service(state, name, namespace, int(options["port"]), int(target_port) if target_port.isdigit() else target_port,
+                         kind_of_service, dict(target["labels"]) if plural == "pods" else {"app": target["name"]})
+    if error:
+        return fail(error)
+    print("service/%s exposed" % name)
+    return 0
+
+
+# ── apply -f / delete -f ─────────────────────────────────────
+
+def read_manifests(path):
+    """Pull kind, name, image, replicas and ports out of simple YAML with regexes (no YAML parser in the sandbox)."""
+    if path == "-":
+        text = sys.stdin.read()
+    else:
+        try:
+            with open(path) as handle:
+                text = handle.read()
+        except OSError:
+            raise Failure('error: the path "%s" does not exist' % path)
+    manifests = []
+    for document in re.split(r"(?m)^---\s*$", text):
+        kind = re.search(r"(?m)^kind:\s*[\"']?(\w+)", document)
+        if not kind:
+            continue
+        metadata = re.search(r"(?ms)^metadata:\s*\n((?:[ \t]+.*\n?|\s*\n)*)", document)
+        name = re.search(r"(?m)^[ \t]+name:\s*[\"']?([\w.-]+)", metadata.group(1) if metadata else "")
+        if not name:
+            raise Failure('error: error validating "%s": error validating data: metadata.name is required' % path)
+        first = lambda pattern: (re.search(pattern, document) or [None, None])[1]
+        manifests.append({
+            "kind": kind.group(1), "name": name.group(1),
+            "namespace": first(r"(?m)^[ \t]+namespace:\s*[\"']?([\w-]+)"),
+            "image": first(r"(?m)^[ \t]*-?[ \t]*image:\s*[\"']?([^\s\"']+)"),
+            "replicas": int(first(r"(?m)^[ \t]+replicas:\s*(\d+)") or 1),
+            "port": first(r"(?m)^[ \t]*-?[ \t]*port:\s*(\d+)"),
+            "target_port": first(r"(?m)^[ \t]*-?[ \t]*targetPort:\s*(\w+)"),
+            "type": first(r"(?m)^[ \t]+type:\s*[\"']?(ClusterIP|NodePort|LoadBalancer)"),
+            "app": first(r"(?m)^[ \t]+app:\s*[\"']?([\w.-]+)"),
+        })
+    if not manifests:
+        raise Failure("error: no objects passed to apply")
+    return manifests
+
+
+def apply_files(state, options, verb):
+    code = 0
+    for manifest in read_manifests(options["filename"]):
+        namespace = manifest["namespace"] or namespace_of(state, options)
+        name, kind = manifest["name"], manifest["kind"]
+        if kind not in ("Pod", "Deployment", "Service"):
+            code = fail('error: kind "%s" in "%s" is not available in the %s. Supported kinds: Pod, Deployment, Service'
+                        % (kind, options["filename"], _opsim.SIM_NAME))
+            continue
+        if kind != "Service" and not manifest["image"]:
+            code = fail('The %s "%s" is invalid: spec.containers: Required value' % (kind, name))
+            continue
+        labels = {"app": manifest["app"] or name}
+        if kind == "Pod":
+            existing = find(state, "pods", name, namespace)
+            result = "unchanged" if existing and existing["image"] == manifest["image"] else "configured" if existing else "created"
+            if existing:
+                existing["image"] = manifest["image"]
+            else:
+                new_pod(state, name, namespace, manifest["image"], labels)
+            print("pod/%s %s" % (name, result))
+        elif kind == "Deployment":
+            existing = find(state, "deployments", name, namespace)
+            if existing:
+                same = existing["image"] == manifest["image"] and existing["replicas"] == manifest["replicas"]
+                if existing["image"] != manifest["image"]:
+                    # A new image means a new ReplicaSet: every pod is replaced.
+                    existing.update(image=manifest["image"], hash=hex_id("rs:%s:%s" % (name, manifest["image"]), 10))
+                    state["pods"] = [p for p in state["pods"] if not (p["owner"] == name and p["namespace"] == namespace)]
+                existing["replicas"] = manifest["replicas"]
+                reconcile(state, existing)
+                print("deployment.apps/%s %s" % (name, "unchanged" if same else "configured"))
+            else:
+                make_deployment(state, name, namespace, manifest["image"], manifest["replicas"])
+                print("deployment.apps/%s created" % name)
+        else:
+            existing = find(state, "services", name, namespace)
+            port = int(manifest["port"] or 80)
+            target = manifest["target_port"] or str(port)
+            if existing:
+                same = existing["port"] == port and existing["type"] == (manifest["type"] or "ClusterIP")
+                existing.update(port=port, target_port=int(target) if target.isdigit() else target)
+                print("service/%s %s" % (name, "unchanged" if same else "configured"))
+            else:
+                make_service(state, name, namespace, port, int(target) if target.isdigit() else target,
+                             manifest["type"] or "ClusterIP", labels)
+                print("service/%s created" % name)
+    return code
+
+
+def cmd_apply(state, args):
+    _words, options, _ = parse(args)
+    if "filename" not in options:
+        return fail("error: must specify one of -f and -k")
+    return apply_files(state, options, "applied")
+
+
+# ── delete ───────────────────────────────────────────────────
+
+def delete_one(state, plural, name, namespace):
+    """Remove one object. Returns the message to print, or None if it does not exist."""
+    singular, api_name = KINDS[plural][1], KINDS[plural][2]
+    if plural == "services" and name == "kubernetes" and namespace == "default":
+        return 'service "kubernetes" deleted'  # the API server recreates it at once
+    record = find(state, plural, name, namespace) if plural in ("pods", "deployments", "services") else None
+    if not record:
+        return None
+    state[plural].remove(record)
+    if plural == "deployments":
+        state["pods"] = [p for p in state["pods"] if not (p["owner"] == name and p["namespace"] == namespace)]
+    elif plural == "pods" and record["owner"]:
+        # Self-healing: the Deployment notices a pod is gone and starts another.
+        owner = find(state, "deployments", record["owner"], namespace)
+        if owner:
+            reconcile(state, owner)
+    _opsim.record(state, "delete-" + singular, "delete-" + plural, "delete-%s:%s" % (singular, name))
+    return '%s "%s" deleted' % (api_name, name)
+
+
+def cmd_delete(state, args):
+    words, options, _ = parse(args)
+    namespace = namespace_of(state, options)
+    if "filename" in options:
+        code = 0
+        for manifest in read_manifests(options["filename"]):
+            plural = KINDS.get(manifest["kind"].lower(), (None,))[0]
+            message = delete_one(state, plural, manifest["name"], manifest["namespace"] or namespace) if plural else None
+            if message:
+                print(message)
+            else:
+                code = fail('Error from server (NotFound): error when deleting "%s": %s "%s" not found'
+                            % (options["filename"], NOT_FOUND_GROUP.get(plural, manifest["kind"].lower()), manifest["name"]))
+        return code
+    kind, names = kind_and_name(words)
+    if not kind:
+        return fail("error: You must provide one or more resources by argument or filename.")
+    if kind not in KINDS:
+        return fail('error: the server doesn\'t have a resource type "%s"' % kind)
+    plural = KINDS[kind][0]
+    if plural not in ("pods", "deployments", "services"):
+        return fail("error: deleting %s is not available in the %s. Supported: pod, deployment, service" % (plural, _opsim.SIM_NAME))
+    if options.get("all") or "selector" in options:
+        selector = parse_labels(options.get("selector"))
+        names = [r["name"] for r in state[plural] if r["namespace"] == namespace and matches(r, selector)]
+        if not names:
+            sys.stderr.write("No resources found\n")
+            return 0
+    elif not names:
+        return fail("error: resource(s) were provided, but no name was specified")
+    code = 0
+    for name in names:
+        message = delete_one(state, plural, name, namespace)
+        if message:
+            print(message)
+        else:
+            code = fail('Error from server (NotFound): %s "%s" not found' % (NOT_FOUND_GROUP[plural], name))
+    return code
+
+
+# ── describe, logs, exec, top ────────────────────────────────
+
+def label_lines(labels, first="Labels:"):
+    pairs = ["%s=%s" % kv for kv in sorted(labels.items())] or ["<none>"]
+    return "\n".join("%-18s%s" % (first if i == 0 else "", pair) for i, pair in enumerate(pairs))
+
+
+def describe_pod(state, pod):
+    running, name, now = pod_phase(pod) == "Running", container_name(pod["image"]), time.time()
+    age = k8s_age(now - pod["created"])
+    lines = [
+        "%-18s%s" % ("Name:", pod["name"]), "%-18s%s" % ("Namespace:", pod["namespace"]), "%-18s0" % "Priority:",
+        "%-18sdefault" % "Service Account:", "%-18s%s/172.18.0.2" % ("Node:", NODE),
+        "%-18s%s" % ("Start Time:", time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime(pod["created"]))),
+        label_lines(pod["labels"]), "%-18s<none>" % "Annotations:", "%-18s%s" % ("Status:", pod_phase(pod)),
+        "%-18s%s" % ("IP:", pod["ip"] if running else ""),
+    ]
+    if pod.get("owner"):
+        owner = find(state, "deployments", pod["owner"], pod["namespace"])
+        if owner:
+            lines.append("%-18sReplicaSet/%s-%s" % ("Controlled By:", owner["name"], owner["hash"]))
+    lines += [
+        "Containers:", "  %s:" % name, "    Image:          %s" % pod["image"], "    Port:           <none>",
+        "    State:          %s" % ("Running" if running else "Waiting"),
+        "      %s" % ("Started:      " + time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime(pod["created"] + STARTUP_SECONDS))
+                      if running else "Reason:       ContainerCreating"),
+        "    Ready:          %s" % ("True" if running else "False"), "    Restart Count:  0", "    Environment:    <none>",
+        "Conditions:", "  Type              Status", "  Initialized       True", "  Ready             %s" % ("True" if running else "False"),
+        "  ContainersReady   %s" % ("True" if running else "False"), "  PodScheduled      True",
+        "QoS Class:         BestEffort", "Events:",
+        "  Type    Reason     Age   From               Message", "  ----    ------     ----  ----               -------",
+        "  Normal  Scheduled  %-4s  default-scheduler  Successfully assigned %s/%s to %s" % (age, pod["namespace"], pod["name"], NODE),
+        '  Normal  Pulling    %-4s  kubelet            Pulling image "%s"' % (age, pod["image"]),
+    ]
+    if running:
+        lines += ['  Normal  Pulled     %-4s  kubelet            Successfully pulled image "%s"' % (age, pod["image"]),
+                  "  Normal  Created    %-4s  kubelet            Created container %s" % (age, name),
+                  "  Normal  Started    %-4s  kubelet            Started container %s" % (age, name)]
+    return "\n".join(lines)
+
+
+def describe_deployment(state, d):
+    ready = ready_count(state, d)
+    return "\n".join([
+        "%-24s%s" % ("Name:", d["name"]), "%-24s%s" % ("Namespace:", d["namespace"]),
+        "%-24s%s" % ("CreationTimestamp:", time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime(d["created"]))),
+        "%-24sapp=%s" % ("Labels:", d["name"]), "%-24sdeployment.kubernetes.io/revision: 1" % "Annotations:",
+        "%-24sapp=%s" % ("Selector:", d["name"]),
+        "%-24s%d desired | %d updated | %d total | %d available | %d unavailable"
+        % ("Replicas:", d["replicas"], d["replicas"], d["replicas"], ready, d["replicas"] - ready),
+        "%-24sRollingUpdate" % "StrategyType:", "%-24s0" % "MinReadySeconds:",
+        "%-24s25%% max unavailable, 25%% max surge" % "RollingUpdateStrategy:",
+        "Pod Template:", "  Labels:  app=%s" % d["name"], "  Containers:", "   %s:" % container_name(d["image"]),
+        "    Image:        %s" % d["image"], "    Port:         <none>", "    Environment:  <none>",
+        "Conditions:", "  Type           Status  Reason", "  ----           ------  ------",
+        "  Available      %s    MinimumReplicasAvailable" % ("True " if ready >= d["replicas"] else "False"),
+        "  Progressing    True    NewReplicaSetAvailable",
+        "NewReplicaSet:   %s-%s (%d/%d replicas created)" % (d["name"], d["hash"], d["replicas"], d["replicas"]),
+        "Events:", "  Type    Reason             Age   From                   Message",
+        "  ----    ------             ----  ----                   -------",
+        "  Normal  ScalingReplicaSet  %-4s  deployment-controller  Scaled up replica set %s-%s to %d"
+        % (k8s_age(time.time() - d["created"]), d["name"], d["hash"], d["replicas"]),
+    ])
+
+
+def describe_service(state, s):
+    pods = [p for p in state["pods"] if p["namespace"] == s["namespace"] and s["selector"] and matches(p, s["selector"])
+            and pod_phase(p) == "Running"]
+    endpoints = ",".join("%s:%s" % (p["ip"], s["target_port"]) for p in pods[:3]) + (" + %d more..." % (len(pods) - 3) if len(pods) > 3 else "")
+    if s["name"] == "kubernetes":
+        endpoints = "172.18.0.2:6443"
+    lines = [
+        "%-26s%s" % ("Name:", s["name"]), "%-26s%s" % ("Namespace:", s["namespace"]),
+        label_lines(s.get("labels", {})).replace("Labels:           ", "%-26s" % "Labels:", 1),
+        "%-26s<none>" % "Annotations:",
+        "%-26s%s" % ("Selector:", ",".join("%s=%s" % kv for kv in sorted(s["selector"].items())) or "<none>"),
+        "%-26s%s" % ("Type:", s["type"]), "%-26sSingleStack" % "IP Family Policy:", "%-26sIPv4" % "IP Families:",
+        "%-26s%s" % ("IP:", s["cluster_ip"]), "%-26s%s" % ("IPs:", s["cluster_ip"]),
+        "%-26s<unset>  %d/TCP" % ("Port:", s["port"]), "%-26s%s/TCP" % ("TargetPort:", s["target_port"]),
+    ]
+    if s.get("node_port"):
+        lines.append("%-26s<unset>  %d/TCP" % ("NodePort:", s["node_port"]))
+    lines += ["%-26s%s" % ("Endpoints:", endpoints or "<none>"), "%-26sNone" % "Session Affinity:",
+              "%-26sCluster" % "External Traffic Policy:", "%-26s<none>" % "Events:"]
+    return "\n".join(lines)
+
+
+def describe_node(state, node):
+    pods = items_of(state, "pods", "", True)
+    return "\n".join([
+        "%-20s%s" % ("Name:", NODE), "%-20scontrol-plane" % "Roles:", "%-20skubernetes.io/hostname=%s" % ("Labels:", NODE),
+        "%-20s%s" % ("CreationTimestamp:", time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime(node["created"]))),
+        "Conditions:", "  Type             Status  Reason                       Message",
+        "  MemoryPressure   False   KubeletHasSufficientMemory   kubelet has sufficient memory available",
+        "  DiskPressure     False   KubeletHasNoDiskPressure     kubelet has no disk pressure",
+        "  Ready            True    KubeletReady                 kubelet is posting ready status",
+        "Addresses:", "  InternalIP:  172.18.0.2", "  Hostname:    %s" % NODE,
+        "Capacity:", "  cpu:     2", "  memory:  2038Mi", "  pods:    110",
+        "System Info:", "  Kubelet Version:            %s" % VERSION, "  Container Runtime Version:  simulated://1.0",
+        "  OS Image:                   %s" % _opsim.SIM_NAME, "Non-terminated Pods:          (%d in total)" % len(pods),
+    ])
+
+
+def cmd_describe(state, args):
+    words, options, _ = parse(args)
+    kind, names = kind_and_name(words)
+    if not kind:
+        return fail("error: You must specify the type of resource to describe.")
+    if kind not in KINDS:
+        return fail('error: the server doesn\'t have a resource type "%s"' % kind)
+    plural, singular, _api = KINDS[kind]
+    if plural not in ("pods", "deployments", "services", "nodes"):
+        return fail("error: describing %s is not available in the %s. Supported: pod, deployment, service, node" % (plural, _opsim.SIM_NAME))
+    namespace = namespace_of(state, options)
+    records = [r for r in items_of(state, plural, namespace, False) if matches(r, parse_labels(options.get("selector")))]
+    code, blocks = 0, []
+    for name in names or [r["name"] for r in records]:
+        record = [r for r in records if r["name"] == name]
+        if not record:
+            code = fail('Error from server (NotFound): %s "%s" not found' % (NOT_FOUND_GROUP[plural], name))
+            continue
+        blocks.append({"pods": describe_pod, "deployments": describe_deployment, "services": describe_service,
+                       "nodes": describe_node}[plural](state, record[0]))
+    if blocks:
+        print("\n\n\n".join(blocks))
+    if code == 0:
+        _opsim.record(state, "describe-" + singular, "describe-" + plural)
+    return code
+
+
+def running_pod(state, words, options, waiting_message):
+    """The pod a logs/exec command names, or an error. `deployment/NAME` picks one of its pods."""
+    if not words:
+        raise Failure("error: expected 'POD' as an argument\nSee 'kubectl -h' for help and examples")
+    namespace = namespace_of(state, options)
+    kind, _, name = words[0].rpartition("/")
+    if kind and KINDS.get(kind, ("",))[0] == "deployments":
+        owned = sorted([p for p in state["pods"] if p["owner"] == name and p["namespace"] == namespace], key=lambda p: p["name"])
+        if not owned:
+            raise Failure('Error from server (NotFound): deployments.apps "%s" not found' % name)
+        pod = owned[0]
+    else:
+        pods = [p for p in items_of(state, "pods", namespace, False) if p["name"] == name]
+        if not pods:
+            raise Failure('Error from server (NotFound): pods "%s" not found' % name)
+        pod = pods[0]
+    if pod_phase(pod) != "Running":
+        raise Failure(waiting_message % {"container": container_name(pod["image"]), "pod": pod["name"]})
+    return pod
+
+
+def cmd_logs(state, args):
+    words, options, _ = parse(args, file_flag=False)
+    pod = running_pod(state, words, options,
+                      'Error from server (BadRequest): container "%(container)s" in pod "%(pod)s" is waiting to start: ContainerCreating')
+    lines = []
+    if "nginx" in pod["image"]:
+        stamp = time.strftime("%Y/%m/%d %H:%M:%S", time.gmtime(pod["created"] + STARTUP_SECONDS))
+        entry = "/docker-entrypoint.sh: "
+        lines = [
+            entry + "/docker-entrypoint.d/ is not empty, will attempt to perform configuration",
+            entry + "Looking for shell scripts in /docker-entrypoint.d/",
+            entry + "Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh",
+            "10-listen-on-ipv6-by-default.sh: info: Enabled listen on IPv6 in /etc/nginx/conf.d/default.conf",
+            entry + "Launching /docker-entrypoint.d/20-envsubst-on-templates.sh",
+            entry + "Launching /docker-entrypoint.d/30-tune-worker-processes.sh",
+            entry + "Configuration complete; ready for start up",
+            '%s [notice] 1#1: using the "epoll" event method' % stamp,
+            "%s [notice] 1#1: nginx/%s" % (stamp, _opsim.NGINX_VERSION),
+            "%s [notice] 1#1: start worker processes" % stamp,
+            "%s [notice] 1#1: start worker process 29" % stamp,
+        ]
+    tail = options.get("tail", "")
+    if tail.isdigit():
+        lines = lines[-int(tail):] if int(tail) else []
+    if lines:
+        print("\n".join(lines))
+    return 0
+
+
+def cmd_exec(state, args):
+    words, options, after = parse(args)
+    command = after or words[1:]
+    pod = running_pod(state, words, options, 'error: unable to upgrade connection: container not found ("%(container)s")')
+    if not command:
+        return fail("error: you must specify at least one command for the container")
+    nginx = "nginx" in pod["image"]
+    files = _opsim.container_files(pod["name"], "alpine" if "alpine" in pod["image"] or not nginx else "debian", nginx)
+    env = {"KUBERNETES_SERVICE_HOST": "10.96.0.1", "KUBERNETES_SERVICE_PORT": "443"}
+    if nginx:
+        env["NGINX_VERSION"] = _opsim.NGINX_VERSION
+    processes = [("root", "nginx: master process nginx -g daemon off;"), ("nginx", "nginx: worker process")] if nginx else []
+    shell = FakeShell(pod["name"], files, env, processes)
+    # Recorded before the shell starts: an interactive session may end with the terminal.
+    _opsim.record(state, "exec", "exec:" + pod["name"])
+    _opsim.save_state(TOOL, state)
+    try:
+        if command[0] in FakeShell.SHELL_NAMES and len(command) == 1:
+            return shell.interact()
+        if command[0] in FakeShell.SHELL_NAMES and len(command) >= 3 and command[1] == "-c":
+            return shell.run_line(command[2])
+        if shell.can_run(command[0]):
+            return shell.run_command(command)
+    except ShellExit as leaving:
+        return leaving.code
+    return fail('error: Internal error occurred: error executing command in container: failed to exec in container: failed to start exec: '
+                'exec: "%s": executable file not found in $PATH: unknown' % command[0], 126)
+
+
+def cmd_top(state, args):
+    words, options, _ = parse(args)
+    if not words or KINDS.get(words[0], ("",))[0] not in ("pods", "nodes"):
+        return fail("error: `kubectl top` needs `pods` or `nodes`")
+    plural = KINDS[words[0]][0]
+    if plural == "nodes":
+        busy = len([p for p in state["pods"] if pod_phase(p) == "Running"])
+        cpu, memory = 180 + 12 * busy, 890 + 9 * busy
+        print(table(["NAME", "CPU(cores)", "CPU%", "MEMORY(bytes)", "MEMORY%"],
+                    [[NODE, "%dm" % cpu, "%d%%" % (cpu // 20), "%dMi" % memory, "%d%%" % (memory * 100 // 2038)]]))
+    else:
+        namespace = namespace_of(state, options)
+        pods = [p for p in items_of(state, "pods", namespace, bool(options.get("all-namespaces")))
+                if pod_phase(p) == "Running" and matches(p, parse_labels(options.get("selector"))) and (len(words) < 2 or p["name"] == words[1])]
+        if len(words) > 1 and not pods:
+            return fail('Error from server (NotFound): pods "%s" not found' % words[1])
+        if not pods:
+            sys.stderr.write("No resources found in %s namespace.\n" % namespace)
+        else:
+            rows = []
+            for p in pods:
+                # Steady, plausible numbers derived from the pod name.
+                seed = int(hex_id("top:" + p["name"], 6), 16)
+                rows.append([p["name"], "%dm" % (1 + seed % 4), "%dMi" % (3 + seed % 9)])
+            print(table(["NAME", "CPU(cores)", "MEMORY(bytes)"], rows))
+    _opsim.record(state, "top-" + plural, "top-" + KINDS[words[0]][1])
+    return 0
+
+
+# ── Small commands ───────────────────────────────────────────
+
+def cmd_version(_state, args):
+    _words, options, _ = parse(args)
+    print("Client Version: %s (%s)\nKustomize Version: v5.0.4-0.20230601165947-6ce0bf390ce3" % (VERSION, _opsim.SIM_NAME))
+    if not options.get("client"):
+        print("Server Version: %s (%s)" % (VERSION, _opsim.SIM_NAME))
+    return 0
+
+
+def cmd_cluster_info(_state, _args):
+    print("Kubernetes control plane is running at https://127.0.0.1:6443 (%s)\n"
+          "CoreDNS is running at https://127.0.0.1:6443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy\n\n"
+          "To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'." % _opsim.SIM_NAME)
+    return 0
+
+
+def cmd_rollout(state, args):
+    words, options, _ = parse(args)
+    kind, names = kind_and_name(words[1:])
+    if not words or words[0] != "status" or KINDS.get(kind, ("",))[0] != "deployments" or not names:
+        return fail("error: only `kubectl rollout status deployment NAME` is available in the %s" % _opsim.SIM_NAME)
+    if not find(state, "deployments", names[0], namespace_of(state, options)):
+        return fail('Error from server (NotFound): deployments.apps "%s" not found' % names[0])
+    print('deployment "%s" successfully rolled out' % names[0])
+    return 0
+
+
+def cmd_config(_state, args):
+    if args[:1] == ["current-context"]:
+        print("opsacademy-simulator")
+    elif args[:1] == ["get-contexts"]:
+        print(table(["CURRENT", "NAME", "CLUSTER", "AUTHINFO", "NAMESPACE"], [["*", "opsacademy-simulator", "opsacademy-simulator", "student", ""]]))
+    else:
+        return fail("error: only `kubectl config current-context` and `kubectl config get-contexts` are available in the %s" % _opsim.SIM_NAME)
+    return 0
+
+
+COMMANDS = {
+    "version": cmd_version, "cluster-info": cmd_cluster_info, "get": cmd_get, "run": cmd_run, "create": cmd_create,
+    "scale": cmd_scale, "expose": cmd_expose, "describe": cmd_describe, "logs": cmd_logs, "exec": cmd_exec, "top": cmd_top,
+    "delete": cmd_delete, "apply": cmd_apply, "rollout": cmd_rollout, "config": cmd_config,
+}
+
+
+def main(argv):
+    state = load()
+    if argv and argv[0] == "__ran":
+        return _opsim.ran_check(state, argv[1:])
+    if not argv or argv[0] in ("help", "--help", "-h"):
+        print("kubectl controls the Kubernetes cluster manager (%s).\n\nCommands:\n  %s" % (_opsim.SIM_NAME, "\n  ".join(SUPPORTED)))
+        return 0
+    name, args = argv[0], argv[1:]
+    if name not in COMMANDS:
+        return _opsim.unsupported(TOOL, name, SUPPORTED)
+    try:
+        code = COMMANDS[name](state, args)
+    except UsageError as error:
+        return fail("error: %s\nSee 'kubectl %s --help' for usage." % (error, name))
+    except Failure as error:
+        return fail(str(error))
+    if name == "exec":
+        # Already recorded and saved before the shell started.
+        return code
+    if code == 0:
+        _opsim.record(state, name)
+    _opsim.save_state(TOOL, state)
+    return code
+
+
+if __name__ == "__main__":
+    _opsim.run(main)

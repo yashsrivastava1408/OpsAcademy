@@ -24,6 +24,14 @@ RUN addgroup -g 1000 student \
 # defaults live in /etc where a login shell still finds them.
 COPY profile.sh /etc/profile.d/opsacademy.sh
 
+# The lab simulators: docker, kubectl and aws. There is no container runtime,
+# cluster or network in a sandbox, so these Python scripts stand in for the
+# real tools and keep their state under ~/.opsacademy. They are owned by root
+# and read-only to the student, with no setuid bit.
+COPY bin/ /usr/local/bin/
+RUN chmod 755 /usr/local/bin/docker /usr/local/bin/kubectl /usr/local/bin/aws \
+ && chmod 644 /usr/local/bin/_opsim.py
+
 USER student
 WORKDIR /home/student
 ENV HOME=/home/student LANG=C.UTF-8

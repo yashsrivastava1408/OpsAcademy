@@ -1,0 +1,438 @@
+/* ═══════════════════════════════════════════════════════════════
+   Smaller pages and panels added after the first design pass:
+   account links, lab of the day, case study, public profile, operator page.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Account forms ────────────────────────────────────────── */
+.auth-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.1rem;
+  color: var(--text-bright);
+}
+
+.auth-link {
+  justify-self: center;
+  border: 0;
+  background: none;
+  color: var(--accent-cyan);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.auth-link:hover { text-decoration: underline; }
+
+.auth-notice {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-cyan-dim);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.auth-notice a { color: var(--accent-cyan); text-decoration: underline; }
+
+/* ── Dashboard: lab of the day, account tools ─────────────── */
+.daily-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.daily-card > svg { color: var(--accent-orange); flex-shrink: 0; }
+.daily-card.done > svg { color: var(--accent-green); }
+.daily-card.done { border-color: rgba(16, 185, 129, 0.35); }
+
+.daily-text {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.daily-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.daily-text strong { color: var(--text-bright); font-size: 1rem; }
+.daily-sub { font-size: 13px; color: var(--text-secondary); }
+
+.account-tools { display: grid; gap: 8px; }
+
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.account-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-note { font-size: 12px; color: var(--text-secondary); }
+
+@media (max-width: 600px) {
+  .daily-card { flex-wrap: wrap; }
+}
+
+/* ── Case study page ──────────────────────────────────────── */
+.case-study-body {
+  max-width: 900px;
+  padding-top: 32px;
+  padding-bottom: 64px;
+}
+
+.case-study-context {
+  margin-bottom: 28px;
+  font-size: 13px;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+}
+
+.case-card {
+  padding: 24px 28px;
+  margin-bottom: 24px;
+}
+
+.case-card h2 {
+  font-size: 1.25rem;
+  color: var(--text-bright);
+  margin-bottom: 10px;
+}
+
+.case-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 18px 0 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+}
+
+.case-card p,
+.case-card li {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.case-card ol { padding-left: 20px; }
+
+.case-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.case-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.case-card-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.case-card-outcomes {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.case-card-outcomes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.case-card-outcomes svg {
+  flex-shrink: 0;
+  margin-top: 5px;
+  color: var(--accent-green);
+}
+
+.case-study-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.more-case-studies { margin: 40px 0 64px; }
+
+.more-case-studies h2 {
+  margin-bottom: 16px;
+  font-size: 1.3rem;
+  color: var(--text-bright);
+}
+
+.more-case-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.more-case-card {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.more-case-card .badge { justify-self: start; }
+.more-case-card h3 { font-size: 1.05rem; color: var(--text-bright); }
+.more-case-card p { font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+
+.more-case-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-cyan);
+}
+
+/* ── Public profile ───────────────────────────────────────── */
+.profile-page,
+.admin-page {
+  min-height: calc(100vh - 64px);
+  padding: 104px 0 64px;
+}
+
+.profile-container {
+  max-width: 860px;
+  display: grid;
+  gap: 16px;
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+}
+
+.profile-header h1 { font-size: 1.5rem; color: var(--text-bright); }
+.profile-header p { font-size: 13px; color: var(--text-secondary); }
+
+.profile-avatar {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  color: #04060c;
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.profile-stats,
+.admin-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.profile-stat,
+.admin-tile {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+}
+
+.profile-stat svg { color: var(--accent-cyan); }
+
+.profile-stat strong,
+.admin-tile strong {
+  font-size: 1.5rem;
+  color: var(--text-bright);
+}
+
+.profile-stat span,
+.admin-tile span {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.profile-section,
+.admin-section {
+  padding: 20px 24px;
+}
+
+.profile-section h2,
+.admin-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 1rem;
+  color: var(--text-bright);
+}
+
+.profile-section h2 svg { color: var(--accent-cyan); }
+
+.profile-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.profile-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.profile-date { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+.profile-empty,
+.profile-note {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.profile-note {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+/* ── Operator page ────────────────────────────────────────── */
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.admin-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.4rem;
+  color: var(--text-bright);
+}
+
+.admin-actions { display: flex; gap: 8px; }
+.admin-tiles { margin-bottom: 16px; }
+.admin-section { margin-bottom: 16px; }
+
+.admin-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 20px;
+  font-size: 13px;
+}
+
+.admin-facts dt { color: var(--text-muted); }
+.admin-facts dd { color: var(--text-primary); }
+.admin-facts dd.ok { color: var(--accent-green); }
+.admin-facts dd.bad { color: var(--accent-red); }
+
+.admin-table-wrap { overflow-x: auto; }
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.admin-table th {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+@media (max-width: 600px) {
+  .admin-facts { grid-template-columns: 1fr; gap: 2px 0; }
+  .admin-facts dd { margin-bottom: 8px; }
+}
+
+/* ── Navbar on phones ─────────────────────────────────────── */
+/* The bar must never be wider than the screen: a too-wide bar makes the
+   phone zoom the whole page out. Secondary items go first. */
+@media (max-width: 768px) {
+  .nav-telemetry-badge { display: none; }
+  .navbar { padding-left: 12px; padding-right: 12px; }
+  .navbar-nav { gap: 2px; }
+  .navbar-actions { gap: 6px; }
+  .nav-user-name { max-width: 72px; }
+}
+
+@media (max-width: 480px) {
+  .navbar-brand-text { display: none; }
+  .navbar-link { padding: 8px 7px; }
+  .nav-progress span:last-child { display: none; }
+}
+
+/* ── Phone widths: nothing may be wider than the screen ───── */
+/* A grid column sized `1fr` grows to fit its widest child (a code block, a
+   table), which pushes the whole page past the screen. `minmax(0, 1fr)` lets
+   the column shrink and the wide child scroll inside itself instead. */
+.learn-container { grid-template-columns: 260px minmax(0, 1fr); }
+.learn-body { min-width: 0; }
+
+@media (max-width: 900px) {
+  .learn-container { grid-template-columns: minmax(0, 1fr); }
+
+  .learn-header-inner,
+  .prepare-header-inner {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .hero-content {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+
+  .hero-text,
+  .hero-terminal { min-width: 0; }
+
+  .hero-title { font-size: 2.3rem; letter-spacing: -0.5px; }
+  .mock-terminal { transform: none; }
+  .floating-badge { display: none; }
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .modes-grid { grid-template-columns: minmax(0, 1fr); }
+}

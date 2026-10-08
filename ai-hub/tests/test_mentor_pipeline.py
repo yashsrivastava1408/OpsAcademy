@@ -319,3 +319,175 @@ def test_cache_key_is_stable_and_order_insensitive_for_dicts():
     two = cache_key("q", "u", 1, 1, {"b": 2, "a": 1}, ["x"], None)
     assert one == two
     assert one != cache_key("q", "u", 2, 1, {"a": 1, "b": 2}, ["x"], None)
+
+
+# ── Streamed hints ───────────────────────────────────────────
+
+class StreamingLLM(StubLLM):
+    """Writes its reply in small pieces, optionally failing part-way."""
+
+    def __init__(self, reply="", pieces=None, fail_after=None, **kwargs):
+        super().__init__(reply=reply, **kwargs)
+        self.pieces = pieces if pieces is not None else [reply[i:i + 7] for i in range(0, len(reply), 7)]
+        self.fail_after = fail_after
+        self.streamed = 0
+
+    def stream(self, system, user):
+        self.calls.append((system, user))
+        for index, piece in enumerate(self.pieces):
+            if self.fail_after is not None and index >= self.fail_after:
+                raise llm_module.LLMStreamError("cut off")
+            self.streamed += 1
+            yield piece
+
+
+def stream(query, step, tier, mentor, history=None, telemetry=None, cache=None):
+    from pipeline import stream_agent_pipeline
+    return list(stream_agent_pipeline(query, "linux-basics", 2, history or [], telemetry, step, tier,
+                                      mentor_agent=mentor, cache=cache or TTLCache(1, 1)))
+
+
+def shown(events):
+    """What the student ends up seeing: deltas joined, starting again after each reset."""
+    text = ""
+    for event in events:
+        if event["type"] == "reset":
+            text = ""
+        elif event["type"] == "delta":
+            text += event["text"]
+    return text
+
+
+def test_streamed_hint_arrives_in_pieces_and_matches_the_final_answer(project_step):
+    reply = "Directories have to exist first. Look at what the listing shows. Then compare it with the task list."
+    events = stream("why does touch fail", project_step, 1, AIMentor(StreamingLLM(reply)))
+
+    deltas = [e for e in events if e["type"] == "delta"]
+    assert len(deltas) >= 3, "sentences are released as they finish"
+    assert all(e["type"] != "reset" for e in events)
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["data"]["hint"] == reply and done["data"]["source"] == "llm"
+    assert shown(events) == reply
+    # The response has the same shape as the non-streaming pipeline.
+    assert set(done["data"]) == set(ask("why does touch fail", project_step, 1, mentor=AIMentor(None)))
+
+
+def test_streamed_text_is_held_back_until_a_sentence_is_complete(project_step):
+    llm = StreamingLLM(pieces=["Check the ", "folder first", ". Then", " look again."])
+    events = list(AIMentor(llm).stream_hint(1, "help", project_step, {"detected_issue": None, "typo": None, "unused_tools": []}, {}, []))
+    texts = [e["text"] for e in events if e["type"] == "delta"]
+    assert texts == ["Check the folder first. ", "Then look again."]
+
+
+def test_a_leak_part_way_through_never_reaches_the_student(project_step):
+    command = "mkdir -p webapp/src"  # a full command is more than a tier 1 nudge may give
+    reply = f"Start by reading the task. Now just run `{command}` and you are done. Good luck."
+    events = stream("help", project_step, 1, AIMentor(StreamingLLM(reply)))
+
+    everything_sent = "".join(e.get("text", "") for e in events)
+    assert command not in everything_sent, "the leaked command was never sent, not even before the reset"
+    assert any(e["type"] == "reset" for e in events), "the clean first sentence had been shown, so it is taken back"
+    done = events[-1]["data"]
+    assert done["source"] == "rules"
+    assert shown(events) == done["hint"]
+    assert not leaks(done["hint"], project_step, 1)
+
+
+def test_an_unclosed_code_span_is_not_released(project_step):
+    # A sentence can end inside backticks. The command there is only recognisable
+    # once the span closes, so nothing past the last complete span is sent early.
+    llm = StreamingLLM(pieces=["Try this. Run `mkdir -p. ", "webapp/src` now. ", "Done."])
+    events = stream("help", project_step, 1, AIMentor(llm))
+    deltas = [e["text"] for e in events if e["type"] == "delta"]
+    assert deltas[0] == "Try this. "
+    assert "mkdir" not in "".join(e.get("text", "") for e in events if e["type"] == "delta" and e["text"] != events[-1]["data"]["hint"])
+    assert events[-1]["data"]["source"] == "rules"
+
+
+@pytest.mark.parametrize("fail_after", [0, 2])
+def test_a_stream_that_fails_falls_back_to_the_rule_based_hint(project_step, fail_after):
+    reply = "First sentence is fine. Second sentence is fine too. Third one never arrives."
+    events = stream("help", project_step, 2, AIMentor(StreamingLLM(reply, fail_after=fail_after)), telemetry=tree())
+    done = events[-1]["data"]
+    assert done["source"] == "rules" and done["hint"].strip()
+    assert shown(events) == done["hint"]
+
+
+def test_without_an_llm_the_stream_is_the_rule_based_hint_in_one_piece(project_step):
+    for mentor_agent in (AIMentor(None), AIMentor(StubLLM(available=False)), AIMentor(StubLLM("no stream method"))):
+        events = stream("help", project_step, 2, mentor_agent, telemetry=tree())
+        assert [e["type"] for e in events] == ["delta", "done"]
+        assert events[-1]["data"]["source"] == "rules"
+        assert events[0]["text"] == events[-1]["data"]["hint"]
+
+
+def test_streamed_hints_are_cached_and_blocked_requests_are_not_streamed(project_step):
+    cache = TTLCache(8, 60)
+    llm = StreamingLLM("Look at the folder listing first. Then compare it with the tasks.")
+    first = stream("where am I going wrong", project_step, 1, AIMentor(llm), cache=cache)
+    again = stream("where am I going wrong", project_step, 1, AIMentor(llm), cache=cache)
+    assert len(llm.calls) == 1, "the second request did not call the model"
+    assert again[-1]["data"]["cached"] is True
+    assert shown(again) == shown(first)
+
+    blocked = stream("rm -rf / --no-preserve-root", project_step, 1, AIMentor(llm), cache=cache)
+    assert [e["type"] for e in blocked] == ["done"]
+    assert blocked[0]["data"]["blocked"] is True
+
+
+class FakeStream:
+    def __init__(self, pieces, stop_reason, error=None):
+        self.pieces, self.stop_reason, self.error = pieces, stop_reason, error
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    @property
+    def text_stream(self):
+        for piece in self.pieces:
+            yield piece
+        if self.error:
+            raise self.error
+
+    def get_final_message(self):
+        return types.SimpleNamespace(stop_reason=self.stop_reason)
+
+
+def streaming_client(pieces, stop_reason="end_turn", error=None):
+    requests = []
+
+    def start(**kwargs):
+        requests.append(kwargs)
+        return FakeStream(pieces, stop_reason, error)
+
+    return types.SimpleNamespace(messages=types.SimpleNamespace(stream=start), requests=requests)
+
+
+def test_llm_client_streams_text_with_the_same_request_as_a_normal_call():
+    client = streaming_client(["Use ", "", "the task list."])
+    assert list(LLMClient(client).stream("system text", "user text")) == ["Use ", "the task list."]
+    request = client.requests[0]
+    assert request["model"] == "claude-opus-5-5"
+    assert request["system"] == "system text"
+    assert request["messages"] == [{"role": "user", "content": "user text"}]
+    assert request["output_config"] == {"effort": "low"}
+    assert "temperature" not in request and "thinking" not in request
+
+
+@pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens", "pause_turn"])
+def test_llm_client_stream_rejects_incomplete_or_refused_answers(stop_reason):
+    with pytest.raises(llm_module.LLMStreamError):
+        list(LLMClient(streaming_client(["partial"], stop_reason)).stream("s", "u"))
+
+
+def test_llm_client_stream_turns_any_failure_into_one_error():
+    with pytest.raises(llm_module.LLMStreamError):
+        list(LLMClient(streaming_client(["partial"], error=RuntimeError("connection lost"))).stream("s", "u"))
+    unavailable = LLMClient(None)
+    unavailable._resolved = True
+    with pytest.raises(llm_module.LLMStreamError):
+        list(unavailable.stream("s", "u"))

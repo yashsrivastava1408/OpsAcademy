@@ -27,21 +27,44 @@ export default function MentorChat({ unitId, currentStep, stepTitle, sessionId, 
     setLoading(true);
     setNextTier(null);
 
-    try {
-      const res = await agentApi.getHint({ query: text, unitId, stepNumber: currentStep, sessionId, tier });
-      const data = res.data?.data || {};
-
+    // The answer is written into one message as it arrives.
+    let started = false;
+    const writeAnswer = (update) => setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (started && last?.pending) return [...prev.slice(0, -1), { ...last, ...update(last) }];
+      started = true;
+      return [...prev, { sender: 'mentor', text: '', pending: true, ...update({ text: '' }) }];
+    });
+    const showFinal = (data) => {
       if (data.blocked) {
-        setMessages((prev) => [...prev, { sender: 'mentor', text: data.message || 'I can\'t help with that command.', blocked: true }]);
+        writeAnswer(() => ({ text: data.message || 'I can\'t help with that command.', blocked: true, pending: false }));
       } else {
-        setMessages((prev) => [...prev, { sender: 'mentor', text: data.hint, tier: data.tier, fallback: data.fallback }]);
+        writeAnswer(() => ({ text: data.hint, tier: data.tier, fallback: data.fallback, pending: false }));
         setNextTier(data.nextTier);
       }
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { sender: 'mentor', text: errorMessage(err, 'The mentor is unavailable right now. Please try again in a moment.'), blocked: true },
-      ]);
+    };
+    const request = { query: text, unitId, stepNumber: currentStep, sessionId, tier };
+
+    try {
+      const data = await agentApi.streamHint(request, (event) => {
+        if (event.type === 'delta') writeAnswer((message) => ({ text: message.text + event.text }));
+        else if (event.type === 'reset') writeAnswer(() => ({ text: '' }));
+      });
+      showFinal(data);
+    } catch (streamError) {
+      try {
+        // The server said no (an empty question, too many requests): show its reason.
+        if (streamError.response?.data?.error) throw streamError;
+        // Otherwise streaming is not available here: ask the ordinary way.
+        const res = await agentApi.getHint(request);
+        showFinal(res.data?.data || {});
+      } catch (err) {
+        writeAnswer(() => ({
+          text: errorMessage(err, 'The mentor is unavailable right now. Please try again in a moment.'),
+          blocked: true,
+          pending: false,
+        }));
+      }
     } finally {
       setLoading(false);
     }
@@ -100,7 +123,7 @@ export default function MentorChat({ unitId, currentStep, stepTitle, sessionId, 
           </div>
         ))}
 
-        {loading && (
+        {loading && !messages[messages.length - 1]?.pending && (
           <div className="mentor-msg msg-mentor">
             <div className="msg-avatar">
               <Bot size={14} />

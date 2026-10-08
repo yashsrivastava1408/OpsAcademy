@@ -10,7 +10,7 @@
         "Run `kubectl get nodes` to list available nodes"
       ],
       "verification": {
-        "command": "kubectl version --client 2>&1 | grep -i 'client version' && echo PASS || echo FAIL",
+        "command": "kubectl __ran version && kubectl __ran cluster-info && kubectl __ran get-nodes && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -25,7 +25,7 @@
         "View details: `kubectl describe pod my-nginx`"
       ],
       "verification": {
-        "command": "kubectl get pods | grep my-nginx && echo PASS || echo FAIL",
+        "command": "kubectl get pod my-nginx -o name 2>/dev/null | grep -q my-nginx && kubectl __ran describe-pod && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -40,7 +40,7 @@
         "Scale to 5 replicas: `kubectl scale deployment web-app --replicas=5`"
       ],
       "verification": {
-        "command": "kubectl get deployment web-app -o jsonpath='{.spec.replicas}' 2>/dev/null | grep -q '5' && echo PASS || echo FAIL",
+        "command": "kubectl get deployment web-app -o jsonpath='{.spec.replicas}' 2>/dev/null | grep -qx 5 && test \"$(kubectl get pods -l app=web-app -o name 2>/dev/null | wc -l | tr -d ' ')\" = 5 && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -55,7 +55,7 @@
         "Describe the service: `kubectl describe service web-app`"
       ],
       "verification": {
-        "command": "kubectl get service web-app && echo PASS || echo FAIL",
+        "command": "kubectl get service web-app -o jsonpath='{.spec.type}' 2>/dev/null | grep -q NodePort && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -65,13 +65,14 @@
       "title": "Troubleshoot a Pod",
       "description": "Practice the debugging workflow for diagnosing pod issues.",
       "tasks": [
+        "List the web-app pods and pick one: `kubectl get pods -l app=web-app`",
         "View pod logs: `kubectl logs <pod-name>` (use one of the web-app pods)",
         "Shell into a pod: `kubectl exec -it <pod-name> -- sh`",
         "Inside, run: `cat /etc/nginx/nginx.conf` then `exit`",
-        "Check resource usage: `kubectl top pods` (if metrics-server is installed)"
+        "Check resource usage: `kubectl top pods`"
       ],
       "verification": {
-        "command": "kubectl logs $(kubectl get pods -l app=web-app -o jsonpath='{.items[0].metadata.name}') 2>&1 | head -1 | grep -q '' && echo PASS || echo FAIL",
+        "command": "kubectl __ran logs && kubectl __ran exec && kubectl __ran top-pods && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -84,10 +85,10 @@
         "Delete the service: `kubectl delete service web-app`",
         "Delete the deployment: `kubectl delete deployment web-app`",
         "Delete the standalone pod: `kubectl delete pod my-nginx`",
-        "Verify cleanup: `kubectl get all`"
+        "Verify cleanup: `kubectl get all` (only the built-in `kubernetes` service should remain)"
       ],
       "verification": {
-        "command": "kubectl get deployment web-app 2>&1 | grep -q 'not found' && echo PASS || echo FAIL",
+        "command": "kubectl __ran delete-service:web-app && kubectl __ran delete-deployment:web-app && kubectl __ran delete-pod:my-nginx && ! kubectl get all 2>/dev/null | grep -qE 'web-app|my-nginx' && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

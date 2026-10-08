@@ -9,6 +9,10 @@
 #    are lost whenever the service restarts. Attach a disk and set DATA_DIR to
 #    keep them.
 #  - Set CORS_ORIGINS on the gateway to your frontend's URL after the first deploy.
+#  - Region: every terminal keystroke is a round trip to the gateway, so it
+#    should be near the students. Singapore is the closest Render region to
+#    India. Render cannot move an existing service: to change region, create
+#    new services from this blueprint and point VITE_API_URL at the new URL.
 
 envVarGroups:
   # One generated secret shared by both services, so only the gateway can call the hub.
@@ -22,7 +26,7 @@ services:
   - type: web
     name: opsacademy-server
     env: node
-    region: oregon
+    region: singapore
     plan: free
     buildCommand: cd server && npm ci --omit=dev
     startCommand: cd server && node server.js
@@ -43,13 +47,22 @@ services:
           property: hostport
       - key: CORS_ORIGINS
         sync: false
+      # The web app's public URL: used for the links in password-reset emails.
+      - key: APP_URL
+        sync: false
+      # Optional. Without it reset and confirmation links are only logged.
+      - key: RESEND_API_KEY
+        sync: false
+      # Optional. Enables the operator page at /admin.
+      - key: ADMIN_TOKEN
+        sync: false
       - fromGroup: opsacademy-shared
 
   # ── AI Agent Hub (Python Web Service) ─────────────────────
   - type: web
     name: opsacademy-ai-hub
     env: python
-    region: oregon
+    region: singapore
     plan: free
     buildCommand: cd ai-hub && pip install -r requirements.txt
     startCommand: cd ai-hub && gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 30 --keep-alive 15 app:app

@@ -9,6 +9,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const config = require('../config');
+const { getStore } = require('../lib/store');
 
 function signToken(user) {
   return jwt.sign(
@@ -21,11 +22,20 @@ function signToken(user) {
 /** @returns the token payload, or null if the token is missing, expired or forged */
 function verifyToken(token) {
   if (!token) return null;
+  let payload;
   try {
-    return jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] });
+    payload = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] });
   } catch {
     return null;
   }
+
+  // Resetting a password signs out every session started before it, so a
+  // stolen token stops working. Guests have no password to change.
+  if (!payload.guest) {
+    const user = getStore().get('users', payload.id);
+    if (user && user.passwordChangedAt && payload.iat * 1000 < user.passwordChangedAt) return null;
+  }
+  return payload;
 }
 
 function tokenFromRequest(req) {

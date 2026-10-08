@@ -305,6 +305,77 @@ class AIMentor:
         return {"hint": self.rule_hint(tier, query, step, assessment, diagnostics, docs), "source": "rules", "tier": tier}
 
 
+    def stream_hint(self, tier: int, query: str, step: dict, assessment: dict, diagnostics: dict, docs: list, history: list = None):
+        """
+        The same hint as generate_hint, delivered as events while it is written:
+
+          {'type': 'delta', 'text': str}   more of the hint
+          {'type': 'reset'}                discard what was shown; the hint starts again
+          {'type': 'done', 'hint': str, 'source': 'llm' | 'rules', 'tier': int}
+
+        Nothing the model writes reaches the student unchecked. Text is held
+        back until the end of a sentence, and the whole hint so far must pass
+        the leak check before that sentence is released. If the model leaks,
+        fails or stops early, the hint is replaced by the rule-based one.
+        """
+        tier = max(1, min(MAX_TIER, int(tier or 1)))
+        rule_hint = lambda: self.rule_hint(tier, query, step, assessment, diagnostics, docs)  # noqa: E731
+
+        if self.llm is None or not self.llm.available or not hasattr(self.llm, "stream"):
+            hint = rule_hint()
+            yield {"type": "delta", "text": hint}
+            yield {"type": "done", "hint": hint, "source": "rules", "tier": tier}
+            return
+
+        from agents.llm import LLMStreamError
+
+        written = ""    # everything the model has produced
+        released = 0    # how much of it the student has been sent
+        failed = False
+        try:
+            for piece in self.llm.stream(SYSTEM_PROMPT, self.llm_prompt(tier, query, step, assessment, diagnostics, docs, history or [])):
+                written += piece
+                boundary = release_point(written)
+                if boundary <= released:
+                    continue
+                if leaks(written[:boundary], step, tier):
+                    failed = True
+                    break
+                yield {"type": "delta", "text": written[released:boundary]}
+                released = boundary
+        except LLMStreamError:
+            failed = True
+
+        final = written.strip()
+        if failed or not final or leaks(final, step, tier):
+            hint = rule_hint()
+            if released:
+                yield {"type": "reset"}
+            yield {"type": "delta", "text": hint}
+            yield {"type": "done", "hint": hint, "source": "rules", "tier": tier}
+            return
+
+        if released < len(written):
+            yield {"type": "delta", "text": written[released:]}
+        yield {"type": "done", "hint": final, "source": "llm", "tier": tier}
+
+
+SENTENCE_END = re.compile(r"[.!?:]\s|\n")
+
+
+def release_point(text: str) -> int:
+    """
+    How much of a hint that is still being written is safe to judge: up to the
+    end of the last finished sentence that does not leave a `code span` open.
+    (A command is only recognisable once its closing backtick has arrived.)
+    """
+    for match in reversed(list(SENTENCE_END.finditer(text))):
+        end = match.end()
+        if text.count("`", 0, end) % 2 == 0:
+            return end
+    return 0
+
+
 def default_mentor():
     from agents.llm import llm
     return AIMentor(llm)

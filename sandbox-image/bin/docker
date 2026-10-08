@@ -1,0 +1,1149 @@
+#!/usr/bin/env python3
+"""
+docker: the OpsAcademy simulator.
+
+The sandbox cannot run a container runtime, so this script stands in for the
+docker CLI. Images and containers live in ~/.opsacademy/docker.json. One part
+is real: a detached nginx container with a published port 80 gets a small
+HTTP server on 127.0.0.1:<host port>, so `curl localhost:8080` works.
+"""
+
+import sys
+
+sys.dont_write_bytecode = True
+
+import base64
+import json
+import os
+import random
+import re
+import select
+import shutil
+import signal
+import subprocess
+import time
+
+import _opsim
+from _opsim import FakeShell, ShellExit, hex_id, human_duration, table
+
+TOOL = "docker"
+VERSION = "27.1.1"
+SUPPORTED = ["version", "info", "pull", "images", "run", "ps", "logs", "exec", "build", "stop", "start",
+             "restart", "kill", "rm", "rmi", "stats", "inspect", "port", "tag"]
+
+# Images the simulated registry knows. `kind` decides what a container does:
+#   shell  - exits at once unless given a command or -it
+#   server - stays up
+#   nginx  - stays up and serves HTTP on container port 80
+#   hello  - prints a greeting and exits
+CATALOG = {
+    "alpine": {"kind": "shell", "cmd": "/bin/sh", "size": "7.8MB", "os": "alpine", "layers": 1},
+    "busybox": {"kind": "shell", "cmd": "sh", "size": "4.26MB", "os": "alpine", "layers": 1},
+    "ubuntu": {"kind": "shell", "cmd": "/bin/bash", "size": "78.1MB", "os": "ubuntu", "layers": 1},
+    "debian": {"kind": "shell", "cmd": "bash", "size": "117MB", "os": "debian", "layers": 1},
+    "hello-world": {"kind": "hello", "cmd": "/hello", "size": "13.3kB", "os": "alpine", "layers": 1},
+    "nginx": {"kind": "nginx", "cmd": "/docker-entrypoint.sh nginx -g 'daemon off;'", "size": "188MB", "os": "debian",
+              "layers": 7, "ports": ["80/tcp"]},
+    "httpd": {"kind": "server", "cmd": "httpd-foreground", "size": "148MB", "os": "debian", "layers": 6, "ports": ["80/tcp"]},
+    "redis": {"kind": "server", "cmd": "docker-entrypoint.sh redis-server", "size": "117MB", "os": "debian",
+              "layers": 8, "ports": ["6379/tcp"]},
+    "postgres": {"kind": "server", "cmd": "docker-entrypoint.sh postgres", "size": "432MB", "os": "debian",
+                 "layers": 14, "ports": ["5432/tcp"]},
+    "python": {"kind": "shell", "cmd": "python3", "size": "1.02GB", "os": "debian", "layers": 7},
+    "node": {"kind": "shell", "cmd": "docker-entrypoint.sh node", "size": "1.1GB", "os": "debian", "layers": 8},
+}
+
+HELLO_WORLD = """
+Hello from Docker!
+This message shows that your installation appears to be working correctly.
+
+(This is the OpsAcademy simulator: no image was downloaded and no real
+container ran, but the commands and their output match the real tool.)
+"""
+
+ADJECTIVES = ["admiring", "brave", "clever", "dreamy", "eager", "focused", "gallant", "happy", "jolly", "keen",
+              "lucid", "modest", "nifty", "peaceful", "quirky", "relaxed", "sharp", "trusting", "vibrant", "zen"]
+SURNAMES = ["hopper", "turing", "lovelace", "ritchie", "knuth", "curie", "newton", "galileo", "tesla", "morse",
+            "noether", "hamilton", "liskov", "torvalds", "bohr", "darwin", "euler", "fermi", "kepler", "pascal"]
+
+MAX_HTML_BYTES = 1024 * 1024  # total size of files a built image may carry
+
+
+def fail(message, code=1):
+    sys.stderr.write(message.rstrip("\n") + "\n")
+    return code
+
+
+def load():
+    return _opsim.load_state(TOOL, {"ran": {}, "images": [], "containers": []})
+
+
+def save(state):
+    _opsim.save_state(TOOL, state)
+
+
+def container_dir(container):
+    return os.path.join(_opsim.state_dir(), "docker", container["id"][:12])
+
+
+# ── Images ───────────────────────────────────────────────────
+
+def split_ref(ref):
+    """'nginx:alpine' -> ('nginx', 'alpine'); the tag defaults to latest."""
+    for prefix in ("docker.io/library/", "docker.io/", "library/"):
+        if ref.startswith(prefix):
+            ref = ref[len(prefix):]
+    repo, _, tag = ref.partition(":")
+    return repo, tag or "latest"
+
+
+def find_image(state, ref):
+    repo, tag = split_ref(ref)
+    for image in state["images"]:
+        if image["repo"] == repo and image["tag"] == tag:
+            return image
+    if re.match(r"^[0-9a-f]{4,64}$", ref):
+        for image in state["images"]:
+            if image["id"].startswith(ref):
+                return image
+    return None
+
+
+def pull_image(state, ref, out):
+    """Add a catalog image to the local store. Returns the image, or None after printing the error."""
+    repo, tag = split_ref(ref)
+    if ":" not in ref:
+        out.write("Using default tag: latest\n")
+    if repo not in CATALOG:
+        sys.stderr.write("Error response from daemon: pull access denied for %s, repository does not exist or may "
+                         "require 'docker login': denied: requested access to the resource is denied\n" % repo)
+        return None
+    name = "%s:%s" % (repo, tag)
+    digest = hex_id("digest:" + name)
+    existing = find_image(state, name)
+    out.write("%s: Pulling from library/%s\n" % (tag, repo))
+    if existing:
+        out.write("Digest: sha256:%s\nStatus: Image is up to date for %s\n" % (digest, name))
+        return existing
+    base = CATALOG[repo]
+    for layer in range(base["layers"]):
+        out.write("%s: Pull complete\n" % hex_id("layer:%s:%d" % (name, layer), 12))
+    out.write("Digest: sha256:%s\nStatus: Downloaded newer image for %s\n" % (digest, name))
+    small = "alpine" in tag or "slim" in tag
+    image = {
+        "repo": repo, "tag": tag, "id": hex_id("image:" + name), "created": time.time() - 14 * 86400,
+        "size": "43.2MB" if repo == "nginx" and small else base["size"],
+        "kind": base["kind"], "cmd": base["cmd"], "ports": base.get("ports", []),
+        "os": "alpine" if "alpine" in tag else base["os"], "files": {},
+    }
+    state["images"].append(image)
+    return image
+
+
+def cmd_pull(state, args):
+    refs = [a for a in args if not a.startswith("-")]
+    if len(refs) != 1:
+        return fail('"docker pull" requires exactly 1 argument.\nSee \'docker pull --help\'.\n\nUsage:  docker pull [OPTIONS] NAME[:TAG|@DIGEST]')
+    image = pull_image(state, refs[0], sys.stdout)
+    if not image:
+        return 1
+    print("docker.io/library/%s:%s" % (image["repo"], image["tag"]))
+    return 0
+
+
+def cmd_images(state, args):
+    quiet = "-q" in args or "--quiet" in args
+    wanted = [a for a in args if not a.startswith("-")]
+    images = [i for i in state["images"] if not wanted or i["repo"] == split_ref(wanted[0])[0]]
+    images.sort(key=lambda i: -i["created"])
+    if quiet:
+        for image in images:
+            print(image["id"][:12])
+        return 0
+    rows = [[i["repo"], i["tag"], i["id"][:12], human_duration(time.time() - i["created"]) + " ago", i["size"]] for i in images]
+    print(table(["REPOSITORY", "TAG", "IMAGE ID", "CREATED", "SIZE"], rows))
+    return 0
+
+
+def cmd_rmi(state, args):
+    force = "-f" in args or "--force" in args
+    refs = [a for a in args if not a.startswith("-")]
+    if not refs:
+        return fail('"docker rmi" requires at least 1 argument.\nSee \'docker rmi --help\'.')
+    code = 0
+    for ref in refs:
+        image = find_image(state, ref)
+        if not image:
+            code = fail("Error response from daemon: No such image: %s" % (ref if ":" in ref else ref + ":latest"))
+            continue
+        users = [c for c in state["containers"] if c["image_id"] == image["id"]]
+        if users and not force:
+            code = fail('Error response from daemon: conflict: unable to remove repository reference "%s" (must force) - '
+                        "container %s is using its referenced image %s" % (ref, users[0]["id"][:12], image["id"][:12]))
+            continue
+        state["images"].remove(image)
+        print("Untagged: %s:%s\nDeleted: sha256:%s" % (image["repo"], image["tag"], image["id"]))
+        _opsim.record(state, "rmi:%s" % image["repo"])
+    return code
+
+
+def cmd_tag(state, args):
+    if len(args) != 2:
+        return fail('"docker tag" requires exactly 2 arguments.\nSee \'docker tag --help\'.')
+    image = find_image(state, args[0])
+    if not image:
+        return fail("Error response from daemon: No such image: %s" % args[0])
+    repo, tag = split_ref(args[1])
+    existing = find_image(state, args[1])
+    if existing:
+        state["images"].remove(existing)
+    state["images"].append(dict(image, repo=repo, tag=tag))
+    return 0
+
+
+# ── Build ────────────────────────────────────────────────────
+
+def read_dockerfile(path):
+    """Instructions as (KEYWORD, rest) pairs, with comments and line continuations handled."""
+    with open(path) as handle:
+        text = handle.read().replace("\\\n", " ")
+    steps = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            keyword, _, rest = line.partition(" ")
+            steps.append((keyword.upper(), rest.strip()))
+    return steps
+
+
+def collect_html(context, sources, dest, files):
+    """Remember files COPY'd into nginx's web root so the container can serve them."""
+    root = "/usr/share/nginx/html"
+    dest_clean = dest.rstrip("/")
+    if not (dest_clean == root or dest_clean.startswith(root + "/")):
+        return
+    inside = dest_clean[len(root):].strip("/")
+    for source in sources:
+        full = os.path.join(context, source)
+        if os.path.isdir(full):
+            for folder, _dirs, names in os.walk(full):
+                for name in names:
+                    path = os.path.join(folder, name)
+                    add_html(files, os.path.join(inside, os.path.relpath(path, full)), path)
+        else:
+            as_dir = dest.endswith("/") or len(sources) > 1 or dest_clean == root
+            add_html(files, os.path.join(inside, os.path.basename(source)) if as_dir else inside, full)
+
+
+def add_html(files, name, path):
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read(MAX_HTML_BYTES + 1)
+    except OSError:
+        return
+    used = sum(len(v) for v in files.values())
+    if used + len(data) * 4 // 3 <= MAX_HTML_BYTES * 4 // 3:
+        files[name.replace(os.sep, "/").lstrip("./")] = base64.b64encode(data).decode()
+
+
+def cmd_build(state, args):
+    tag, dockerfile, context = None, None, None
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in ("-t", "--tag", "-f", "--file") and index + 1 < len(args):
+            index += 1
+            if arg in ("-t", "--tag"):
+                tag = args[index]
+            else:
+                dockerfile = args[index]
+        elif arg.startswith("--tag="):
+            tag = arg.split("=", 1)[1]
+        elif arg.startswith("--file="):
+            dockerfile = arg.split("=", 1)[1]
+        elif arg in ("--no-cache", "--pull", "-q", "--quiet"):
+            pass
+        elif arg.startswith("-") and arg != "-":
+            return fail("unknown flag: %s\nSee 'docker build --help'." % arg, 125)
+        else:
+            context = arg
+        index += 1
+    if context is None:
+        return fail('"docker build" requires exactly 1 argument.\nSee \'docker build --help\'.\n\n'
+                    "Usage:  docker build [OPTIONS] PATH | URL | -\n\nBuild an image from a Dockerfile")
+    if not os.path.isdir(context):
+        return fail("unable to prepare context: path \"%s\" not found" % context)
+    dockerfile = dockerfile or os.path.join(context, "Dockerfile")
+    if not os.path.isfile(dockerfile):
+        return fail("unable to prepare context: unable to evaluate symlinks in Dockerfile path: lstat %s: "
+                    "no such file or directory" % os.path.abspath(dockerfile))
+    steps = read_dockerfile(dockerfile)
+    if not steps or steps[0][0] not in ("FROM", "ARG"):
+        return fail("Error response from daemon: No build stage in current context" if steps
+                    else "Error response from daemon: the Dockerfile (Dockerfile) cannot be empty")
+
+    size = sum(os.path.getsize(os.path.join(folder, name)) for folder, _d, names in os.walk(context) for name in names
+               if os.path.isfile(os.path.join(folder, name)))
+    print("Sending build context to Docker daemon  %.3fkB" % (max(size, 1) / 1000.0 + 2.048))
+    image, layer = None, None
+    for number, (keyword, rest) in enumerate(steps, 1):
+        print("Step %d/%d : %s %s" % (number, len(steps), keyword, rest))
+        layer = hex_id("build:%s:%d:%s:%s" % (tag, number, rest, time.time()), 12)
+        if keyword == "FROM":
+            ref = rest.split()[0] if rest else ""
+            base = find_image(state, ref)
+            if not base:
+                base = pull_image(state, ref, sys.stdout)
+                if not base:
+                    return 1
+            image = dict(base, files=dict(base.get("files") or {}))
+            print(" ---> %s" % base["id"][:12])
+            continue
+        if image is None:
+            return fail("Error response from daemon: No build stage in current context")
+        if keyword in ("COPY", "ADD"):
+            words = [w for w in rest.split() if not w.startswith("--")]
+            if len(words) < 2:
+                return fail("Error response from daemon: dockerfile parse error on line %d: %s requires at least two "
+                            "arguments, but only one was provided. Destination could not be determined" % (number, keyword))
+            sources, dest = words[:-1], words[-1]
+            for source in sources:
+                if not os.path.exists(os.path.join(context, source)):
+                    return fail("%s failed: file not found in build context or excluded by .dockerignore: stat %s: "
+                                "file does not exist" % (keyword, source))
+            if image["kind"] == "nginx":
+                collect_html(context, sources, dest, image["files"])
+        elif keyword == "RUN":
+            # Nothing is executed: there is no container to run it in.
+            print(" ---> Running in %s (simulated: the command is not executed)" % hex_id("run:" + layer, 12))
+        elif keyword == "CMD":
+            image["cmd"] = rest
+            print(" ---> Running in %s" % hex_id("run:" + layer, 12))
+        elif keyword == "EXPOSE":
+            image["ports"] = sorted(set(image.get("ports", []) + [p if "/" in p else p + "/tcp" for p in rest.split()]))
+            print(" ---> Running in %s" % hex_id("run:" + layer, 12))
+        elif keyword in ("WORKDIR", "ENV", "LABEL", "ENTRYPOINT", "USER", "ARG", "VOLUME", "HEALTHCHECK", "MAINTAINER", "SHELL", "STOPSIGNAL"):
+            print(" ---> Running in %s" % hex_id("run:" + layer, 12))
+        else:
+            return fail("Error response from daemon: dockerfile parse error on line %d: unknown instruction: %s" % (number, keyword))
+        print(" ---> %s" % layer)
+
+    image["id"] = hex_id("built:%s:%s" % (tag, layer))
+    image["created"] = time.time()
+    print("Successfully built %s" % image["id"][:12])
+    if tag:
+        image["repo"], image["tag"] = split_ref(tag)
+        old = find_image(state, tag)
+        if old:
+            state["images"].remove(old)
+        print("Successfully tagged %s:%s" % (image["repo"], image["tag"]))
+    else:
+        image["repo"], image["tag"] = "<none>", "<none>"
+    state["images"].append(image)
+    return 0
+
+
+# ── The real web server behind a published nginx port ────────
+
+def serve(args):
+    """Hidden subcommand: run the HTTP server for one container until killed."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    _cid, port, docroot, logfile, ready_fd = args[0], int(args[1]), args[2], args[3], int(args[4])
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def version_string(self):
+            return "nginx/%s (%s)" % (_opsim.NGINX_VERSION, _opsim.SIM_NAME)
+
+        def respond(self, send_body):
+            path = self.path.split("?", 1)[0].split("#", 1)[0]
+            relative = os.path.normpath("/" + path).lstrip("/")
+            target = os.path.join(docroot, relative)
+            if os.path.isdir(target):
+                target = os.path.join(target, "index.html")
+            status, body, kind = 200, None, "text/html"
+            if os.path.isfile(target):
+                with open(target, "rb") as handle:
+                    body = handle.read()
+                extension = os.path.splitext(target)[1].lower()
+                kind = {".css": "text/css", ".js": "application/javascript", ".json": "application/json",
+                        ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".txt": "text/plain"}.get(extension, "text/html")
+            elif relative in ("", "index.html"):
+                body = _opsim.NGINX_WELCOME.encode()
+            else:
+                status = 404
+                body = ("<html>\r\n<head><title>404 Not Found</title></head>\r\n<body>\r\n<center><h1>404 Not Found</h1></center>\r\n"
+                        "<hr><center>nginx/%s</center>\r\n</body>\r\n</html>\r\n" % _opsim.NGINX_VERSION).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            if send_body:
+                self.wfile.write(body)
+            self.access(status, len(body) if send_body else 0)
+
+        def do_GET(self):
+            self.respond(True)
+
+        def do_HEAD(self):
+            self.respond(False)
+
+        def access(self, status, size):
+            stamp = time.strftime("%d/%b/%Y:%H:%M:%S +0000", time.gmtime())
+            line = '172.17.0.1 - - [%s] "%s" %d %d "-" "%s" "-"\n' % (
+                stamp, self.requestline, status, size, self.headers.get("User-Agent", "-"))
+            try:
+                with open(logfile, "a") as log:
+                    log.write(line)
+            except OSError:
+                pass
+
+        def log_message(self, *_args):
+            pass
+
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError as error:
+        os.write(ready_fd, ("denied" if isinstance(error, PermissionError) else "busy").encode())
+        os.close(ready_fd)
+        return 1
+    server.daemon_threads = True
+    signal.signal(signal.SIGTERM, lambda *_: os._exit(0))
+    os.write(ready_fd, b"ok")
+    os.close(ready_fd)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+def start_server(container, host_port):
+    """Start the detached web server for a container. Returns (pid, None) or (None, reason)."""
+    folder = container_dir(container)
+    docroot = os.path.join(folder, "html")
+    shutil.rmtree(docroot, ignore_errors=True)
+    os.makedirs(docroot, exist_ok=True)
+    for name, encoded in (container.get("files") or {}).items():
+        path = os.path.join(docroot, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as handle:
+            handle.write(base64.b64decode(encoded))
+    read_fd, write_fd = os.pipe()
+    command = [sys.executable or "python3", os.path.abspath(__file__), "__serve", container["id"][:12], str(host_port),
+               docroot, os.path.join(folder, "access.log"), str(write_fd)]
+    null = open(os.devnull, "r+b")
+    try:
+        # Its own session, so it outlives this command and the terminal's Ctrl-C.
+        child = subprocess.Popen(command, stdin=null, stdout=null, stderr=null, pass_fds=(write_fd,),
+                                 start_new_session=True, cwd="/")
+    finally:
+        os.close(write_fd)
+        null.close()
+    ready, _, _ = select.select([read_fd], [], [], 8)
+    answer = os.read(read_fd, 16).decode() if ready else ""
+    os.close(read_fd)
+    if answer == "ok":
+        return child.pid, None
+    try:
+        child.kill()
+    except OSError:
+        pass
+    child.wait()
+    return None, answer or "busy"
+
+
+def server_alive(container):
+    """True if the PID we stored is still this container's web server (not a reused PID)."""
+    pid = container.get("pid")
+    if not pid:
+        return False
+    marker = "__serve %s " % container["id"][:12]
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as handle:
+            return marker in handle.read().replace(b"\0", b" ").decode("utf-8", "replace") + " "
+    except OSError:
+        pass
+    if os.path.isdir("/proc/self"):
+        return False
+    # No /proc (macOS): ask ps for that one PID.
+    try:
+        listing = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, timeout=5).stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return marker in listing + " "
+
+
+def stop_server(container):
+    """Kill the container's web server, if it is still ours, and wait for the port to free up."""
+    pid = container.get("pid")
+    if pid and server_alive(container):
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                break
+            for _ in range(40):
+                if not server_alive(container):
+                    break
+                time.sleep(0.05)
+            if not server_alive(container):
+                break
+    container["pid"] = None
+
+
+# ── Containers ───────────────────────────────────────────────
+
+def refresh(state):
+    """Bring stored status in line with reality: dead servers and finished sleeps show as Exited."""
+    now = time.time()
+    for container in state["containers"]:
+        if container["state"] != "running":
+            continue
+        if container.get("pid") and not server_alive(container):
+            container.update(state="exited", exit_code=137, finished=now, pid=None)
+        elif container.get("until") and now >= container["until"]:
+            container.update(state="exited", exit_code=0, finished=container["until"])
+
+
+def find_container(state, ref):
+    for container in state["containers"]:
+        if container["name"] == ref or container["id"] == ref:
+            return container
+    if re.match(r"^[0-9a-f]{2,64}$", ref):
+        matches = [c for c in state["containers"] if c["id"].startswith(ref)]
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
+def port_text(container):
+    if container["state"] != "running":
+        return ""
+    parts = ["0.0.0.0:%d->%s" % (host, inside) for host, inside in container["ports"]]
+    published = set(inside for _host, inside in container["ports"])
+    parts += [p for p in container.get("exposed", []) if p not in published]
+    return ", ".join(parts)
+
+
+def status_text(container):
+    now = time.time()
+    if container["state"] == "running":
+        return "Up " + human_duration(now - container["started"])
+    if container["state"] == "created":
+        return "Created"
+    return "Exited (%d) %s ago" % (container.get("exit_code", 0), human_duration(now - container.get("finished", now)))
+
+
+def cmd_ps(state, args):
+    flags = "".join(a[1:] for a in args if re.match(r"^-[a-z]+$", a))
+    show_all = "a" in flags or "--all" in args
+    quiet = "q" in flags or "--quiet" in args
+    containers = [c for c in state["containers"] if show_all or c["state"] == "running"]
+    containers.sort(key=lambda c: -c["created"])
+    if quiet:
+        for container in containers:
+            print(container["id"][:12])
+        return 0
+    rows = []
+    for c in containers:
+        command = c["command"] if len(c["command"]) <= 20 else c["command"][:19] + "…"
+        rows.append([c["id"][:12], c["image"], '"%s"' % command, human_duration(time.time() - c["created"]) + " ago",
+                     status_text(c), port_text(c), c["name"]])
+    print(table(["CONTAINER ID", "IMAGE", "COMMAND", "CREATED", "STATUS", "PORTS", "NAMES"], rows))
+    return 0
+
+
+def shell_for(container):
+    """A fake shell that looks like the inside of this container."""
+    nginx = container["kind"] == "nginx"
+    html = {}
+    for name, encoded in (container.get("files") or {}).items():
+        html[name] = base64.b64decode(encoded).decode("utf-8", "replace")
+    files = _opsim.container_files(container["id"][:12], container.get("os", "alpine"), nginx, html)
+    log_path = os.path.join(container_dir(container), "access.log")
+    if nginx and os.path.isfile(log_path):
+        with open(log_path) as handle:
+            files["/var/log/nginx/access.log"] = handle.read()
+    env = {"NGINX_VERSION": _opsim.NGINX_VERSION} if nginx else {}
+    processes = [("root", "nginx: master process nginx -g daemon off;"), ("nginx", "nginx: worker process")] if nginx else []
+    return FakeShell(container["id"][:12], files, env, processes)
+
+
+def parse_publish(value):
+    """'8080:80', '127.0.0.1:8080:80' or '80' -> (host port or None, 'N/tcp')."""
+    parts = value.split(":")
+    inside = parts[-1]
+    host = parts[-2] if len(parts) >= 2 else ""
+    if "/" not in inside:
+        inside += "/tcp"
+    if not inside.split("/")[0].isdigit():
+        raise ValueError("invalid containerPort: %s" % inside.split("/")[0])
+    if host and (not host.isdigit() or not 0 < int(host) < 65536):
+        raise ValueError("invalid hostPort: %s" % host)
+    return (int(host) if host else None), inside
+
+
+RUN_VALUE_FLAGS = ("-e", "--env", "-v", "--volume", "--restart", "-w", "--workdir", "--network", "--net", "-h", "--hostname",
+                   "-m", "--memory", "--cpus", "-u", "--user", "-l", "--label", "--entrypoint", "--env-file", "--platform", "--pull")
+
+
+def publish_error(name, host_port, reason):
+    endpoint = "%s (%s)" % (name, hex_id("endpoint:%s:%s" % (name, time.time())))
+    if reason == "denied":
+        detail = "Error starting userland proxy: listen tcp4 0.0.0.0:%d: bind: permission denied" % host_port
+    else:
+        detail = "Bind for 0.0.0.0:%d failed: port is already allocated" % host_port
+    return "Error response from daemon: driver failed programming external connectivity on endpoint %s: %s." % (endpoint, detail)
+
+
+def launch(state, container):
+    """Move a container to running. Returns an error message, or None on success."""
+    container.update(state="running", started=time.time(), exit_code=0, pid=None)
+    for host_port, inside in container["ports"]:
+        for other in state["containers"]:
+            if other is not container and other["state"] == "running" and any(h == host_port for h, _ in other["ports"]):
+                return publish_error(container["name"], host_port, "busy")
+    if container["kind"] == "nginx":
+        for host_port, inside in container["ports"]:
+            if inside == "80/tcp":
+                pid, reason = start_server(container, host_port)
+                if not pid:
+                    return publish_error(container["name"], host_port, reason)
+                container["pid"] = pid
+                break
+    return None
+
+
+def cmd_run(state, args):
+    detach = interactive = auto_remove = False
+    name, publishes = None, []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if not arg.startswith("-") or arg == "-":
+            break
+        key, has_value, value = arg.partition("=")
+        if key in ("--name", "-p", "--publish") or key in RUN_VALUE_FLAGS:
+            if not has_value:
+                index += 1
+                if index >= len(args):
+                    return fail("flag needs an argument: %s\nSee 'docker run --help'." % arg, 125)
+                value = args[index]
+            if key == "--name":
+                name = value
+            elif key in ("-p", "--publish"):
+                publishes.append(value)
+        elif arg in ("--rm", "--detach", "--interactive", "--tty", "--init", "--privileged", "--read-only"):
+            detach = detach or arg == "--detach"
+            auto_remove = auto_remove or arg == "--rm"
+            interactive = interactive or arg in ("--interactive", "--tty")
+        elif re.match(r"^-[dit]+$", arg):
+            detach = detach or "d" in arg
+            interactive = interactive or "i" in arg or "t" in arg
+        else:
+            return fail("unknown flag: %s\nSee 'docker run --help'." % arg, 125)
+        index += 1
+    if index >= len(args):
+        return fail('"docker run" requires at least 1 argument.\nSee \'docker run --help\'.\n\n'
+                    "Usage:  docker run [OPTIONS] IMAGE [COMMAND] [ARG...]\n\nCreate and run a new container from an image", 125)
+    ref, command = args[index], args[index + 1:]
+
+    if name is not None:
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]+$", name):
+            return fail("docker: Error response from daemon: Invalid container name (%s), only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed.\n"
+                        "See 'docker run --help'." % name, 125)
+        clash = find_container(state, name)
+        if clash and clash["name"] == name:
+            return fail('docker: Error response from daemon: Conflict. The container name "/%s" is already in use by container "%s". '
+                        "You have to remove (or rename) that container to be able to reuse that name.\nSee 'docker run --help'."
+                        % (name, clash["id"]), 125)
+    try:
+        ports = [parse_publish(p) for p in publishes]
+    except ValueError as error:
+        return fail("docker: %s.\nSee 'docker run --help'." % str(error).capitalize(), 125)
+
+    image = find_image(state, ref)
+    if not image:
+        repo, tag = split_ref(ref)
+        sys.stderr.write("Unable to find image '%s:%s' locally\n" % (repo, tag))
+        image = pull_image(state, "%s:%s" % (repo, tag), sys.stderr)
+        if not image:
+            sys.stderr.write("See 'docker run --help'.\n")
+            return 125
+
+    used = set(c["name"] for c in state["containers"])
+    while not name:
+        candidate = "%s_%s" % (random.choice(ADJECTIVES), random.choice(SURNAMES))
+        if candidate not in used:
+            name = candidate
+    taken = set(h for c in state["containers"] for h, _ in c["ports"])
+    next_port = 32768
+    fixed_ports = []
+    for host_port, inside in ports:
+        while host_port is None:
+            if next_port not in taken:
+                host_port = next_port
+            next_port += 1
+        taken.add(host_port)
+        fixed_ports.append([host_port, inside])
+
+    container = {
+        "id": hex_id("container:%s:%s:%s" % (name, time.time(), random.random())), "name": name, "image": ref,
+        "image_id": image["id"], "kind": image["kind"], "os": image.get("os", "alpine"),
+        "command": " ".join(command) if command else image["cmd"], "created": time.time(), "state": "created",
+        "exit_code": 0, "started": None, "finished": None, "ports": fixed_ports, "exposed": image.get("ports", []),
+        "pid": None, "until": None, "output": "", "files": dict(image.get("files") or {}), "auto_remove": auto_remove,
+    }
+    state["containers"].append(container)
+    _opsim.record(state, "run:%s" % name)
+
+    stays_up = image["kind"] in ("nginx", "server") and not command
+    sleeping = len(command) == 2 and command[0] == "sleep" and re.match(r"^\d+(\.\d+)?$", command[1])
+    if command and command[0] == "sleep" and not sleeping:
+        sleeping = len(command) == 2 and command[1] == "infinity"
+
+    if stays_up or (sleeping and detach):
+        error = launch(state, container)
+        if error:
+            # The real daemon leaves a "Created" container behind; the simulator
+            # removes it so the same --name can be tried again straight away.
+            state["containers"].remove(container)
+            return fail("docker: %s" % error, 125)
+        if sleeping and command[1] != "infinity":
+            container["until"] = time.time() + float(command[1])
+        if detach:
+            print(container["id"])
+        else:
+            # A foreground server would hold the terminal until Ctrl-C. Show its
+            # start-up log and leave it running, and say so.
+            sys.stdout.write(startup_log(container))
+            sys.stderr.write("(%s: the container keeps running in the background; `docker stop %s` ends it)\n" % (_opsim.SIM_NAME, name))
+        return 0
+
+    # A short-lived container: run its one command now and record the result.
+    container.update(state="running", started=time.time())
+    code, output = run_once(container, command, interactive and not command or (interactive and command and command[0] in FakeShell.SHELL_NAMES))
+    container.update(state="exited", exit_code=code, finished=time.time(), output=output)
+    if code in (126, 127) and output == "":
+        container["state"] = "created"
+    if detach:
+        print(container["id"])
+    if auto_remove:
+        state["containers"].remove(container)
+    return 0 if detach else code
+
+
+class Tee(object):
+    """Write to the terminal and keep a copy for `docker logs`."""
+
+    def __init__(self, stream):
+        self.stream, self.kept = stream, []
+
+    def write(self, text):
+        self.kept.append(text)
+        self.stream.write(text)
+
+    def flush(self):
+        self.stream.flush()
+
+    def isatty(self):
+        return self.stream.isatty()
+
+
+def run_once(container, command, interactive):
+    """Run a container's command through the fake shell. Returns (exit code, captured output)."""
+    if container["kind"] == "hello" and not command:
+        sys.stdout.write(HELLO_WORLD + "\n")
+        return 0, HELLO_WORLD + "\n"
+    shell = shell_for(container)
+    tee = Tee(sys.stdout)
+    shell.out = tee
+    words = command or container["command"].split()
+    try:
+        if words[0] in FakeShell.SHELL_NAMES and len(words) == 1:
+            code = shell.interact() if interactive else 0
+        elif words[0] in FakeShell.SHELL_NAMES and len(words) >= 3 and words[1] == "-c":
+            code = shell.run_line(words[2])
+        elif words[0] == "sleep":
+            # Foreground sleep: wait for real, as the student would see.
+            time.sleep(min(float(words[1]) if len(words) > 1 and re.match(r"^\d+(\.\d+)?$", words[1]) else 0, 3600))
+            code = 0
+        elif shell.can_run(words[0]):
+            code = shell.run_command(words)
+        elif words[0] in ("python3", "python", "node", "docker-entrypoint.sh") and len(words) == 1:
+            code = 0
+        else:
+            sys.stderr.write('docker: Error response from daemon: failed to create task for container: failed to create shim task: '
+                             'OCI runtime create failed: runc create failed: unable to start container process: exec: "%s": '
+                             "executable file not found in $PATH: unknown.\n" % words[0])
+            return 127, ""
+    except ShellExit as leaving:
+        code = leaving.code
+    except KeyboardInterrupt:
+        code = 130
+    return code, "".join(tee.kept)
+
+
+def startup_log(container):
+    """What the container printed when it started."""
+    if container["kind"] != "nginx":
+        return container.get("output", "")
+    stamp = time.strftime("%Y/%m/%d %H:%M:%S", time.gmtime(container.get("started") or container["created"]))
+    entry = "/docker-entrypoint.sh: "
+    lines = [
+        entry + "/docker-entrypoint.d/ is not empty, will attempt to perform configuration",
+        entry + "Looking for shell scripts in /docker-entrypoint.d/",
+        entry + "Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh",
+        "10-listen-on-ipv6-by-default.sh: info: Enabled listen on IPv6 in /etc/nginx/conf.d/default.conf",
+        entry + "Launching /docker-entrypoint.d/20-envsubst-on-templates.sh",
+        entry + "Launching /docker-entrypoint.d/30-tune-worker-processes.sh",
+        entry + "Configuration complete; ready for start up",
+        '%s [notice] 1#1: using the "epoll" event method' % stamp,
+        "%s [notice] 1#1: nginx/%s" % (stamp, _opsim.NGINX_VERSION),
+        "%s [notice] 1#1: start worker processes" % stamp,
+        "%s [notice] 1#1: start worker process 29" % stamp,
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def need_container(state, ref):
+    container = find_container(state, ref)
+    if not container:
+        fail("Error response from daemon: No such container: %s" % ref)
+    return container
+
+
+def cmd_logs(state, args):
+    tail, refs, index = None, [], 0
+    while index < len(args):
+        arg = args[index]
+        if arg in ("--tail", "-n") and index + 1 < len(args):
+            index += 1
+            tail = args[index]
+        elif arg.startswith("--tail="):
+            tail = arg.split("=", 1)[1]
+        elif not arg.startswith("-"):
+            refs.append(arg)
+        index += 1
+    if len(refs) != 1:
+        return fail('"docker logs" requires exactly 1 argument.\nSee \'docker logs --help\'.\n\nUsage:  docker logs [OPTIONS] CONTAINER')
+    container = need_container(state, refs[0])
+    if not container:
+        return 1
+    text = startup_log(container)
+    log_path = os.path.join(container_dir(container), "access.log")
+    if os.path.isfile(log_path):
+        with open(log_path) as handle:
+            text += handle.read()
+    lines = text.splitlines()
+    if tail and tail.isdigit():
+        lines = lines[-int(tail):] if int(tail) else []
+    if lines:
+        print("\n".join(lines))
+    return 0
+
+
+def cmd_exec(state, args):
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        if args[index] in ("-e", "--env", "-u", "--user", "-w", "--workdir"):
+            index += 1
+        index += 1
+    rest = args[index:]
+    if len(rest) < 2:
+        return fail('"docker exec" requires at least 2 arguments.\nSee \'docker exec --help\'.\n\n'
+                    "Usage:  docker exec [OPTIONS] CONTAINER COMMAND [ARG...]\n\nExecute a command in a running container")
+    container = need_container(state, rest[0])
+    if not container:
+        return 1
+    if container["state"] != "running":
+        return fail("Error response from daemon: container %s is not running" % container["id"])
+    shell, words = shell_for(container), rest[1:]
+    # Recorded before the shell starts: an interactive session may end with the terminal.
+    _opsim.record(state, "exec", "exec:%s" % container["name"])
+    save(state)
+    try:
+        if words[0] in FakeShell.SHELL_NAMES and len(words) == 1:
+            return shell.interact()
+        if words[0] in FakeShell.SHELL_NAMES and len(words) >= 3 and words[1] == "-c":
+            return shell.run_line(words[2])
+        if shell.can_run(words[0]):
+            return shell.run_command(words)
+    except ShellExit as leaving:
+        return leaving.code
+    return fail('OCI runtime exec failed: exec failed: unable to start container process: exec: "%s": '
+                "executable file not found in $PATH: unknown" % words[0], 126)
+
+
+def each_container(state, args, action, usage):
+    """Apply `action` to every named container; exit 1 if any name failed."""
+    refs = [a for a in args if not a.startswith("-")]
+    if not refs:
+        return fail('"docker %s" requires at least 1 argument.\nSee \'docker %s --help\'.' % (usage, usage))
+    code = 0
+    for ref in refs:
+        container = need_container(state, ref)
+        if not container:
+            code = 1
+            continue
+        error = action(container)
+        if error:
+            code = fail(error)
+        else:
+            print(ref)
+    return code
+
+
+def halt(container, exit_code):
+    if container["state"] == "running":
+        stop_server(container)
+        container.update(state="exited", exit_code=exit_code, finished=time.time(), until=None)
+
+
+def cmd_stop(state, args):
+    def action(container):
+        # nginx shuts down cleanly on SIGTERM; anything else is killed after the grace period.
+        halt(container, 0 if container["kind"] == "nginx" else 137)
+        _opsim.record(state, "stop:%s" % container["name"])
+    return each_container(state, args, action, "stop")
+
+
+def cmd_kill(state, args):
+    def action(container):
+        if container["state"] != "running":
+            return "Error response from daemon: cannot kill container: %s: container %s is not running" % (container["name"], container["id"])
+        halt(container, 137)
+        return None
+    return each_container(state, args, action, "kill")
+
+
+def cmd_start(state, args):
+    def action(container):
+        if container["state"] == "running":
+            return None
+        if container["kind"] in ("nginx", "server"):
+            error = launch(state, container)
+            if error:
+                container.update(state="exited", exit_code=128, finished=time.time())
+                return error + "\nError: failed to start containers: %s" % container["name"]
+        else:
+            # A short-lived container runs its command again and exits.
+            container.update(started=time.time(), finished=time.time(), state="exited")
+        _opsim.record(state, "start:%s" % container["name"])
+        return None
+    return each_container(state, args, action, "start")
+
+
+def cmd_restart(state, args):
+    def action(container):
+        halt(container, 0)
+        if container["kind"] in ("nginx", "server"):
+            return launch(state, container)
+        return None
+    return each_container(state, args, action, "restart")
+
+
+def cmd_rm(state, args):
+    force = any(re.match(r"^-[fv]+$", a) and "f" in a for a in args) or "--force" in args
+
+    def action(container):
+        if container["state"] == "running":
+            if not force:
+                return ('Error response from daemon: cannot remove container "/%s": container is running: '
+                        "stop the container before removing or force remove" % container["name"])
+            halt(container, 137)
+        state["containers"].remove(container)
+        shutil.rmtree(container_dir(container), ignore_errors=True)
+        _opsim.record(state, "rm:%s" % container["name"])
+        return None
+    return each_container(state, args, action, "rm")
+
+
+def cmd_port(state, args):
+    if not args:
+        return fail('"docker port" requires at least 1 argument.\nSee \'docker port --help\'.')
+    container = need_container(state, args[0])
+    if not container:
+        return 1
+    wanted = (args[1] if "/" in args[1] else args[1] + "/tcp") if len(args) > 1 else None
+    found = False
+    for host_port, inside in container["ports"] if container["state"] == "running" else []:
+        if wanted is None:
+            print("%s -> 0.0.0.0:%d" % (inside, host_port))
+        elif inside == wanted:
+            print("0.0.0.0:%d" % host_port)
+            found = True
+    if wanted and not found:
+        return fail("Error: No public port '%s' published for %s" % (wanted, args[0]))
+    return 0
+
+
+def cmd_stats(state, args):
+    refs = [a for a in args if not a.startswith("-")]
+    containers = [c for c in state["containers"] if c["state"] == "running"]
+    if refs:
+        containers = []
+        for ref in refs:
+            container = need_container(state, ref)
+            if not container:
+                return 1
+            containers.append(container)
+    rows = []
+    for c in containers:
+        # Steady, plausible numbers derived from the container ID.
+        seed = int(c["id"][:6], 16)
+        memory = 3.0 + seed % 900 / 100.0
+        rows.append([c["id"][:12], c["name"], "%.2f%%" % (seed % 40 / 100.0), "%.2fMiB / 1.944GiB" % memory,
+                     "%.2f%%" % (memory / 1990.6 * 100), "%.1fkB / %.1fkB" % (1 + seed % 30 / 10.0, seed % 20 / 10.0),
+                     "0B / %dkB" % (4 * (1 + seed % 3)), str(3 + seed % 4)])
+    print(table(["CONTAINER ID", "NAME", "CPU %", "MEM USAGE / LIMIT", "MEM %", "NET I/O", "BLOCK I/O", "PIDS"], rows))
+    return 0
+
+
+def inspect_object(state, ref):
+    container = find_container(state, ref)
+    if container:
+        ports = {}
+        for exposed in container.get("exposed", []):
+            ports[exposed] = None
+        for host_port, inside in container["ports"] if container["state"] == "running" else []:
+            ports[inside] = [{"HostIp": "0.0.0.0", "HostPort": str(host_port)}]
+        running = container["state"] == "running"
+        return {
+            "Id": container["id"],
+            "Created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(container["created"])),
+            "Path": container["command"].split()[0], "Args": container["command"].split()[1:],
+            "State": {"Status": container["state"], "Running": running, "Paused": False, "Restarting": False,
+                      "ExitCode": container.get("exit_code", 0), "Pid": container.get("pid") or 0},
+            "Image": "sha256:" + container["image_id"], "Name": "/" + container["name"], "Driver": "opsacademy-simulator",
+            "Config": {"Hostname": container["id"][:12], "Image": container["image"], "Cmd": container["command"].split()},
+            "NetworkSettings": {"IPAddress": "172.17.0.2" if running else "", "Ports": ports},
+        }
+    image = find_image(state, ref)
+    if image:
+        return {
+            "Id": "sha256:" + image["id"], "RepoTags": ["%s:%s" % (image["repo"], image["tag"])],
+            "Created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(image["created"])),
+            "Config": {"Cmd": image["cmd"].split(), "ExposedPorts": dict((p, {}) for p in image.get("ports", []))},
+            "Architecture": "amd64", "Os": "linux", "Size": image["size"],
+        }
+    return None
+
+
+def cmd_inspect(state, args):
+    template, refs, index = None, [], 0
+    while index < len(args):
+        arg = args[index]
+        if arg in ("-f", "--format") and index + 1 < len(args):
+            index += 1
+            template = args[index]
+        elif arg.startswith("--format="):
+            template = arg.split("=", 1)[1]
+        elif not arg.startswith("-"):
+            refs.append(arg)
+        index += 1
+    if not refs:
+        return fail('"docker inspect" requires at least 1 argument.\nSee \'docker inspect --help\'.')
+    found, code = [], 0
+    for ref in refs:
+        item = inspect_object(state, ref)
+        if item is None:
+            code = 1
+            sys.stderr.write("Error: No such object: %s\n" % ref)
+        else:
+            found.append(item)
+    if template:
+        def lookup(match, item):
+            value = item
+            for part in match.group(1).split("."):
+                value = value.get(part, "<no value>") if isinstance(value, dict) else "<no value>"
+            return value if isinstance(value, str) else json.dumps(value)
+        for item in found:
+            print(re.sub(r"\{\{\s*\.([\w.]+)\s*\}\}", lambda m: lookup(m, item), template))
+    else:
+        print(json.dumps(found, indent=4))
+    return code
+
+
+# ── Version and info ─────────────────────────────────────────
+
+def cmd_version(_state, _args):
+    print("Client:\n Version:           %s (%s)\n API version:       1.46\n OS/Arch:           linux/amd64\n\n"
+          "Server: %s\n Engine:\n  Version:          %s\n  API version:      1.46 (minimum version 1.24)\n"
+          "  OS/Arch:          linux/amd64" % (VERSION, _opsim.SIM_NAME, _opsim.SIM_NAME, VERSION))
+    return 0
+
+
+def cmd_info(state, _args):
+    containers = state["containers"]
+    count = lambda status: len([c for c in containers if c["state"] == status])
+    print("Client:\n Version:    %s\n Context:    default\n\nServer:\n Containers: %d\n  Running: %d\n  Paused: 0\n  Stopped: %d\n"
+          " Images: %d\n Server Version: %s\n Storage Driver: opsacademy-simulator\n Cgroup Driver: none\n"
+          " Kernel Version: simulated\n Operating System: %s\n OSType: linux\n Architecture: x86_64\n CPUs: 2\n"
+          " Total Memory: 1.944GiB\n Name: opsacademy-sandbox\n Docker Root Dir: ~/.opsacademy\n\n"
+          "NOTE: This is the %s. No real images are downloaded and no real containers run;\n"
+          "      state is kept in ~/.opsacademy/docker.json."
+          % (VERSION, len(containers), count("running"), len(containers) - count("running"), len(state["images"]),
+             VERSION, _opsim.SIM_NAME, _opsim.SIM_NAME))
+    return 0
+
+
+COMMANDS = {
+    "version": cmd_version, "info": cmd_info, "pull": cmd_pull, "images": cmd_images, "run": cmd_run, "ps": cmd_ps,
+    "logs": cmd_logs, "exec": cmd_exec, "build": cmd_build, "stop": cmd_stop, "start": cmd_start, "restart": cmd_restart,
+    "kill": cmd_kill, "rm": cmd_rm, "rmi": cmd_rmi, "stats": cmd_stats, "inspect": cmd_inspect, "port": cmd_port, "tag": cmd_tag,
+}
+
+# `docker container ls` and `docker image ls` are the long forms of the same commands.
+LONG_FORMS = {
+    "container": {"ls": "ps", "list": "ps", "run": "run", "logs": "logs", "exec": "exec", "stop": "stop", "start": "start",
+                  "restart": "restart", "kill": "kill", "rm": "rm", "stats": "stats", "inspect": "inspect", "port": "port"},
+    "image": {"ls": "images", "list": "images", "pull": "pull", "build": "build", "rm": "rmi", "inspect": "inspect", "tag": "tag"},
+}
+
+
+def main(argv):
+    if argv and argv[0] == "__serve":
+        return serve(argv[1:])
+    state = load()
+    if argv and argv[0] == "__ran":
+        return _opsim.ran_check(state, argv[1:])
+    if not argv or argv[0] in ("help", "--help", "-h"):
+        print("Usage:  docker [OPTIONS] COMMAND\n\nA self-sufficient runtime for containers (%s)\n\nCommands:\n  %s"
+              % (_opsim.SIM_NAME, "\n  ".join(SUPPORTED)))
+        return 0
+    if argv[0] in ("--version", "-v"):
+        print("Docker version %s, build opsacademy-simulator (%s)" % (VERSION, _opsim.SIM_NAME))
+        _opsim.record(state, "--version")
+        save(state)
+        return 0
+
+    name, args = argv[0], argv[1:]
+    if name in LONG_FORMS:
+        if not args or args[0] not in LONG_FORMS[name]:
+            return _opsim.unsupported(TOOL, " ".join(argv[:2]), SUPPORTED)
+        name, args = LONG_FORMS[name][args[0]], args[1:]
+    if name not in COMMANDS:
+        return _opsim.unsupported(TOOL, name, SUPPORTED)
+
+    refresh(state)
+    try:
+        code = COMMANDS[name](state, args)
+    except KeyboardInterrupt:
+        code = 130
+    if name == "exec":
+        # Already recorded and saved before the shell started.
+        return code
+    if code == 0:
+        _opsim.record(state, name)
+    save(state)
+    return code
+
+
+if __name__ == "__main__":
+    _opsim.run(main)

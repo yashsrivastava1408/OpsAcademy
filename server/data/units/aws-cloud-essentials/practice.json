@@ -10,7 +10,7 @@
         "Check your identity: `aws sts get-caller-identity`"
       ],
       "verification": {
-        "command": "aws --version 2>&1 | grep -q 'aws-cli' && echo PASS || echo FAIL",
+        "command": "aws __ran s3.ls && aws __ran sts.get-caller-identity && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -21,12 +21,13 @@
       "description": "Create a storage bucket and upload files to it.",
       "tasks": [
         "Create a bucket: `aws s3 mb s3://opsacademy-lab-$(date +%s)`",
+        "Find the name your bucket was given: `aws s3 ls`",
         "Create a test file: `echo 'Hello Cloud!' > hello.txt`",
-        "Upload it: `aws s3 cp hello.txt s3://your-bucket-name/`",
+        "Upload it, using your own bucket's name: `aws s3 cp hello.txt s3://your-bucket-name/`",
         "Verify: `aws s3 ls s3://your-bucket-name/`"
       ],
       "verification": {
-        "command": "aws s3 ls 2>&1 | grep -q 'opsacademy' && echo PASS || echo FAIL",
+        "command": "aws s3 ls 2>/dev/null | awk '{print $3}' | grep '^opsacademy' | while read b; do aws s3 ls \"s3://$b/\"; done 2>/dev/null | grep -q 'hello.txt' && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -38,10 +39,11 @@
       "tasks": [
         "List IAM users: `aws iam list-users`",
         "View your policies: `aws iam list-attached-user-policies --user-name $(aws sts get-caller-identity --query 'Arn' --output text | cut -d'/' -f2)`",
-        "Describe what each policy allows"
+        "Read what a policy allows: `aws iam get-policy-version --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess --version-id v1` (then do the same for your other policy)",
+        "Write one line per policy, saying what it allows, into `~/iam-notes.txt`, for example: `echo 'AmazonS3FullAccess: every S3 action on every bucket' >> ~/iam-notes.txt`"
       ],
       "verification": {
-        "command": "aws iam list-users 2>&1 | grep -q 'Users' && echo PASS || echo FAIL",
+        "command": "aws __ran iam.list-users && aws __ran iam.list-attached-user-policies && test -s /home/student/iam-notes.txt && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

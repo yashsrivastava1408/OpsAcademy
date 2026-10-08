@@ -7,11 +7,12 @@
       "tasks": [
         "Run `pwd` to see your current directory",
         "Run `ls -la` to see all files (including hidden ones)",
-        "Navigate to `/` and list the top-level directories with `ls /`"
+        "Navigate to `/` and list the top-level directories with `ls /`",
+        "Save that top-level listing to a file: `ls / > ~/root-dirs.txt`"
       ],
       "verification": {
-        "command": "pwd",
-        "expectedOutput": "/home/student",
+        "command": "grep -q 'etc' /home/student/root-dirs.txt && echo PASS || echo FAIL",
+        "expectedOutput": "PASS",
         "check": "contains"
       }
     },
@@ -82,10 +83,11 @@
       "tasks": [
         "List all running processes with `ps aux`",
         "Start a background process: `sleep 300 &`",
+        "Record it in a file before you stop it: `ps aux | grep '[s]leep 300' > ~/sleep-proc.txt`",
         "Find it with `ps aux | grep sleep` and kill it with `kill <PID>`"
       ],
       "verification": {
-        "command": "ps aux | grep -v grep | grep -c '' | awk '{if ($1 > 0) print \"PASS\"; else print \"FAIL\"}'",
+        "command": "grep -q 'sleep 300' /home/student/sleep-proc.txt && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

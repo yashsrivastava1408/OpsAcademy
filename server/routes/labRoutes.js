@@ -76,7 +76,7 @@ router.post('/:unitId/verify', requireAuth, async (req, res, next) => {
       results.push(result);
     }
 
-    const { xpAwarded, unitCompleted, newlyCompleted } = progressService.recordVerification(req.user.id, unitId, results);
+    const { xpAwarded, unitCompleted, newlyCompleted, dailyBonus } = progressService.recordVerification(req.user.id, unitId, results);
     const passedCount = results.filter((r) => r.passed).length;
 
     res.json({
@@ -84,6 +84,7 @@ router.post('/:unitId/verify', requireAuth, async (req, res, next) => {
       allPassed: passedCount === results.length,
       score: Math.round((passedCount / results.length) * 100),
       xpEarned: xpAwarded,
+      dailyBonus,
       unitCompleted,
       newlyCompleted,
       passedCount,

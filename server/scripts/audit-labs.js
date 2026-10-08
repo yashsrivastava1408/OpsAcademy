@@ -52,7 +52,11 @@ function requiredPrograms(step) {
   };
 
   for (const task of step.tasks || []) {
-    for (const match of task.matchAll(/`([^`]+)`/g)) add(match[1]);
+    for (const match of task.matchAll(/`([^`]+)`/g)) {
+      // `terraform { ... }` is the contents of a file to write, not a command to run.
+      if (/^\s*\w+\s*\{/.test(match[1])) continue;
+      add(match[1]);
+    }
   }
   // Quoted arguments are data (awk programs, grep patterns), not commands.
   const unquoted = step.verification.command.replace(/'[^']*'|"[^"]*"/g, ' ');

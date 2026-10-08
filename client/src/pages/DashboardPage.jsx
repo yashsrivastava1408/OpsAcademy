@@ -14,8 +14,10 @@ import {
   Trophy,
   Target,
   Zap,
+  CalendarCheck,
+  Share2,
 } from 'lucide-react';
-import { unitApi, progressApi, certificateApi, ensureIdentity } from '../services/api';
+import { unitApi, progressApi, certificateApi, authApi, ensureIdentity, updateStoredUser } from '../services/api';
 import { EMPTY_PROGRESS } from '../services/progressService';
 import useAuth from '../hooks/useAuth';
 import useProgress from '../hooks/useProgress';
@@ -70,6 +72,7 @@ export default function DashboardPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [certificates, setCertificates] = useState([]);
   const [certificateUnit, setCertificateUnit] = useState(null);
+  const [accountNote, setAccountNote] = useState(null);
 
   const { user } = useAuth();
   const progress = useProgress();
@@ -110,6 +113,35 @@ export default function DashboardPage() {
 
     loadUnits();
   }, []);
+
+  // Turn the shareable profile page on or off.
+  const toggleProfile = async () => {
+    try {
+      const res = await authApi.setProfilePublic(!user.profileSlug);
+      updateStoredUser(res.data.user);
+      setAccountNote(null);
+    } catch {
+      setAccountNote('Could not change profile sharing. Please try again.');
+    }
+  };
+
+  const resendConfirmation = async () => {
+    try {
+      const res = await authApi.resendVerification();
+      if (res.data.devVerifyLink) {
+        setAccountNote({ link: res.data.devVerifyLink.replace(/^https?:\/\/[^/]+/, '') });
+      } else if (res.data.emailConfigured === false) {
+        setAccountNote('This server is not set up to send email, so the link cannot reach you.');
+      } else {
+        setAccountNote('Confirmation link sent. Check your inbox.');
+      }
+    } catch {
+      setAccountNote('Could not send the confirmation link. Please try again in a minute.');
+    }
+  };
+
+  const daily = progress.daily;
+  const profileUrl = user?.profileSlug ? `${window.location.origin}/u/${user.profileSlug}` : null;
 
   const filteredUnits = units.filter((unit) => {
     const matchesSearch =
@@ -165,6 +197,27 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* ── Lab of the day ─────────────────────────────── */}
+        {daily && (
+          <div className={`daily-card glass-card animate-fade-in ${daily.done ? 'done' : ''}`}>
+            <CalendarCheck size={22} />
+            <div className="daily-text">
+              <span className="daily-label">Lab of the day</span>
+              <strong>{daily.title}</strong>
+              <span className="daily-sub">
+                {daily.done
+                  ? `Done for today: +${daily.bonusXp} XP bonus earned. A new lab comes tomorrow.`
+                  : `Verify any step in this lab today for a +${daily.bonusXp} XP bonus.`}
+              </span>
+            </div>
+            {!daily.done && (
+              <Link to={`/unit/${daily.unitId}/practice`} className="btn btn-primary btn-sm">
+                <Terminal size={14} /> Open lab
+              </Link>
+            )}
+          </div>
+        )}
 
         {/* ── Your Progress ──────────────────────────────── */}
         <div className="progress-panels animate-fade-in">
@@ -229,6 +282,32 @@ export default function DashboardPage() {
               <p className="panel-note">
                 <Link to="/login">Create an account</Link> to keep your progress and get certificates in your name.
               </p>
+            )}
+            {user && !user.guest && (
+              <div className="panel-note account-tools">
+                <div className="account-row">
+                  <span>
+                    <Share2 size={13} /> Public profile:{' '}
+                    {profileUrl ? <Link to={`/u/${user.profileSlug}`}>{profileUrl.replace(/^https?:\/\//, '')}</Link> : 'off'}
+                  </span>
+                  <button className="btn btn-ghost btn-xs" onClick={toggleProfile}>
+                    {profileUrl ? 'Stop sharing' : 'Share my profile'}
+                  </button>
+                </div>
+                {!user.emailVerified && (
+                  <div className="account-row">
+                    <span>Your email address is not confirmed yet.</span>
+                    <button className="btn btn-ghost btn-xs" onClick={resendConfirmation}>Send link again</button>
+                  </div>
+                )}
+                {accountNote && (
+                  <p className="account-note" role="status">
+                    {accountNote.link
+                      ? <>Email is not set up on this development server. <Link to={accountNote.link}>Open the confirmation link</Link>.</>
+                      : accountNote}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -368,9 +447,9 @@ export default function DashboardPage() {
                     <Award size={14} />
                     <span>Prepare</span>
                   </Link>
-                  {unit.isCaseStudy && (
+                  {(unit.hasCaseStudy || unit.isCaseStudy) && (
                     <Link
-                      to="/casestudies"
+                      to={`/unit/${unit.id}/casestudy`}
                       className="mode-btn mode-casestudy"
                       title="Real-World Production Case Study"
                     >

@@ -19,7 +19,10 @@ const config = require('../config');
 const logger = require('../lib/logger');
 
 const STUDENT_HOME = '/home/student';
-const SANDBOX_PATH = '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+const SYSTEM_PATH = '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+// The lab simulators come first, so `docker` in a lab is the simulator even
+// on a machine that has the real one installed.
+const SANDBOX_PATH = fs.existsSync(config.sandbox.toolsDir) ? `${config.sandbox.toolsDir}:${SYSTEM_PATH}` : SYSTEM_PATH;
 const SCROLLBACK_CHARS = 16 * 1024;
 
 // Map<engineId, { pty, cwd, sessionDir, alive, exitListeners }>

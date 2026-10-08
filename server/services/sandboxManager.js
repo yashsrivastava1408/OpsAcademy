@@ -130,6 +130,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
       idleMs: now - session.lastActiveAt,
       uptime: now - session.createdAt,
       expiresAt: session.createdAt + settings.maxSessionMs,
+      idleExpiresAt: session.lastActiveAt + settings.maxIdleMs,
       fromPool: session.fromPool,
       claimMs: session.claimMs,
       ...engine.info(session.engineId),

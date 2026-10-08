@@ -2,9 +2,10 @@
  * JSON file store — small persistence layer for users, progress and certificates.
  *
  * Everything lives in memory and is written to one file with an atomic
- * rename, so a crash mid-write cannot corrupt it. It is single-process only:
- * run one gateway replica, or swap this module for a database adapter with
- * the same get/set/all interface before scaling out.
+ * rename, so a crash mid-write cannot corrupt it. Every save rewrites the
+ * whole file, which is fine for a demo and wasteful beyond a few thousand
+ * learners: set STORE_DRIVER=sqlite to use lib/sqliteStore.js instead, which
+ * has the same get/set/all interface.
  */
 
 const fs = require('fs');
@@ -96,11 +97,26 @@ class JsonStore {
 
 let defaultStore = null;
 
+/**
+ * The store for this process: a JSON file by default, SQLite when
+ * STORE_DRIVER=sqlite. Tests always get an in-memory JSON store.
+ */
+function createStore(config) {
+  const jsonPath = path.join(config.dataDir, 'store.json');
+  if (config.isTest) return new JsonStore(null);
+  if (config.storeDriver !== 'sqlite') return new JsonStore(jsonPath);
+
+  const { SqliteStore } = require('./sqliteStore');
+  const dbPath = path.join(config.dataDir, 'store.db');
+  const isNew = !fs.existsSync(dbPath);
+  const store = new SqliteStore(dbPath);
+  // Switching an existing deployment over keeps its accounts and progress.
+  if (isNew) store.importJson(jsonPath);
+  return store;
+}
+
 function getStore() {
-  if (!defaultStore) {
-    const config = require('../config');
-    defaultStore = new JsonStore(config.isTest ? null : path.join(config.dataDir, 'store.json'));
-  }
+  if (!defaultStore) defaultStore = createStore(require('../config'));
   return defaultStore;
 }
 
@@ -109,4 +125,4 @@ function setStore(store) {
   defaultStore = store;
 }
 
-module.exports = { JsonStore, getStore, setStore };
+module.exports = { JsonStore, createStore, getStore, setStore };

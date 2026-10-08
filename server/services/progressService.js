@@ -7,6 +7,7 @@
  * it reflects checks that actually ran in the sandbox.
  */
 
+const config = require('../config');
 const { getStore } = require('../lib/store');
 const units = require('../lib/units');
 const sm2 = require('../lib/sm2');
@@ -14,7 +15,8 @@ const sm2 = require('../lib/sm2');
 const PROGRESS = 'progress';
 const USERS = 'users';
 
-const XP = { step: 20, unit: 100, quiz: 25, flashcard: 2, interview: 30 };
+const XP = { step: 20, unit: 100, quiz: 25, flashcard: 2, interview: 30, daily: 15 };
+const MAX_DAILY_DAYS = 60;
 const XP_PER_LEVEL = 250;
 const INTERVIEW_PASS_SCORE = 70;
 const MAX_ACTIVE_DAYS = 400;
@@ -36,6 +38,36 @@ function emptyProgress(userId) {
     cards: {},
     interviews: [],
     activeDays: [],
+    daily: {},
+  };
+}
+
+/**
+ * The lab of the day: the same unit for everyone, changing at midnight UTC.
+ * Chosen by hashing the date, so it needs no schedule and no stored state.
+ */
+function dailyUnit(now = Date.now()) {
+  if (!config.dailyChallenge) return null;
+  const candidates = units.listMeta().filter((meta) => units.getSteps(meta.id).length > 0);
+  if (candidates.length === 0) return null;
+  const day = dayKey(now);
+  let hash = 2166136261;
+  for (const ch of day) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return candidates[hash % candidates.length];
+}
+
+/** Today's challenge and whether this learner has done it. */
+function dailyChallenge(doc, now = Date.now()) {
+  const unit = dailyUnit(now);
+  if (!unit) return null;
+  const day = dayKey(now);
+  return {
+    date: day,
+    unitId: unit.id,
+    title: unit.title,
+    difficulty: unit.difficulty,
+    bonusXp: XP.daily,
+    done: Boolean(doc.daily && doc.daily[day]),
   };
 }
 
@@ -133,10 +165,24 @@ function recordVerification(userId, unitId, results, now = Date.now()) {
     newlyCompleted = true;
   }
 
+  // Lab of the day: the first step verified in today's unit earns a bonus,
+  // whether or not that step had been passed before.
+  let dailyBonus = 0;
+  const today = dailyUnit(now);
+  const day = dayKey(now);
+  doc.daily = doc.daily || {};
+  if (today && today.id === unitId && !doc.daily[day] && results.some((r) => r.passed)) {
+    doc.daily[day] = unitId;
+    dailyBonus = XP.daily;
+    xpAwarded += dailyBonus;
+    const days = Object.keys(doc.daily).sort();
+    for (const old of days.slice(0, Math.max(0, days.length - MAX_DAILY_DAYS))) delete doc.daily[old];
+  }
+
   doc.xp += xpAwarded;
   markActive(doc, now);
   save(doc);
-  return { xpAwarded, unitCompleted, newlyCompleted };
+  return { xpAwarded, unitCompleted, newlyCompleted, dailyBonus };
 }
 
 function hintCount(userId, unitId, step) {
@@ -264,15 +310,17 @@ function summary(userId, now = Date.now()) {
   let stepsPassed = 0;
   for (const meta of units.listMeta()) {
     const steps = units.getSteps(meta.id);
-    let passed = 0;
+    const passedStepNumbers = [];
     for (const s of steps) {
       const entry = doc.steps[stepKey(meta.id, s.step)];
-      if (entry && entry.passedAt) passed += 1;
+      if (entry && entry.passedAt) passedStepNumbers.push(s.step);
     }
+    const passed = passedStepNumbers.length;
     stepsPassed += passed;
     if (passed > 0 || doc.completedUnits[meta.id]) {
       unitProgress[meta.id] = {
         passedSteps: passed,
+        passedStepNumbers,
         totalSteps: steps.length,
         completedAt: doc.completedUnits[meta.id] || null,
       };
@@ -302,11 +350,36 @@ function summary(userId, now = Date.now()) {
         ? Math.round(interviewScores.reduce((a, b) => a + b, 0) / interviewScores.length)
         : null,
     },
+    daily: dailyChallenge(doc, now),
     totals: { units: units.listMeta().length, steps: stepsTotal, stepsPassed },
     // Share of all lab steps verified in a sandbox.
     readiness: stepsTotal ? Math.round((stepsPassed / stepsTotal) * 100) : 0,
     activeDays: doc.activeDays.slice(-60),
   };
+}
+
+/** What a public profile page shows: achievements only, nothing about struggles. */
+function publicSummary(userId, now = Date.now()) {
+  const doc = load(userId);
+  const full = summary(userId, now);
+  return {
+    xp: full.xp,
+    level: full.level,
+    streak: { current: full.streak.current, longest: full.streak.longest },
+    stepsPassed: full.totals.stepsPassed,
+    stepsTotal: full.totals.steps,
+    completedUnits: Object.entries(doc.completedUnits)
+      .map(([unitId, completedAt]) => {
+        const unit = units.getUnit(unitId);
+        return { unitId, title: unit ? unit.meta.title : unitId, completedAt };
+      })
+      .sort((a, b) => a.completedAt - b.completedAt),
+  };
+}
+
+function totals() {
+  const docs = getStore().all(PROGRESS);
+  return { learnersWithXp: docs.filter((doc) => doc.xp > 0).length, totalXp: docs.reduce((sum, doc) => sum + doc.xp, 0) };
 }
 
 /** How cleanly a unit was completed: 100 means every step passed first time. */
@@ -372,6 +445,9 @@ module.exports = {
   reviewCard,
   recordInterview,
   summary,
+  publicSummary,
+  dailyUnit,
+  totals,
   unitAccuracy,
   isUnitCompleted,
   leaderboard,

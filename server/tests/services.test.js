@@ -56,6 +56,7 @@ describe('verification records', () => {
     const summary = progress.summary('u1');
     expect(summary.weakTopics[0]).toMatchObject({ unitId: 'linux-basics', fails: 2 });
     expect(summary.unitProgress['linux-basics'].passedSteps).toBe(1);
+    expect(summary.unitProgress['linux-basics'].passedStepNumbers).toHaveLength(1);
   });
 
   test('a unit completes only when every step has passed, across separate runs', () => {
@@ -64,7 +65,7 @@ describe('verification records', () => {
       expect(progress.recordVerification('u1', 'linux-basics', [{ step: step.step, passed: true }]).unitCompleted).toBe(false);
     }
     const last = progress.recordVerification('u1', 'linux-basics', [{ step: steps[steps.length - 1].step, passed: true }]);
-    expect(last).toEqual({ xpAwarded: 120, unitCompleted: true, newlyCompleted: true });
+    expect(last).toEqual({ xpAwarded: 120, unitCompleted: true, newlyCompleted: true, dailyBonus: 0 });
     expect(progress.isUnitCompleted('u1', 'linux-basics')).toBe(true);
     expect(progress.isUnitCompleted('u2', 'linux-basics')).toBe(false);
   });
@@ -261,6 +262,96 @@ describe('AI hub client', () => {
     expect(await client.isHealthy()).toBe(true);
     http.fail = true;
     expect(await client.isHealthy()).toBe(false);
+  });
+});
+
+describe('AI hub client: streamed hints over real HTTP', () => {
+  const http = require('http');
+  let server;
+  let baseUrl;
+  let respond;
+  let seen;
+
+  beforeEach(async () => {
+    seen = [];
+    server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        seen.push({ url: req.url, token: req.headers['x-internal-token'], body: JSON.parse(body) });
+        respond(res);
+      });
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+  afterEach(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
+
+  const collect = async (client, options) => {
+    const events = [];
+    for await (const event of client.hintStream({ query: 'help', tier: 1 }, options)) events.push(event);
+    return events;
+  };
+  const line = (event) => `${JSON.stringify(event)}\n`;
+
+  test('events are parsed however the bytes are split', async () => {
+    respond = (res) => {
+      res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
+      const text = line({ type: 'delta', text: 'Look at the folder — then compare. ' }) + line({ type: 'delta', text: 'Done.' }) + line({ type: 'done', data: { hint: 'x' } });
+      const bytes = Buffer.from(text);
+      // Cut in awkward places, including inside the multi-byte dash.
+      const cut = bytes.indexOf(Buffer.from('—')) + 1;
+      res.write(bytes.subarray(0, cut));
+      setTimeout(() => { res.write(bytes.subarray(cut, cut + 40)); res.end(bytes.subarray(cut + 40)); }, 20);
+    };
+    const events = await collect(createClient({ baseUrl, token: 'shared-secret', timeoutMs: 1000 }));
+    expect(events.map((e) => e.type)).toEqual(['delta', 'delta', 'done']);
+    expect(events[0].text).toBe('Look at the folder — then compare. ');
+    expect(seen[0]).toMatchObject({ url: '/api/agent/hint/stream', token: 'shared-secret', body: { query: 'help', tier: 1 } });
+  });
+
+  test.each([
+    ['ends without a final event', (res) => { res.writeHead(200); res.end(line({ type: 'delta', text: 'half' })); }],
+    ['reports an error part-way', (res) => { res.writeHead(200); res.end(line({ type: 'delta', text: 'half' }) + line({ type: 'error' })); }],
+    ['answers 500', (res) => { res.writeHead(500); res.end('{}'); }],
+    ['sends something that is not JSON', (res) => { res.writeHead(200); res.end('<html>proxy error</html>\n'); }],
+    ['drops the connection', (res) => { res.writeHead(200); res.write(line({ type: 'delta', text: 'half' })); setTimeout(() => res.destroy(), 20); }],
+  ])('a hub that %s is reported as unavailable', async (_name, behave) => {
+    respond = behave;
+    await expect(collect(createClient({ baseUrl, timeoutMs: 1000 }))).rejects.toBeInstanceOf(HubUnavailableError);
+  });
+
+  test('a hub that goes quiet mid-stream is given up on', async () => {
+    respond = (res) => { res.writeHead(200); res.write(line({ type: 'delta', text: 'half' })); };
+    const started = Date.now();
+    await expect(collect(createClient({ baseUrl, timeoutMs: 60 }))).rejects.toBeInstanceOf(HubUnavailableError);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  test('repeated stream failures open the circuit, so later calls fail at once', async () => {
+    respond = (res) => { res.writeHead(500); res.end('{}'); };
+    const client = createClient({ baseUrl, timeoutMs: 1000 });
+    for (let i = 0; i < 3; i += 1) await expect(collect(client)).rejects.toBeInstanceOf(HubUnavailableError);
+    const calls = seen.length;
+    await expect(collect(client)).rejects.toThrow('circuit open');
+    await expect(client.hint({ query: 'help' })).rejects.toThrow('circuit open');
+    expect(seen.length).toBe(calls);
+  });
+
+  test('stopping early closes the connection to the hub', async () => {
+    let closed = false;
+    respond = (res) => {
+      res.writeHead(200);
+      res.on('close', () => { closed = true; });
+      res.write(line({ type: 'delta', text: 'one ' }));
+    };
+    const client = createClient({ baseUrl, timeoutMs: 5000 });
+    for await (const event of client.hintStream({ query: 'help' })) {
+      expect(event.type).toBe('delta');
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(closed).toBe(true);
   });
 });
 

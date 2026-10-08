@@ -16,6 +16,11 @@ const pages = {
   learn: () => import('./pages/LearnPage'),
   lab: () => import('./pages/LabPage'),
   prepare: () => import('./pages/PreparePage'),
+  caseStudy: () => import('./pages/CaseStudyPage'),
+  profile: () => import('./pages/ProfilePage'),
+  admin: () => import('./pages/AdminPage'),
+  resetPassword: () => import('./pages/ResetPasswordPage'),
+  verifyEmail: () => import('./pages/VerifyEmailPage'),
 };
 
 const LandingPage = lazy(pages.landing);
@@ -27,6 +32,11 @@ const VerifyPage = lazy(pages.verify);
 const LearnPage = lazy(pages.learn);
 const LabPage = lazy(pages.lab);
 const PreparePage = lazy(pages.prepare);
+const CaseStudyPage = lazy(pages.caseStudy);
+const ProfilePage = lazy(pages.profile);
+const AdminPage = lazy(pages.admin);
+const ResetPasswordPage = lazy(pages.resetPassword);
+const VerifyEmailPage = lazy(pages.verifyEmail);
 
 /** The chunk for a URL, so it can start downloading before React renders. */
 function pageFor(pathname) {
@@ -39,6 +49,11 @@ function pageFor(pathname) {
   if (pathname.startsWith('/lab/') || pathname.endsWith('/practice')) return pages.lab;
   if (pathname.endsWith('/learn')) return pages.learn;
   if (pathname.endsWith('/prepare')) return pages.prepare;
+  if (pathname.endsWith('/casestudy')) return pages.caseStudy;
+  if (pathname.startsWith('/u/')) return pages.profile;
+  if (pathname.startsWith('/admin')) return pages.admin;
+  if (pathname.startsWith('/reset-password')) return pages.resetPassword;
+  if (pathname.startsWith('/verify-email')) return pages.verifyEmail;
   return null;
 }
 
@@ -104,6 +119,11 @@ function AppRoutes() {
           <Route path="/unit/:unitId/learn" element={<LearnPage />} />
           <Route path="/unit/:unitId/practice" element={<LabPage />} />
           <Route path="/unit/:unitId/prepare" element={<PreparePage />} />
+          <Route path="/unit/:unitId/casestudy" element={<CaseStudyPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/u/:slug" element={<ProfilePage />} />
+          <Route path="/admin" element={<AdminPage />} />
           {/* Legacy route alias */}
           <Route path="/lab/:unitId" element={<LabPage />} />
           <Route path="*" element={<NotFoundPage />} />

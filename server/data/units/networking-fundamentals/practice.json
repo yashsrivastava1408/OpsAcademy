@@ -3,30 +3,30 @@
     {
       "step": 1,
       "title": "Network Discovery",
-      "description": "Explore your network environment using basic diagnostic commands.",
+      "description": "Explore the network interfaces of your sandbox. It has no route to the internet, so the loopback interface is where everything in this lab happens.",
       "tasks": [
-        "Find your IP address: `ifconfig` or `ip addr show`",
-        "Ping Google's DNS: `ping -c 4 8.8.8.8`",
-        "Trace route to Google: `traceroute google.com` (or `tracepath google.com`)"
+        "List your network interfaces and their addresses: `ip -o addr show` (if `ip` is not installed, `ifconfig` shows the same information)",
+        "Save that output to a file: `ip -o addr show > ~/interfaces.txt`",
+        "Find the loopback interface and its address in the file: `grep 127.0.0.1 ~/interfaces.txt`"
       ],
       "verification": {
-        "command": "ping -c 1 8.8.8.8 2>&1 | grep -q '1 packets transmitted' && echo PASS || echo FAIL",
+        "command": "grep -Eq '(^|[ :])lo0?[ :]' /home/student/interfaces.txt && grep -q '127\\.0\\.0\\.1' /home/student/interfaces.txt && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
     },
     {
       "step": 2,
-      "title": "DNS Lookups",
-      "description": "Practice resolving domain names to IP addresses.",
+      "title": "Name Resolution",
+      "description": "See how a name is turned into an IP address: the local hosts table is checked first, then the DNS servers listed in the resolver configuration.",
       "tasks": [
-        "Look up google.com: `nslookup google.com`",
-        "Use dig for detailed info: `dig google.com +short`",
-        "Look up mail servers: `dig google.com MX +short`",
-        "Check your DNS config: `cat /etc/resolv.conf`"
+        "See which DNS servers this machine would ask: `cat /etc/resolv.conf`",
+        "Read the local hosts table, which is checked before DNS: `cat /etc/hosts`",
+        "Resolve a name the way programs do: `getent hosts localhost`",
+        "Save the answer to a file: `getent hosts localhost > ~/dns.txt`"
       ],
       "verification": {
-        "command": "nslookup google.com 2>&1 | grep -i address && echo PASS || echo FAIL",
+        "command": "grep -q 'localhost' /home/student/dns.txt && grep -Eq '127\\.0\\.0\\.1|::1' /home/student/dns.txt && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
@@ -34,29 +34,34 @@
     {
       "step": 3,
       "title": "HTTP Requests with curl",
-      "description": "Make HTTP requests and inspect responses like a pro.",
+      "description": "Start a small web server on the loopback interface, then make HTTP requests to it and inspect the responses like a pro.",
       "tasks": [
-        "GET request: `curl -I https://httpbin.org/get` (headers only)",
-        "Check status code: `curl -o /dev/null -s -w '%{http_code}' https://httpbin.org/status/200`",
-        "POST data: `curl -X POST https://httpbin.org/post -d 'name=OpsAcademy'`"
+        "Create a page to serve: `mkdir -p ~/site && echo '<h1>Hello from OpsAcademy</h1>' > ~/site/index.html`",
+        "Start a web server for that folder in the background: `python3 -m http.server 8000 --bind 127.0.0.1 --directory ~/site > ~/server.log 2>&1 &`",
+        "Headers only: `curl -I http://localhost:8000/`",
+        "Status code only: `curl -o /dev/null -s -w '%{http_code}\\n' http://localhost:8000/`",
+        "Save the response body to a file: `curl -s http://localhost:8000/ -o ~/response.html`",
+        "See the requests the server logged: `cat ~/server.log`"
       ],
       "verification": {
-        "command": "curl -o /dev/null -s -w '%{http_code}' https://httpbin.org/get | grep -q '200' && echo PASS || echo FAIL",
+        "command": "cmp -s /home/student/site/index.html /home/student/response.html && grep -q 'HEAD / HTTP' /home/student/server.log && grep -q 'GET / HTTP' /home/student/server.log && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }
     },
     {
       "step": 4,
-      "title": "Port Scanning",
-      "description": "Check which ports are open and what services are listening.",
+      "title": "Listening Ports",
+      "description": "Check which ports are open and what services are listening, then shut your web server down and confirm its port has closed.",
       "tasks": [
-        "List listening ports: `ss -tlnp` or `netstat -tlnp`",
-        "Check if port 22 is open: `ss -tlnp | grep :22`",
-        "Find what's using a specific port: `lsof -i :80 2>/dev/null || ss -tlnp | grep :80`"
+        "List listening TCP ports: `ss -tln` (or `netstat -tln`)",
+        "Save the list while your web server is still running: `ss -tln > ~/ports.txt`",
+        "Find your server's port in it: `grep 8000 ~/ports.txt`",
+        "Stop the server: `kill %1` (or find its PID with `ps aux | grep '[h]ttp.server'` and run `kill <PID>`)",
+        "Confirm nothing answers on the port any more: `curl -s -m 2 http://localhost:8000/ || echo closed`"
       ],
       "verification": {
-        "command": "ss -tlnp 2>/dev/null | head -1 | grep -q '' && echo PASS || (netstat -tlnp 2>/dev/null | head -1 | grep -q '' && echo PASS || echo FAIL)",
+        "command": "grep -Eq '[:.]8000([^0-9]|$)' /home/student/ports.txt && ! curl -s -o /dev/null -m 2 http://127.0.0.1:8000/ && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

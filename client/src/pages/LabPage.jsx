@@ -22,9 +22,57 @@ import DevOpsInspector from '../components/DevOpsInspector/DevOpsInspector';
 import { sandboxApi, unitApi, labApi, errorMessage } from '../services/api';
 import { refreshProgress } from '../services/progressService';
 import usePolling from '../hooks/usePolling';
+import useProgress from '../hooks/useProgress';
 import './LabPage.css';
 
 const HISTORY_POLL_MS = 4000;
+const CLOSING_WARNING_MS = 2 * 60 * 1000;
+
+const formatClock = (ms) => {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+};
+
+/**
+ * Warns before the gateway closes the sandbox, so work is not lost without
+ * notice. An idle sandbox can be kept; the overall session limit cannot be extended.
+ */
+function ClosingWarning({ closing, onKeep }) {
+  const [now, setNow] = useState(Date.now);
+
+  useEffect(() => {
+    setNow(Date.now());
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [closing]);
+
+  if (!closing) return null;
+  const idleLeft = closing.idleExpiresAt - now;
+  const ageLeft = closing.expiresAt - now;
+  if (Math.min(idleLeft, ageLeft) > CLOSING_WARNING_MS) return null;
+
+  // The session limit wins when it comes first: keeping the sandbox would not help.
+  if (ageLeft <= idleLeft) {
+    return (
+      <div className="lab-closing-banner" role="status">
+        <Clock size={14} />
+        <span>
+          This sandbox reaches its time limit in <strong>{formatClock(ageLeft)}</strong>. Verify your steps now;
+          files in the sandbox are deleted when it closes.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="lab-closing-banner" role="alert">
+      <Clock size={14} />
+      <span>
+        No activity for a while. This sandbox closes in <strong>{formatClock(idleLeft)}</strong> and its files are deleted.
+      </span>
+      <button className="btn btn-primary btn-xs" onClick={onKeep}>Keep it open</button>
+    </div>
+  );
+}
 
 /**
  * Time since the sandbox started. It ticks in its own component so the lab
@@ -72,10 +120,19 @@ export default function LabPage() {
   const [expandedSteps, setExpandedSteps] = useState({});
   const [showHint, setShowHint] = useState({});
   const [startedAt, setStartedAt] = useState(null);
+  const [closing, setClosing] = useState(null); // when the gateway will close the sandbox, in this browser's clock
+  const progress = useProgress();
   const [verifyResult, setVerifyResult] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [showMentor, setShowMentor] = useState(false);
-  const [showInspector, setShowInspector] = useState(true);
+  // On a phone the inspector would cover the terminal, so it starts closed there.
+  const [showInspector, setShowInspector] = useState(() => window.innerWidth > 900);
+  // Narrow screens show one panel at a time.
+  const [mobilePanel, setMobilePanel] = useState('instructions');
+  // Some phones report a desktop-sized window until the page has laid out, so check again once mounted.
+  useEffect(() => {
+    if (window.innerWidth <= 900) setShowInspector(false);
+  }, []);
   const [commandHistory, setCommandHistory] = useState([]);
   const [startError, setStartError] = useState(null);
   const [verifiedSteps, setVerifiedSteps] = useState({});
@@ -119,20 +176,41 @@ export default function LabPage() {
     return () => { cancelled = true; };
   }, [unitId, loadAttempt]);
 
+  // The gateway reports its own clock, so a wrong clock on this machine does not skew the countdown.
+  const noteClosingTimes = useCallback((session) => {
+    if (!session) return;
+    const skew = Date.now() - session.serverTime;
+    const next = { expiresAt: session.expiresAt + skew, idleExpiresAt: session.idleExpiresAt + skew };
+    setClosing((prev) => (
+      prev && Math.abs(prev.expiresAt - next.expiresAt) < 1500 && Math.abs(prev.idleExpiresAt - next.idleExpiresAt) < 1500 ? prev : next
+    ));
+  }, []);
+
+  const keepSandbox = useCallback(async () => {
+    try {
+      const res = await sandboxApi.keepAlive(sessionId);
+      noteClosingTimes(res.data.session);
+    } catch { /* the sandbox is already gone; the terminal reports it */ }
+  }, [sessionId, noteClosingTimes]);
+
   // Commands the student has typed, as recorded by the gateway
   const loadHistory = useCallback(async () => {
     try {
       const res = await sandboxApi.getHistory(sessionId);
+      noteClosingTimes(res.data.session);
       setCommandHistory((prev) => {
         const next = res.data.data.map((entry) => entry.command);
         // Keep the same array when nothing changed, so nothing re-renders.
         return next.length === prev.length && next.every((command, i) => command === prev[i]) ? prev : next;
       });
     } catch { /* the session ended; the terminal reports it */ }
-  }, [sessionId]);
+  }, [sessionId, noteClosingTimes]);
 
   useEffect(() => {
-    if (!sessionId) setCommandHistory([]);
+    if (!sessionId) {
+      setCommandHistory([]);
+      setClosing(null);
+    }
   }, [sessionId]);
 
   usePolling(loadHistory, HISTORY_POLL_MS, Boolean(sessionId));
@@ -147,6 +225,7 @@ export default function LabPage() {
       const res = await sandboxApi.start(unitId);
       const sandbox = res.data.data;
       setSessionId(sandbox.sessionId);
+      setMobilePanel('terminal');
       // The gateway hands back a sandbox that is already running for this lab.
       setStartedAt(sandbox.resumed ? Date.now() - sandbox.uptime : Date.now());
       if (!sandbox.resumed) setVerifiedSteps({});
@@ -215,6 +294,7 @@ export default function LabPage() {
         status: data.allPassed ? 'pass' : 'fail',
         stepNumber,
         xpEarned: data.xpEarned,
+        dailyBonus: data.dailyBonus,
         score: data.score,
         unitCompleted: data.unitCompleted,
         details: data.results,
@@ -269,10 +349,15 @@ export default function LabPage() {
   }
 
   const steps = practiceData.steps || [];
+  // Steps passed on an earlier visit stay ticked; a check run in this visit overrides them.
+  const verified = { ...verifiedSteps };
+  for (const step of progress.unitProgress[unitId]?.passedStepNumbers || []) {
+    if (!(step in verified)) verified[step] = true;
+  }
   // The mentor helps with the step the student last checked and has not passed;
   // otherwise with the first step that has not been verified yet.
-  const currentStep = steps.find((s) => s.step === focusStep && !verifiedSteps[s.step])
-    || steps.find((s) => !verifiedSteps[s.step])
+  const currentStep = steps.find((s) => s.step === focusStep && !verified[s.step])
+    || steps.find((s) => !verified[s.step])
     || steps[steps.length - 1];
 
   return (
@@ -363,8 +448,19 @@ export default function LabPage() {
         </div>
       )}
 
+      <ClosingWarning closing={sessionId ? closing : null} onKeep={keepSandbox} />
+
       {/* ── Split Pane: Instructions | Terminal | Inspector ──── */}
-      <div className="lab-workspace">
+      <div className="lab-panel-tabs" role="tablist">
+        <button role="tab" aria-selected={mobilePanel === 'instructions'} className={mobilePanel === 'instructions' ? 'active' : ''} onClick={() => setMobilePanel('instructions')}>
+          <BookOpen size={14} /> Instructions
+        </button>
+        <button role="tab" aria-selected={mobilePanel === 'terminal'} className={mobilePanel === 'terminal' ? 'active' : ''} onClick={() => setMobilePanel('terminal')}>
+          <Play size={14} /> Terminal
+        </button>
+      </div>
+
+      <div className="lab-workspace" data-panel={mobilePanel}>
         {/* Instructions Panel */}
         <div className="lab-instructions">
           <div className="instructions-header">
@@ -378,14 +474,14 @@ export default function LabPage() {
                 key={stepObj.step}
                 className={`instruction-item ${
                   expandedSteps[stepObj.step] !== false ? 'expanded' : ''
-                } ${verifiedSteps[stepObj.step] ? 'step-verified' : ''}`}
+                } ${verified[stepObj.step] ? 'step-verified' : ''}`}
               >
                 <button
                   className="instruction-header-btn"
                   onClick={() => toggleStep(stepObj.step)}
                 >
-                  <div className={`instruction-step-badge ${verifiedSteps[stepObj.step] ? 'verified' : ''}`}>
-                    {verifiedSteps[stepObj.step] ? '✓' : stepObj.step}
+                  <div className={`instruction-step-badge ${verified[stepObj.step] ? 'verified' : ''}`}>
+                    {verified[stepObj.step] ? '✓' : stepObj.step}
                   </div>
                   <span className="instruction-title">{stepObj.title}</span>
                   {expandedSteps[stepObj.step] !== false ? (
@@ -409,13 +505,13 @@ export default function LabPage() {
 
                     <div className="step-actions-row flex-gap">
                       <button
-                        className={`btn btn-xs ${verifiedSteps[stepObj.step] ? 'btn-success' : 'btn-primary'}`}
+                        className={`btn btn-xs ${verified[stepObj.step] ? 'btn-success' : 'btn-primary'}`}
                         onClick={() => verify(stepObj.step)}
                         disabled={isVerifying || !sessionId}
                         title={!sessionId ? "Click 'Start Lab' to enable verification" : 'Run this step\'s check in your sandbox'}
                       >
                         <CheckCircle2 size={12} />
-                        {verifiedSteps[stepObj.step] ? 'Verified' : `Verify Step ${stepObj.step}`}
+                        {verified[stepObj.step] ? 'Verified' : `Verify Step ${stepObj.step}`}
                       </button>
 
                       {stepObj.hint && (
@@ -478,6 +574,7 @@ export default function LabPage() {
                 <h3>{verifyResult.unitCompleted ? 'Lab complete!' : 'Verification passed'}</h3>
                 <p style={{ color: '#10b981', fontWeight: 600 }}>
                   {verifyResult.xpEarned > 0 ? `+${verifyResult.xpEarned} XP earned` : 'Already verified, no new XP'}
+                  {verifyResult.dailyBonus > 0 && ` (includes +${verifyResult.dailyBonus} for the lab of the day)`}
                 </p>
                 <p>
                   {verifyResult.unitCompleted

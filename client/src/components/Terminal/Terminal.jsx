@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { Wifi, WifiOff, Loader, Play } from 'lucide-react';
 import { getTerminalWsUrl, sandboxApi } from '../../services/api';
+import { createTypeahead } from './typeahead';
 import './Terminal.css';
 
 // Close codes after which the sandbox itself is gone, so there is nothing to
@@ -20,6 +21,7 @@ const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStart
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
   const wsRef = useRef(null);
+  const typeaheadRef = useRef(null);
   const [status, setStatus] = useState('disconnected'); // disconnected | connecting | connected
 
   // Kept in a ref so a new callback from the parent does not reconnect the socket.
@@ -86,10 +88,39 @@ const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStart
 
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
+    // Lets browser tests read the screen, whichever renderer draws it.
+    termRef.current.__xterm = term;
+
+    // Writes still being processed by xterm; local echo waits for a settled screen.
+    let writesInFlight = 0;
+    const write = (text) => {
+      if (!text) return;
+      writesInFlight += 1;
+      term.write(text, () => { writesInFlight -= 1; });
+    };
+
+    // On a slow connection, typed characters are shown before the sandbox echoes them.
+    const typeahead = createTypeahead({
+      write,
+      getState: () => {
+        const buffer = term.buffer.active;
+        const line = buffer.getLine(buffer.baseY + buffer.cursorY);
+        return {
+          cols: term.cols,
+          cursorX: buffer.cursorX,
+          lineLength: line ? line.translateToString(true).length : 0,
+          alternate: buffer.type === 'alternate',
+          busy: writesInFlight > 0,
+        };
+      },
+    });
+    typeaheadRef.current = { typeahead, write };
+    termRef.current.__typeahead = typeahead;
 
     // Send keystrokes to WebSocket
     term.onData((data) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        typeahead.input(data);
         wsRef.current.send(data);
       }
     });
@@ -114,9 +145,11 @@ const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStart
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      typeahead.reset();
       term.dispose();
       xtermRef.current = null;
       fitAddonRef.current = null;
+      typeaheadRef.current = null;
     };
   }, []);
 
@@ -168,13 +201,16 @@ const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStart
         const term = xtermRef.current;
         if (!term) return;
         // The gateway replays the recent output, so start from a clean screen.
+        if (typeaheadRef.current) typeaheadRef.current.typeahead.reset();
         term.reset();
         if (fitAddonRef.current) fitAddonRef.current.fit();
         socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
       };
 
       socket.onmessage = (event) => {
-        if (xtermRef.current) xtermRef.current.write(event.data);
+        const local = typeaheadRef.current;
+        if (local) local.write(local.typeahead.output(event.data));
+        else if (xtermRef.current) xtermRef.current.write(event.data);
       };
 
       socket.onclose = (event) => {

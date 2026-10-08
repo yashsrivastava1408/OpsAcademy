@@ -57,14 +57,21 @@ The AI hub's Isolation Forest only flags commands for review. On held-out course
 | Read, reset or stop someone else's sandbox | Every sandbox route checks ownership and answers 404 for both "not yours" and "does not exist" | `tests/api.test.js` |
 | Enumerate sessions | Public stats are aggregates only. The full list is under `/api/admin`, which does not exist unless `ADMIN_TOKEN` is set | `tests/api.test.js` |
 | Forge a token | HS256 only; `alg: none` and foreign signatures are rejected; production refuses to start with the default secret | `tests/api.test.js`, `tests/services.test.js` |
-| Brute-force logins | 20 sign-in attempts per minute per client; bcrypt; identical response for unknown email and wrong password | `tests/api.test.js` |
-| Start sandboxes without limit | 2 per user, 25 in total, 10 starts per minute; guest identities are rate limited per IP | `tests/sandboxManager.test.js` |
+| Brute-force logins | 20 sign-in attempts per minute per IP address (not per token: a guest token is free, so counting per token would hand out unlimited attempts); bcrypt; identical response for unknown email and wrong password | `tests/api.test.js` |
+| Start sandboxes without limit | 2 per user, 25 in total, 10 starts per minute; guest identities are rate limited per IP. Starting a lab that is already running returns the same sandbox instead of a second one | `tests/sandboxManager.test.js`, `tests/api.test.js` |
+| Starve other students of requests | The general limit (300 a minute) is counted per signed-in user, so a classroom behind one address does not share one budget; requests without a valid token are counted per IP | `tests/api.test.js` |
+| Keep a sandbox forever | 30-minute maximum age that nothing extends; 15 idle minutes. Background polling by the page does not count as activity, only typing, checks, hints and an explicit keep-alive do | `tests/api.test.js`, `tests/sandboxManager.test.js` |
+| Find out which emails have accounts | "Forgot password" answers identically for known and unknown addresses, and the email is sent in the background so timing does not differ | `tests/api.test.js` |
+| Reuse or steal a reset or confirmation link | Links carry 256 random bits and only their SHA-256 hash is stored; they work once, expire (30 minutes for reset, 24 hours for confirmation), a newer link cancels older ones, and a reset link is not accepted as a confirmation link or the reverse | `tests/api.test.js` |
+| Keep using a stolen session after the owner resets the password | Every token issued before the reset is rejected, on the API and on the terminal WebSocket | `tests/api.test.js` |
+| Read private data from a public profile | A profile exists only after its owner turns it on, at an address that is not the account id, and shows achievements only: no email, id, failed checks or hint counts | `tests/api.test.js`, `client/e2e/features.mjs` |
 | Flood a terminal | 64 KB frame limit; 2000 messages per 10 s | `tests/terminal.test.js` |
 | Path traversal through unit IDs or file preview | Unit IDs must match a slug pattern; preview paths must be plain relative paths | `tests/lib.test.js`, `tests/api.test.js` |
 | Read the lab answers from the network tab | Verification commands never leave the server | `tests/api.test.js` |
 | Forge a certificate | Issued only to a registered account for a unit completed through sandbox checks; signed with HMAC-SHA256 over every field; the public verify endpoint recomputes the signature | `tests/api.test.js`, `tests/services.test.js` |
 | Call the AI hub directly | With `AI_HUB_TOKEN` set, the hub rejects every request without it; in Compose and Kubernetes it is not published at all | `ai-hub/tests/test_app.py` |
-| Get the mentor to reveal the check | The verification command is never put in the LLM prompt, and every hint passes a leak guard | `ai-hub/tests/test_mentor_pipeline.py`, `evals/run_eval.py` |
+| Get the mentor to reveal the check | The verification command is never put in the LLM prompt, and every hint passes a leak guard. Streamed hints are released a sentence at a time, each only after the whole hint so far has passed the guard, and never while a `code span` is still open | `ai-hub/tests/test_mentor_pipeline.py`, `evals/run_eval.py` |
+| Read the checks through the lab simulators | The simulators record which subcommands were run; the hidden `__ran` query answers only with an exit code, and no task text, hint or description mentions it | `sandbox-image/tests/test_lab_checks.py` |
 
 Auth is a bearer token in `localStorage`, never a cookie, so there is no CSRF surface. The cost is that an XSS bug would expose the token; the client's Content-Security-Policy limits scripts to its own origin and connections to the configured API.
 
@@ -80,3 +87,8 @@ These are real and unfixed. Read them before putting this in front of untrusted 
 6. **Verification trusts the sandbox.** A check runs inside the student's own sandbox and mostly looks at end state (does this file exist, does it contain this text). A student can reach that state without understanding the step, and one who studies the check's behaviour could fake it. A certificate says the checks passed, not that the holder could repeat the work in an interview.
 7. **Guest accounts are free.** Rate limits slow abuse; they do not stop a patient attacker with many IP addresses.
 8. **CPU limits and the reaper have unit tests but no load test.** Behaviour with 25 busy sandboxes on a small machine is unmeasured.
+9. **The operator page keeps `ADMIN_TOKEN` in the browser tab** (`sessionStorage`) and sends it as a header. It is one shared secret with no per-operator accounts and no audit log. Use it over HTTPS only and rotate it if it leaks.
+10. **Reset and confirmation links are returned by the API outside production** when no mail provider is configured, so the flow can be tried locally. With `NODE_ENV=production` they are only logged. Never run a public server without `NODE_ENV=production`.
+11. **Email is optional and unverified.** Without `RESEND_API_KEY` a forgotten password cannot be recovered by the user. The Resend call has never been run against the real service. Email confirmation is recorded but nothing is withheld from unconfirmed accounts.
+12. **A student can fake simulator state.** The lab simulators keep their state in a file in the student's home (`~/.opsacademy/`). Editing it by hand would satisfy a check, in the same way gap 6 describes for file-based checks.
+13. **In PTY mode students share the host's network ports.** The Docker and networking labs start small web servers on fixed ports, so two students doing the same step at once collide. Docker mode gives each sandbox its own loopback.

@@ -1,6 +1,7 @@
 const { JsonStore, setStore } = require('../lib/store');
 const { createManager, setManager } = require('../services/sandboxManager');
 const { setHubClient } = require('../services/aiHubClient');
+const { createMailer, setMailer } = require('../lib/mailer');
 
 /** An in-memory sandbox engine that records what the manager asks of it. */
 function fakeEngine() {
@@ -56,6 +57,21 @@ function fakeHub() {
       if (hub.down) throw new Error('hub down');
       return hub.hintResponse || { blocked: false, hint: `tier ${payload.tier} hint`, source: 'rules' };
     },
+    /** Streams `hub.streamEvents` if set, otherwise the plain hint as one piece. */
+    async* hintStream(payload) {
+      hub.calls.push({ endpoint: 'hintStream', payload });
+      if (hub.down) throw new Error('hub down');
+      if (hub.streamEvents) {
+        for (const event of hub.streamEvents) {
+          if (event.type === 'throw') throw new Error('hub died mid-stream');
+          yield event;
+        }
+        return;
+      }
+      const data = hub.hintResponse || { blocked: false, hint: `tier ${payload.tier} hint`, source: 'rules' };
+      if (!data.blocked) yield { type: 'delta', text: data.hint };
+      yield { type: 'done', data };
+    },
     async scan(command) {
       hub.calls.push({ endpoint: 'scan', command });
       if (hub.down) throw new Error('hub down');
@@ -82,7 +98,9 @@ function install({ engine, limits, pool = { enabled: false } } = {}) {
   setStore(store);
   setManager(manager);
   setHubClient(hub);
-  return { store, manager, hub, engine };
+  const mailer = createMailer({ driver: 'memory' });
+  setMailer(mailer);
+  return { store, manager, hub, engine, mailer };
 }
 
 function waitFor(predicate, { timeoutMs = 8000, intervalMs = 20 } = {}) {

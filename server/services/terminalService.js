@@ -99,9 +99,19 @@ async function handleConnection(ws, sessionId, manager) {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
 
-  // Sandbox output → browser
+  // Sandbox output → browser. A shell writes in many small pieces (a prompt
+  // alone can be several); pieces that arrive in the same turn of the event
+  // loop go out as one frame. It adds no delay and cuts the frame count for
+  // commands with a lot of output.
+  let outbox = '';
+  const flushOutbox = () => {
+    const data = outbox;
+    outbox = '';
+    if (data && ws.readyState === ws.OPEN) ws.send(data);
+  };
   terminal.onData((data) => {
-    if (ws.readyState === ws.OPEN) ws.send(data);
+    if (!outbox) setImmediate(flushOutbox);
+    outbox += data;
   });
 
   // If the session is stopped or reaped, close the socket with the reason.

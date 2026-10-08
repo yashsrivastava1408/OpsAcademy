@@ -1,7 +1,9 @@
 import hmac
 import logging
 
-from flask import Flask, jsonify, request
+import json
+
+from flask import Flask, Response, jsonify, request, stream_with_context
 
 import config
 from agents.abuse_scanner import scanner
@@ -9,7 +11,7 @@ from agents.interview_scorer import scorer
 from agents.llm import llm
 from agents.mentor import MAX_TIER
 from agents.doc_retriever import retriever
-from pipeline import hint_cache, run_agent_pipeline
+from pipeline import hint_cache, run_agent_pipeline, stream_agent_pipeline
 
 MAX_BODY_BYTES = 256 * 1024
 PUBLIC_PATHS = {"/health"}
@@ -69,6 +71,20 @@ def create_app() -> Flask:
             return jsonify({"success": False, "error": "command must be a string"}), 400
         return jsonify({"success": True, "data": scanner.scan(command)})
 
+    def hint_arguments(data: dict) -> dict:
+        """The pipeline's arguments from a request body, tolerating malformed optional fields."""
+        history = data.get("commandHistory") or []
+        step = data.get("step")
+        telemetry = data.get("containerTelemetry")
+        return {
+            "unit_id": str(data.get("unitId") or "general"),
+            "step_number": as_int(data.get("stepNumber"), 1),
+            "command_history": [c for c in history if isinstance(c, str)] if isinstance(history, list) else [],
+            "container_telemetry": telemetry if isinstance(telemetry, dict) else None,
+            "step": step if isinstance(step, dict) and step.get("title") else None,
+            "tier": max(1, min(MAX_TIER, as_int(data.get("tier"), 1))),
+        }
+
     @app.route("/api/agent/hint", methods=["POST"])
     def get_hint():
         data = request.get_json(silent=True) or {}
@@ -76,20 +92,32 @@ def create_app() -> Flask:
         if not isinstance(query, str) or not query.strip():
             return jsonify({"success": False, "error": "query is required"}), 400
 
-        history = data.get("commandHistory") or []
-        step = data.get("step")
-        telemetry = data.get("containerTelemetry")
-
-        result = run_agent_pipeline(
-            query,
-            unit_id=str(data.get("unitId") or "general"),
-            step_number=as_int(data.get("stepNumber"), 1),
-            command_history=[c for c in history if isinstance(c, str)] if isinstance(history, list) else [],
-            container_telemetry=telemetry if isinstance(telemetry, dict) else None,
-            step=step if isinstance(step, dict) and step.get("title") else None,
-            tier=max(1, min(MAX_TIER, as_int(data.get("tier"), 1))),
-        )
+        result = run_agent_pipeline(query, **hint_arguments(data))
         return jsonify({"success": True, "data": result})
+
+    @app.route("/api/agent/hint/stream", methods=["POST"])
+    def stream_hint():
+        """The same hint as /api/agent/hint, sent as one JSON event per line while it is written."""
+        data = request.get_json(silent=True) or {}
+        query = data.get("query", "")
+        if not isinstance(query, str) or not query.strip():
+            return jsonify({"success": False, "error": "query is required"}), 400
+        arguments = hint_arguments(data)
+
+        def lines():
+            try:
+                for event in stream_agent_pipeline(query, **arguments):
+                    yield json.dumps(event) + "\n"
+            except Exception as err:  # the headers are already sent, so report it in the stream
+                app.logger.exception("hint stream failed: %s", err)
+                yield json.dumps({"type": "error"}) + "\n"
+
+        return Response(
+            stream_with_context(lines()),
+            mimetype="application/x-ndjson",
+            # Proxies must pass each line on as it is written, not collect them.
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+        )
 
     @app.route("/api/agent/interview/score", methods=["POST"])
     def score_interview():

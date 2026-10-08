@@ -20,6 +20,10 @@ except ImportError:  # the SDK is an optional dependency
     anthropic = None
 
 
+class LLMStreamError(Exception):
+    """The model could not finish a streamed answer (unavailable, cut off or refused)."""
+
+
 class LLMClient:
     def __init__(self, client=None):
         self._client = client
@@ -76,6 +80,40 @@ class LLMClient:
 
         text = "".join(block.text for block in response.content if block.type == "text").strip()
         return text or None
+
+    def stream(self, system: str, user: str):
+        """
+        Yield the model's answer piece by piece as it is written.
+
+        Raises LLMStreamError if the LLM is unavailable, fails part-way, or
+        stops for any reason other than finishing its answer. The caller must
+        then discard what it received and answer from rules instead.
+        """
+        if not self.available:
+            raise LLMStreamError("LLM unavailable")
+
+        try:
+            with self.client.messages.stream(
+                model=config.LLM_MODEL,
+                max_tokens=16000,
+                output_config={"effort": config.LLM_EFFORT},
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            ) as stream:
+                for text in stream.text_stream:
+                    if text:
+                        yield text
+                final = stream.get_final_message()
+        except LLMStreamError:
+            raise
+        except Exception as err:  # rate limit, API error, connection lost, timeout
+            logger.warning("LLM stream failed (%s); using rule-based hint", type(err).__name__)
+            raise LLMStreamError(type(err).__name__) from err
+
+        if final.stop_reason != "end_turn":
+            # refusal, max_tokens, ...: not a complete answer to show a student.
+            logger.warning("LLM stream stopped with %s; using rule-based hint", final.stop_reason)
+            raise LLMStreamError(str(final.stop_reason))
 
 
 llm = LLMClient()

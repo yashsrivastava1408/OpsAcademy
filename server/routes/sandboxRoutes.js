@@ -104,7 +104,26 @@ router.get('/:sessionId/telemetry', requireAuth, requireOwnedSession, async (req
  * Commands entered in this session's terminal, oldest first
  */
 router.get('/:sessionId/history', requireAuth, requireOwnedSession, (req, res) => {
-  res.json({ success: true, data: getManager().getHistory(req.params.sessionId) });
+  const manager = getManager();
+  const { expiresAt, idleExpiresAt } = manager.getSession(req.params.sessionId);
+  res.json({
+    success: true,
+    data: manager.getHistory(req.params.sessionId),
+    // The page polls this, so it also learns when the sandbox will be closed
+    // and can warn the student first. Reading it does not count as activity.
+    session: { expiresAt, idleExpiresAt, serverTime: Date.now() },
+  });
+});
+
+/**
+ * POST /api/sandbox/:sessionId/keepalive
+ * "I'm still here": restart the idle countdown (the maximum age still applies)
+ */
+router.post('/:sessionId/keepalive', requireAuth, requireOwnedSession, (req, res) => {
+  const manager = getManager();
+  manager.touch(req.params.sessionId);
+  const { expiresAt, idleExpiresAt } = manager.getSession(req.params.sessionId);
+  res.json({ success: true, session: { expiresAt, idleExpiresAt, serverTime: Date.now() } });
 });
 
 /**

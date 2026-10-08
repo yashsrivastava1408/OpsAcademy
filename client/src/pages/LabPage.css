@@ -353,6 +353,26 @@
   flex: 1;
 }
 
+/* ── "Sandbox is about to close" banner ───────────────────── */
+.lab-closing-banner {
+  /* Above the floating inspector, which would otherwise cover its button. */
+  position: relative;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 24px 12px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.lab-closing-banner span { flex: 1; }
+.lab-closing-banner strong { font-family: var(--font-mono); }
+
 /* ── Verify Overlay ───────────────────────────────────────── */
 .verify-overlay {
   position: fixed;
@@ -423,28 +443,93 @@
 }
 
 /* ── Responsive ───────────────────────────────────────────── */
+/* Panel switch: only shown on narrow screens */
+.lab-panel-tabs { display: none; }
+
 @media (max-width: 900px) {
-  .lab-workspace {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 1fr;
+  /* One panel at a time, chosen with the tabs, each using the full width. */
+  .lab-panel-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-secondary);
+  }
+
+  .lab-panel-tabs button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .lab-panel-tabs button.active {
+    color: var(--accent-cyan);
+    border-bottom-color: var(--accent-cyan);
+  }
+
+  .lab-workspace[data-panel='terminal'] .lab-instructions,
+  .lab-workspace[data-panel='instructions'] .lab-terminal {
+    display: none;
   }
 
   .lab-instructions {
+    width: 100%;
     border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
   }
-}
 
-@media (max-width: 768px) {
+  .lab-terminal { padding: 6px; }
+
   .lab-header {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px 12px;
   }
 
   .lab-header-right {
-    width: 100%;
-    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .lab-title { font-size: 1rem; }
+
+  .lab-closing-banner,
+  .lab-alert-banner { margin: 8px 12px !important; }
+
+  /* The inspector becomes a sheet along the bottom instead of a floating card. */
+  .floating-inspector {
+    left: 8px !important;
+    right: 8px;
+    top: auto !important;
+    bottom: 8px;
+    width: auto;
+    max-height: 55vh;
+  }
+
+  .inspector-minimized-pill {
+    left: auto !important;
+    right: 12px;
+    top: auto !important;
+    bottom: 12px;
+  }
+
+  .inspector-drag-handle { cursor: default; }
+
+  .mentor-chat-drawer {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    top: auto;
+    height: 72vh;
   }
 }
 

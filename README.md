@@ -36,7 +36,12 @@ Every unit has three modes:
 - **Progress that is earned.** XP, streaks, per-unit progress and "focus areas" (units where checks failed or hints were needed) are recorded on the server from verified work.
 - **Spaced repetition and mock interviews.** Flashcards are scheduled with SM-2. Written interview answers are scored against each question's key points, with the missed points listed.
 - **Verifiable certificates.** Issued only for a unit completed through sandbox checks, signed with HMAC-SHA256, and checkable by anyone at `/verify/<certificate id>`.
+- **Typing that stays instant on a slow link.** When the round trip to the sandbox is slow, typed characters are shown at once and corrected by the server's echo; the screen always ends up exactly as the server sent it. A dropped connection reconnects to the same sandbox.
+- **Simulated Docker, Kubernetes and AWS labs.** The sandbox has no network and no container runtime, so these labs run against small simulators that say what they are; see [Measured numbers](#lab-content-npm-run-labsaudit-docker-sandbox).
+- **Accounts that hold up.** Guest progress moves to the account on sign-up; password reset and email confirmation by one-time link; a reset signs out every older session; an optional public profile page; a lab of the day with a small XP bonus.
+- **Works on a phone.** The lab switches between instructions and terminal on narrow screens.
 - **Operations built in.** Prometheus metrics, a Grafana dashboard, alert rules, liveness and readiness probes, structured logs, graceful shutdown.
+- **Operator page.** `/admin` shows running sandboxes, the warm pool, accounts and what is configured, and can stop a sandbox. It exists only when the server has an `ADMIN_TOKEN`.
 
 ---
 
@@ -124,6 +129,8 @@ A student cannot jump to the strongest hint: each request unlocks one more tier 
 
 The mentor works without any LLM. Setting `ANTHROPIC_API_KEY` on the hub switches hint writing to Claude; the rule-based hint remains the fallback when the call fails, is refused, or gives too much away for the tier.
 
+The chat window receives the hint while it is being written (`POST /api/agent/hint/stream`, one JSON event per line, passed through the gateway). Streaming does not weaken the leak guard: the hub holds text back until the end of a sentence, and the whole hint so far must pass the guard before that sentence is released. If the model gives too much away, fails or stops early, the client is told to discard what it showed and gets the rule-based hint instead. If streaming is not available at all, the client falls back to the plain request above.
+
 ---
 
 ## Measured numbers
@@ -177,6 +184,13 @@ How to read these: the scenarios and retrieval questions were written alongside 
 
 | | Steps |
 | :--- | :--- |
+| Can be done in the sandbox, with a check that fails until the work is done | 89 of 89 |
+| Need a tool the sandbox does not have | 0 |
+| Have a check that already passes on an empty sandbox | 0 |
+
+The sandbox has no network and cannot run a container runtime, a cluster or a cloud account. So the Docker, Kubernetes and AWS labs run against **simulators** (`sandbox-image/bin/docker`, `kubectl`, `aws`): small Python programs that keep state per student, print output shaped like the real tools, and say they are simulators in `docker info`, `kubectl cluster-info` and `aws --version`. `docker run -d -p 8080:80 nginx` starts a real local web server, so `curl localhost:8080` answers. The networking lab uses loopback only. Each rewritten check is tested both ways, failing on an empty sandbox and passing after the tasks are done, on macOS and inside the hardened container (`python -m pytest sandbox-image/tests`).
+
+--- | :--- |
 | Can be done in the sandbox, with a check that fails until the work is done | 66 of 89 |
 | Need a tool the sandbox does not have (`docker`, `kubectl`, `aws`, `terraform`, `dig`, `tracepath`) | 20 |
 | Have a check that already passes on an empty sandbox | 7 |
@@ -234,8 +248,8 @@ Units are plain JSON under `server/data/units/`. Adding one needs no code: see [
 - **Frontend**: React 19, Vite, xterm.js, React Router, plain CSS
 - **API gateway**: Node.js 22, Express, `ws`, `node-pty`, `dockerode`, JWT, bcrypt, helmet, express-rate-limit, pino, prom-client
 - **AI hub**: Python 3.11, Flask, gunicorn, scikit-learn (TF-IDF, Isolation Forest), a small BM25 implementation, optional Anthropic SDK
-- **Storage**: one JSON file with atomic writes, behind a small store interface
-- **Testing**: Jest and supertest (258 tests), pytest (269 tests), an end-to-end script that plays a learner over HTTP and WebSocket (54 checks)
+- **Storage**: one JSON file with atomic writes by default, or SQLite (`STORE_DRIVER=sqlite`, the one built into Node), behind the same small store interface
+- **Testing**: Jest and supertest (303 tests), pytest (284 for the AI hub, 96 for the lab simulators), an end-to-end script that plays a learner over HTTP and WebSocket (56 checks), and Playwright browser tests (118 checks, including typing on a slow connection and a phone-sized screen)
 - **Operations**: Docker Compose, Kubernetes manifests, Prometheus, Grafana, GitHub Actions
 
 There is no MongoDB, vector database or agent framework in this project. Retrieval is lexical and the "agents" are plain Python classes called in order.
@@ -290,7 +304,7 @@ Set `ANTHROPIC_API_KEY` for the hub and raise `AI_HUB_TIMEOUT_MS` on the gateway
 
 ```bash
 cd server
-npm test                                  # 258 tests, including real shells over node-pty
+npm test                                  # 303 tests, including real shells over node-pty
 npm run labs:validate                     # structure of every unit
 npm run labs:audit                        # every check against an empty Docker sandbox
 node scripts/docker-check.js              # try to break out of a real sandbox container
@@ -299,14 +313,18 @@ node scripts/benchmark.js http://localhost:4000
 
 cd ../ai-hub
 pip install -r requirements-dev.txt
-python -m pytest tests -q                 # 269 tests
+python -m pytest tests -q                 # 284 tests
 python evals/run_eval.py --check          # quality gates, also run in CI
 
-cd ../client
-npm run lint && npm run build
+cd ..
+python -m pytest sandbox-image/tests -q   # 96 tests: the lab simulators and every rewritten lab check
+
+cd client
+npm run lint && npm test && npm run build
+npm run e2e                               # real browser against a throwaway stack (needs: npx playwright install chromium)
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above except the benchmark, including the sandbox break-out check and the end-to-end script against Docker sandboxes.
+CI (`.github/workflows/ci.yml`) runs all of the above except the benchmark, including the sandbox break-out check, the end-to-end script against Docker sandboxes and the browser tests. The browser job and the simulator tests were added after the workflow last ran on GitHub, so treat those two jobs as untested there until the first green run.
 
 ---
 
@@ -314,20 +332,36 @@ CI (`.github/workflows/ci.yml`) runs all of the above except the benchmark, incl
 
 - **Client (Vercel or any static host).** Set `VITE_API_URL` to the gateway's public URL at build time. It is compiled into the bundle and into the page's Content-Security-Policy; without it the browser will only talk to `localhost:4000`.
 - **Gateway.** Needs `JWT_SECRET` (it refuses to start in production without one). Set `CORS_ORIGINS` to the client's URL, and `DATA_DIR` to a persistent disk if accounts and certificates should survive restarts.
-- **Render (`render.yaml`).** A demo deployment: sandboxes are PTY shells inside the gateway's container, and the free plan has no persistent disk.
+- **Put the gateway near its students.** Every terminal keystroke is a round trip to it. Measured from India, a gateway in Render's Oregon region took 0.3 to 1.1 s to answer a trivial request. Local echo hides that for typing, but command output still waits for the network.
+- **Render (`render.yaml`).** A demo deployment: sandboxes are PTY shells inside the gateway's container, and the free plan has no persistent disk. The blueprint asks for the Singapore region. Render cannot move an existing service, so changing region means creating new services from the blueprint and pointing `VITE_API_URL` at the new URL.
 - **A VM with Docker (`docker-compose.yml`).** The setup to use for real learners.
 - **Kubernetes (`k8s/`).** Runs the gateway unprivileged with PTY sandboxes inside the pod; a demo, for the same reason as Render. Create the secret from `k8s/secret.example.yaml` first.
+
+Optional gateway settings (all in `server/.env.example`):
+
+| Variable | What it turns on | Without it |
+| :--- | :--- | :--- |
+| `STORE_DRIVER=sqlite` | One database row per document, in `DATA_DIR/store.db`. An existing `store.json` is imported on first start. | One JSON file, rewritten on every save |
+| `RESEND_API_KEY`, `MAIL_FROM` | Password-reset and confirmation emails are really sent | Links are only written to the server log |
+| `APP_URL` | The web app's address, used to build the links in those emails | `CLIENT_URL`, else `http://localhost:5173` |
+| `ADMIN_TOKEN` | The operator page at `/admin` and the `/api/admin` endpoints | Those endpoints answer 404 |
+| `METRICS_TOKEN` | A bearer token on `/metrics` | `/metrics` is open |
+| `DAILY_CHALLENGE=off` | Removes the lab of the day | It is on |
+
+On the AI hub, `ANTHROPIC_API_KEY` switches hint writing to Claude; raise `AI_HUB_TIMEOUT_MS` on the gateway to about 15000 when you set it.
 
 ---
 
 ## Limitations
 
-- **23 of 89 lab steps do not hold up in the Docker sandbox.** The Docker, Kubernetes, AWS and some Terraform and networking labs need a container runtime, a cluster, cloud credentials or the internet. Seven checks pass without any work. `npm run labs:audit` lists them.
-- **PTY mode is not a sandbox.** Do not expose it to people you do not trust.
-- **One gateway process.** Sessions and the data store are in memory and in one file. It does not scale horizontally yet.
+- **The Docker, Kubernetes and AWS labs use simulators, not the real tools.** They cover the commands the labs teach and refuse anything else with a clear message. They teach the workflow and the output; they are not a cluster.
+- **PTY mode is not a sandbox.** Do not expose it to people you do not trust. In PTY mode all students also share the host's ports, so two people running the same `-p 8080:80` lab at once collide (the second gets "port is already allocated").
+- **One gateway process.** Sessions live in memory, and both stores (JSON file or SQLite) belong to a single process. Running several replicas needs a network database and an async store interface.
+- **Email is not sent unless `RESEND_API_KEY` is set.** Without it, password-reset and confirmation links are only written to the server log (and returned by the API outside production so the flow can be tried). The Resend path has never been run against the real service.
+- **Typing lag depends on where the gateway runs.** Every keystroke is a round trip. Local echo hides it when the round trip is over 50 ms, but output still arrives at network speed; deploy the gateway near its students.
 - **Retrieval is lexical.** It finds the right unit well and the right section only about half the time at rank one.
 - **The interview scorer matches words, not meaning.** A correct answer phrased very differently from the key points scores low.
-- **The LLM mentor is untested against a live model.**
+- **The LLM mentor is untested against a live model**, including streamed answers. Its request shape, the leak check on streamed text and every failure path are tested with stand-ins.
 - **Not load tested.** The numbers above are single-user latencies on one laptop.
 
 ---

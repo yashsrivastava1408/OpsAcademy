@@ -85,6 +85,45 @@ Steps are numbered 1, 2, 3 in order.
 - **Finish within 10 seconds.** Longer checks are cut off and count as failed.
 - **Only use tools that are in the sandbox image** (`sandbox-image/Dockerfile`). The audit lists steps that need something missing. Sandboxes have no network by default.
 
+### The simulators: docker, kubectl and aws
+
+A sandbox has no network, no container runtime and no cluster, so three tools are simulated. They are Python scripts in `sandbox-image/bin/` (copied to `/usr/local/bin` in the image, and put first on the PATH in PTY mode). Each keeps its state per student in `~/.opsacademy/<tool>.json` and prints what the real tool would print, including its error messages and exit codes.
+
+- **They say what they are.** `docker info`, `docker version`, `kubectl cluster-info` and `aws --version` all mention "OpsAcademy simulator".
+- **Only part of each tool exists.** A subcommand that is not simulated prints `docker: 'swarm' is not available in the OpsAcademy simulator. Supported: ...` and exits 1. Run `docker help`, `kubectl help` or `aws help` to see the list before writing a task around it.
+- **One thing is real.** `docker run -d -p HOST:80` on an nginx image (or an image built `FROM nginx`) starts a small web server on `127.0.0.1:HOST`, so `curl localhost:HOST` works. It serves the nginx welcome page, or the files the Dockerfile copied into `/usr/share/nginx/html/`. In PTY mode every session shares the host's ports, so a check should ask `docker port NAME 80` for the port instead of assuming it.
+- **`exec` opens a small read-only shell** with `ls`, `cat`, `cd`, `pwd`, `hostname`, `whoami`, `echo`, `env`, `ps` and `exit`. Anything else answers `sh: X: not found`.
+- **New pods show `ContainerCreating` for about two seconds**, then `Running`. A check should not require `Running` straight after `kubectl run`.
+
+Some tasks leave nothing behind to inspect ("run `docker info`", "read the logs"). For those, every simulator records each subcommand it handled successfully, and a check can ask whether one was run:
+
+```
+docker __ran info                         # exit 0 if `docker info` has been run, else 1; prints nothing
+kubectl __ran get-nodes && kubectl __ran exec
+aws __ran sts.get-caller-identity
+```
+
+| Tool | Key | Examples |
+|---|---|---|
+| `docker` | the subcommand; removing a container also records `rm:<name>` | `info`, `exec`, `logs`, `stats`, `rm:my-webserver` |
+| `kubectl` | the verb, or `verb-resource`; deleting also records `delete-<kind>:<name>` | `logs`, `exec`, `get-nodes`, `describe-pod`, `top-pods`, `delete-deployment:web-app` |
+| `aws` | `service.operation` | `s3.ls`, `sts.get-caller-identity`, `iam.list-attached-user-policies` |
+
+`__ran` is for checks only. Never mention it, or the verification command, in a task, a hint or a description.
+
+### A check that fails on an empty sandbox
+
+- **Look for something the student made.** A file with the right content, a container, a bucket with an object in it. `docker --version` or `pwd` succeed for everyone and verify nothing.
+- **When a task only shows output, have the student save it.** `ls / > ~/root-dirs.txt` gives the check a file to read. Otherwise use `__ran`.
+- **A clean-up step must prove the thing existed.** "No container called `myapp`" is already true on an empty sandbox. Require the removal as well: `docker __ran rm:myapp && ! docker ps -a | grep -q myapp`.
+- **Stay on loopback.** No `ping`, `dig`, `nslookup` or outside hosts. To practise HTTP, have the student start `python3 -m http.server` on `127.0.0.1` and `curl` that.
+- **Write the home directory as `/home/student`** in a check, never `~` or `$HOME`.
+- **Prove it both ways.** `sandbox-image/tests/test_lab_checks.py` runs each check before and after the commands of its tasks. Add the commands of a new step there, then run:
+
+```bash
+python3 -m pytest sandbox-image/tests -q
+```
+
 ## learn.json
 
 ```json

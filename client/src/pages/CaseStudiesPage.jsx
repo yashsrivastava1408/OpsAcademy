@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sparkles,
@@ -8,7 +9,9 @@ import {
   Layers,
   CheckCircle2,
 } from 'lucide-react';
+import { unitApi } from '../services/api';
 import './CaseStudiesPage.css';
+import './ExtraPages.css';
 
 const FEATURED_CASE_STUDIES = [
   {
@@ -28,6 +31,18 @@ const FEATURED_CASE_STUDIES = [
 ];
 
 export default function CaseStudiesPage() {
+  // Other units that also have a case study, from the course catalogue.
+  const [more, setMore] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    unitApi.list()
+      .then((res) => {
+        const featured = new Set(FEATURED_CASE_STUDIES.map((study) => study.id));
+        if (!cancelled) setMore(res.data.data.filter((unit) => unit.hasCaseStudy && !featured.has(unit.id)));
+      })
+      .catch(() => { /* the featured study below does not need the API */ });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="case-studies-page">
@@ -101,9 +116,13 @@ export default function CaseStudiesPage() {
 
               {/* Action Launchers */}
               <div className="case-action-deck">
-                <Link to={`/unit/${study.id}/learn`} className="btn btn-primary btn-md">
+                <Link to={`/unit/${study.id}/casestudy`} className="btn btn-primary btn-md">
                   <BookOpen size={16} />
-                  Read Architecture Case Study
+                  Read the Post-Mortem
+                </Link>
+                <Link to={`/unit/${study.id}/learn`} className="btn btn-secondary btn-md">
+                  <Layers size={16} />
+                  Architecture Lesson
                 </Link>
                 <Link to={`/unit/${study.id}/practice`} className="btn btn-secondary btn-md">
                   <Terminal size={16} />
@@ -117,6 +136,22 @@ export default function CaseStudiesPage() {
             </div>
           ))}
         </div>
+
+        {more.length > 0 && (
+          <div className="more-case-studies">
+            <h2>More case studies</h2>
+            <div className="more-case-grid">
+              {more.map((unit) => (
+                <Link key={unit.id} to={`/unit/${unit.id}/casestudy`} className="more-case-card glass-card">
+                  <span className={`badge badge-${unit.difficulty}`}>{unit.difficulty}</span>
+                  <h3>{unit.title}</h3>
+                  <p>{unit.description}</p>
+                  <span className="more-case-link"><BookOpen size={14} /> Read the case studies</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

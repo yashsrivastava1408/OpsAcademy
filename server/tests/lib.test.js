@@ -3,7 +3,8 @@ const os = require('os');
 const path = require('path');
 const sm2 = require('../lib/sm2');
 const units = require('../lib/units');
-const { JsonStore } = require('../lib/store');
+const { JsonStore, createStore } = require('../lib/store');
+const { SqliteStore } = require('../lib/sqliteStore');
 
 describe('sm2', () => {
   const now = Date.UTC(2026, 0, 1);
@@ -162,5 +163,92 @@ describe('JsonStore', () => {
     store.set('c', '1', {});
     store.flush();
     expect(store.isWritable()).toBe(true);
+  });
+});
+
+// The services only know the store interface, so both stores must behave the same.
+describe.each([
+  ['JsonStore', () => new JsonStore(null)],
+  ['SqliteStore', () => new SqliteStore(':memory:')],
+])('store contract: %s', (_name, create) => {
+  let store;
+  beforeEach(() => { store = create(); });
+
+  test('get, set, delete and all', () => {
+    expect(store.get('users', 'u1')).toBeNull();
+    expect(store.all('users')).toEqual([]);
+
+    store.set('users', 'u1', { id: 'u1', name: 'Asha', tags: ['a'] });
+    store.set('users', 'u2', { id: 'u2', name: 'Ravi' });
+    store.set('progress', 'u1', { xp: 20 });
+    expect(store.get('users', 'u1')).toEqual({ id: 'u1', name: 'Asha', tags: ['a'] });
+    expect(store.all('users').map((u) => u.id).sort()).toEqual(['u1', 'u2']);
+    expect(store.all('progress')).toEqual([{ xp: 20 }]);
+
+    store.set('users', 'u1', { id: 'u1', name: 'Asha Rao' });
+    expect(store.get('users', 'u1').name).toBe('Asha Rao');
+    expect(store.all('users')).toHaveLength(2);
+
+    expect(store.delete('users', 'u1')).toBe(true);
+    expect(store.delete('users', 'u1')).toBe(false);
+    expect(store.get('users', 'u1')).toBeNull();
+    expect(store.find('users', (u) => u.name === 'Ravi')).toEqual([{ id: 'u2', name: 'Ravi' }]);
+  });
+
+  test('returns copies, so callers cannot change stored data by accident', () => {
+    store.set('c', '1', { tags: ['a'] });
+    store.get('c', '1').tags.push('b');
+    store.all('c')[0].tags.push('c');
+    expect(store.get('c', '1')).toEqual({ tags: ['a'] });
+  });
+
+  test('ids with unusual characters (emails) are kept apart', () => {
+    store.set('emails', 'a.b+c@example.com', { id: 'u1' });
+    store.set('emails', "o'brien@example.com", { id: 'u2' });
+    expect(store.get('emails', 'a.b+c@example.com')).toEqual({ id: 'u1' });
+    expect(store.get('emails', "o'brien@example.com")).toEqual({ id: 'u2' });
+    expect(store.isWritable()).toBe(true);
+    expect(() => store.flush()).not.toThrow();
+  });
+});
+
+describe('SqliteStore on disk', () => {
+  let dir;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-sqlite-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  test('data survives closing and reopening the database', () => {
+    const file = path.join(dir, 'nested', 'store.db');
+    const store = new SqliteStore(file);
+    store.set('users', 'u1', { name: 'Asha' });
+    store.close();
+
+    const reopened = new SqliteStore(file);
+    expect(reopened.get('users', 'u1')).toEqual({ name: 'Asha' });
+    reopened.close();
+  });
+
+  test('switching from the JSON file keeps every account, and happens once', () => {
+    const json = new JsonStore(path.join(dir, 'store.json'));
+    json.set('users', 'u1', { id: 'u1', name: 'Asha' });
+    json.set('emails', 'asha@example.com', { id: 'u1' });
+    json.set('progress', 'u1', { userId: 'u1', xp: 120 });
+    json.flush();
+
+    const settings = { isTest: false, dataDir: dir, storeDriver: 'sqlite' };
+    const first = createStore(settings);
+    expect(first).toBeInstanceOf(SqliteStore);
+    expect(first.get('progress', 'u1')).toEqual({ userId: 'u1', xp: 120 });
+    expect(first.all('users')).toHaveLength(1);
+    first.set('progress', 'u1', { userId: 'u1', xp: 150 });
+    first.close();
+
+    // The next start must not overwrite newer data with the old file.
+    const second = createStore(settings);
+    expect(second.get('progress', 'u1').xp).toBe(150);
+    second.close();
+
+    expect(createStore({ isTest: false, dataDir: dir, storeDriver: 'json' })).toBeInstanceOf(JsonStore);
+    expect(createStore({ isTest: true, dataDir: dir, storeDriver: 'sqlite' })).toBeInstanceOf(JsonStore);
   });
 });

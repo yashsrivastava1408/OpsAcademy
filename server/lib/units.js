@@ -76,6 +76,15 @@ function listMeta() {
   return [...all().values()].map((unit) => unit.meta);
 }
 
+/** Unit metadata as sent to the browser: adds which optional content exists. */
+function publicMeta(unit) {
+  return { ...unit.meta, hasCaseStudy: Boolean(unit.casestudy) };
+}
+
+function listPublicMeta() {
+  return [...all().values()].map(publicMeta);
+}
+
 function getSteps(unitId) {
   const unit = getUnit(unitId);
   return unit && unit.practice ? unit.practice.steps || [] : [];
@@ -132,6 +141,8 @@ module.exports = {
   isValidUnitId,
   getUnit,
   listMeta,
+  publicMeta,
+  listPublicMeta,
   getSteps,
   getStep,
   publicPractice,

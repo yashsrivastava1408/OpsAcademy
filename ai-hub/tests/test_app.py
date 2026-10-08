@@ -129,3 +129,37 @@ def test_unexpected_errors_do_not_leak_internals(client, monkeypatch):
 
 def test_debug_mode_is_off():
     assert create_app().debug is False
+
+
+def test_hint_stream_sends_one_json_event_per_line(client):
+    body = {"query": "verify keeps failing", "unitId": "linux-basics", "stepNumber": 2, "tier": 1,
+            "step": {"title": "Create a Project Structure", "description": "d", "tasks": ["Create `webapp`"]}}
+    res = client.post("/api/agent/hint/stream", json=body)
+    assert res.status_code == 200
+    assert res.mimetype == "application/x-ndjson"
+    assert "no-transform" in res.headers["Cache-Control"]
+
+    import json as json_module
+    events = [json_module.loads(line) for line in res.get_data(as_text=True).splitlines()]
+    assert [e["type"] for e in events] == ["delta", "done"]
+    assert events[0]["text"] == events[1]["data"]["hint"]
+
+    plain = client.post("/api/agent/hint", json={**body, "query": "verify keeps failing again"}).get_json()["data"]
+    assert set(events[1]["data"]) == set(plain)
+
+
+def test_hint_stream_requires_a_question(client):
+    assert client.post("/api/agent/hint/stream", json={"query": "  "}).status_code == 400
+
+
+def test_hint_stream_reports_a_failure_in_the_stream(client, monkeypatch):
+    import app as app_module
+
+    def broken(*args, **kwargs):
+        yield {"type": "delta", "text": "partial"}
+        raise RuntimeError("secret internal detail")
+
+    monkeypatch.setattr(app_module, "stream_agent_pipeline", broken)
+    text = client.post("/api/agent/hint/stream", json={"query": "help"}).get_data(as_text=True)
+    assert text.splitlines()[-1] == '{"type": "error"}'
+    assert "secret internal detail" not in text

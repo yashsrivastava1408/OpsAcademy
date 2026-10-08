@@ -37,6 +37,65 @@ function fallbackHint(step, tier) {
 }
 
 /**
+ * Everything a hint needs, gathered once for both the plain and the
+ * streaming endpoint: the validated question, the tier this student may
+ * have, and what is really in their sandbox.
+ * @returns {Promise<{ error: string } | { unitId, stepNumber, step, tier, payload }>}
+ */
+async function prepareHint(req) {
+  const body = req.body || {};
+  const query = typeof body.query === 'string' ? body.query.slice(0, MAX_QUERY_CHARS) : '';
+  const unitId = units.isValidUnitId(body.unitId) ? body.unitId : null;
+  const stepNumber = Number(body.stepNumber) || 1;
+  const step = unitId ? units.getStep(unitId, stepNumber) : null;
+
+  if (!query.trim()) return { error: 'Ask a question to get a hint' };
+
+  const unlocked = Math.min(MAX_TIER, (unitId ? progressService.hintCount(req.user.id, unitId, stepNumber) : 0) + 1);
+  const requested = Number(body.tier);
+  const tier = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, unlocked) : unlocked;
+
+  const manager = getManager();
+  const ownsSession = body.sessionId && manager.isOwner(body.sessionId, req.user.id);
+  const commandHistory = ownsSession
+    ? manager.getHistory(body.sessionId).slice(-HISTORY_FOR_HINT).map((entry) => entry.command)
+    : [];
+  const telemetry = ownsSession ? await telemetryService.capture(body.sessionId) : null;
+
+  return {
+    unitId,
+    stepNumber,
+    step,
+    tier,
+    payload: {
+      query,
+      unitId: unitId || 'general',
+      stepNumber,
+      tier,
+      step: step
+        ? {
+            title: step.title,
+            description: step.description,
+            tasks: step.tasks || [],
+            verificationCommand: step.verification ? step.verification.command : null,
+          }
+        : null,
+      commandHistory,
+      containerTelemetry: telemetry
+        ? { fileTree: telemetry.fileTree, ports: telemetry.ports, maxDepth: telemetry.maxDepth, truncated: telemetry.truncated }
+        : null,
+    },
+  };
+}
+
+/** Count the hint and shape the answer the browser gets. */
+function finishHint(req, { unitId, stepNumber, tier }, data) {
+  if (!data.blocked && unitId) progressService.recordHint(req.user.id, unitId, stepNumber);
+  metrics.hintRequests.inc({ tier: String(tier), source: data.blocked ? 'blocked' : data.source || 'hub' });
+  return { ...data, tier, maxTier: MAX_TIER, nextTier: !data.blocked && tier < MAX_TIER ? tier + 1 : null };
+}
+
+/**
  * POST /api/agent/hint
  * Body: { query, unitId, stepNumber, sessionId?, tier? }
  *
@@ -45,62 +104,75 @@ function fallbackHint(step, tier) {
  */
 router.post('/hint', async (req, res, next) => {
   try {
-    const body = req.body || {};
-    const query = typeof body.query === 'string' ? body.query.slice(0, MAX_QUERY_CHARS) : '';
-    const unitId = units.isValidUnitId(body.unitId) ? body.unitId : null;
-    const stepNumber = Number(body.stepNumber) || 1;
-    const step = unitId ? units.getStep(unitId, stepNumber) : null;
-
-    if (!query.trim()) {
-      return res.status(400).json({ success: false, error: 'Ask a question to get a hint' });
-    }
-
-    const unlocked = Math.min(MAX_TIER, (unitId ? progressService.hintCount(req.user.id, unitId, stepNumber) : 0) + 1);
-    const requested = Number(body.tier);
-    const tier = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, unlocked) : unlocked;
-
-    const manager = getManager();
-    const ownsSession = body.sessionId && manager.isOwner(body.sessionId, req.user.id);
-    const commandHistory = ownsSession
-      ? manager.getHistory(body.sessionId).slice(-HISTORY_FOR_HINT).map((entry) => entry.command)
-      : [];
-    const telemetry = ownsSession ? await telemetryService.capture(body.sessionId) : null;
+    const hint = await prepareHint(req);
+    if (hint.error) return res.status(400).json({ success: false, error: hint.error });
 
     let data;
     try {
-      data = await getHubClient().hint({
-        query,
-        unitId: unitId || 'general',
-        stepNumber,
-        tier,
-        step: step
-          ? {
-              title: step.title,
-              description: step.description,
-              tasks: step.tasks || [],
-              verificationCommand: step.verification ? step.verification.command : null,
-            }
-          : null,
-        commandHistory,
-        containerTelemetry: telemetry
-          ? { fileTree: telemetry.fileTree, ports: telemetry.ports, maxDepth: telemetry.maxDepth, truncated: telemetry.truncated }
-          : null,
-      });
+      data = await getHubClient().hint(hint.payload);
     } catch (err) {
       logger.warn({ err: err.message }, '[Agent Gateway] AI hub unavailable, using fallback hint');
-      data = { blocked: false, hint: fallbackHint(step, tier), tier, source: 'fallback', fallback: true };
+      data = { blocked: false, hint: fallbackHint(hint.step, hint.tier), tier: hint.tier, source: 'fallback', fallback: true };
     }
 
-    if (!data.blocked && unitId) progressService.recordHint(req.user.id, unitId, stepNumber);
-    metrics.hintRequests.inc({ tier: String(tier), source: data.blocked ? 'blocked' : data.source || 'hub' });
-
-    res.json({
-      success: true,
-      data: { ...data, tier, maxTier: MAX_TIER, nextTier: !data.blocked && tier < MAX_TIER ? tier + 1 : null },
-    });
+    res.json({ success: true, data: finishHint(req, hint, data) });
   } catch (err) {
     next(err);
   }
+});
+
+/**
+ * POST /api/agent/hint/stream
+ * The same hint, sent while it is written: one JSON event per line.
+ *   {type: 'delta', text}   more of the hint
+ *   {type: 'reset'}         discard what was shown (the hint starts again)
+ *   {type: 'done', data}    the same object /hint returns
+ * If the hub fails at any point the student still gets the fallback hint.
+ */
+router.post('/hint/stream', async (req, res, next) => {
+  let hint;
+  try {
+    hint = await prepareHint(req);
+  } catch (err) {
+    return next(err);
+  }
+  if (hint.error) return res.status(400).json({ success: false, error: hint.error });
+
+  res.status(200).set({
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    // no-transform also keeps the compression middleware from holding lines back.
+    'Cache-Control': 'no-cache, no-transform',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  const send = (event) => res.write(`${JSON.stringify(event)}\n`);
+
+  // Stop asking the hub when the browser has gone away.
+  const abort = new AbortController();
+  res.on('close', () => abort.abort());
+
+  let data = null;
+  let shown = false;
+  try {
+    for await (const event of getHubClient().hintStream(hint.payload, { signal: abort.signal })) {
+      if (event.type === 'done') {
+        data = event.data;
+      } else {
+        send(event);
+        shown = event.type === 'delta' || (event.type !== 'reset' && shown);
+      }
+    }
+    if (!data) throw new Error('no final event');
+  } catch (err) {
+    if (abort.signal.aborted) return res.end();
+    logger.warn({ err: err.message }, '[Agent Gateway] AI hub stream failed, using fallback hint');
+    data = { blocked: false, hint: fallbackHint(hint.step, hint.tier), tier: hint.tier, source: 'fallback', fallback: true };
+    if (shown) send({ type: 'reset' });
+    send({ type: 'delta', text: data.hint });
+  }
+
+  send({ type: 'done', data: finishHint(req, hint, data) });
+  res.end();
 });
 
 /**

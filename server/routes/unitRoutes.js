@@ -21,7 +21,7 @@ function sendContent(res, body) {
  * List all learning units (metadata only)
  */
 router.get('/', (req, res) => {
-  const data = units.listMeta();
+  const data = units.listPublicMeta();
   sendContent(res, { success: true, data, count: data.length });
 });
 
@@ -34,7 +34,7 @@ router.get('/:unitId', (req, res) => {
   if (!unit) {
     return res.status(404).json({ success: false, error: 'Unit not found' });
   }
-  sendContent(res, { success: true, data: unit.meta });
+  sendContent(res, { success: true, data: units.publicMeta(unit) });
 });
 
 /**

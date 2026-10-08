@@ -108,7 +108,7 @@ describe('auth', () => {
   test('register returns a token and never returns the password hash', async () => {
     const user = await registered();
     expect(user.res.status).toBe(201);
-    expect(user.user).toEqual({ id: expect.any(String), name: 'Asha Rao', email: user.email, guest: false });
+    expect(user.user).toEqual({ id: expect.any(String), name: 'Asha Rao', email: user.email, guest: false, emailVerified: false, profileSlug: null });
     expect(JSON.stringify(user.res.body)).not.toMatch(/password|\$2[aby]\$/);
   });
 
@@ -208,6 +208,246 @@ describe('auth', () => {
     }
     expect(statuses).toEqual([401, 401, 401, 429, 429]);
   });
+
+  test('students sharing one address each get their own request budget, but sign-in attempts do not', async () => {
+    process.env.RATE_LIMIT_API = '4';
+    process.env.RATE_LIMIT_AUTH = '3';
+    let limitedApp;
+    jest.isolateModules(() => {
+      limitedApp = require('../app').createApp();
+    });
+    delete process.env.RATE_LIMIT_API;
+    delete process.env.RATE_LIMIT_AUTH;
+
+    // Two guests behind the same address (creating them uses the shared, per-address budget).
+    const tokens = [];
+    for (let i = 0; i < 2; i += 1) tokens.push((await request(limitedApp).post('/api/auth/guest')).body.token);
+    const hit = (token) => request(limitedApp).get('/api/progress').set(token ? { Authorization: `Bearer ${token}` } : {}).then((res) => res.status);
+
+    const first = [];
+    for (let i = 0; i < 5; i += 1) first.push(await hit(tokens[0]));
+    expect(first).toEqual([200, 200, 200, 200, 429]);
+    // The second student is not slowed down by the first.
+    expect(await hit(tokens[1])).toBe(200);
+    // A made-up token earns no budget of its own: it counts against the address.
+    expect(await hit('not-a-real-token')).toBe(401);
+
+    // Sending a guest token with a sign-in attempt does not buy extra attempts.
+    const attempts = [];
+    for (let i = 0; i < 4; i += 1) {
+      const fresh = tokens[i % 2];
+      attempts.push((await request(limitedApp).post('/api/auth/login').set({ Authorization: `Bearer ${fresh}` }).send({ email: 'a@example.com', password: 'x' })).status);
+    }
+    expect(attempts.filter((status) => status === 429).length).toBeGreaterThan(0);
+  });
+});
+
+describe('password reset and email confirmation', () => {
+  const tokenFrom = (message) => message.text.match(/token=([\w-]+)/)[1];
+  const lastMail = () => ctx.mailer.outbox[ctx.mailer.outbox.length - 1];
+
+  test('a reset link sets a new password, works once, and signs out older sessions', async () => {
+    const user = await registered();
+    const before = ctx.mailer.outbox.length;
+
+    const asked = await request(app).post('/api/auth/forgot').send({ email: user.email.toUpperCase() });
+    expect(asked.status).toBe(200);
+    expect(ctx.mailer.outbox).toHaveLength(before + 1);
+    expect(lastMail()).toMatchObject({ to: user.email, subject: expect.stringMatching(/reset/i) });
+    expect(lastMail().text).toContain(`${config.appUrl}/reset-password?token=`);
+    const token = tokenFrom(lastMail());
+
+    // Token issue times have one-second precision, so step past that second.
+    const now = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(now + 2000);
+    let reset;
+    try {
+      reset = await request(app).post('/api/auth/reset').send({ token, password: 'a-brand-new-password' });
+    } finally {
+      Date.now.mockRestore();
+    }
+    expect(reset.status).toBe(200);
+    expect(reset.body.user).toMatchObject({ id: user.user.id, emailVerified: true });
+    expect(JSON.stringify(reset.body)).not.toMatch(/\$2[aby]\$/);
+
+    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: user.password })).status).toBe(401);
+    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: 'a-brand-new-password' })).status).toBe(200);
+
+    // The link cannot be used a second time.
+    expect((await request(app).post('/api/auth/reset').send({ token, password: 'another-password-1' })).status).toBe(400);
+
+    // A session from before the reset no longer works (a thief's token dies with it).
+    expect((await request(app).get('/api/progress').set(user.auth)).status).toBe(401);
+  });
+
+  test('asking for a reset answers the same whether or not the account exists', async () => {
+    const user = await registered();
+    const known = await request(app).post('/api/auth/forgot').send({ email: user.email });
+    const unknown = await request(app).post('/api/auth/forgot').send({ email: 'nobody@example.com' });
+    const strip = ({ devResetLink, ...rest }) => rest;
+    expect(strip(unknown.body)).toEqual(strip(known.body));
+    expect(unknown.status).toBe(known.status);
+    expect((await request(app).post('/api/auth/forgot').send({})).status).toBe(200);
+  });
+
+  test.each([
+    ['a made-up token', 'x'.repeat(43), 'long-enough-password', /invalid or has expired/],
+    ['no token', undefined, 'long-enough-password', /invalid or has expired/],
+    ['a short password', null, 'short', /at least 8/],
+  ])('reset is refused for %s', async (_name, token, password, message) => {
+    const user = await registered();
+    await request(app).post('/api/auth/forgot').send({ email: user.email });
+    const res = await request(app).post('/api/auth/reset').send({ token: token === null ? tokenFrom(lastMail()) : token, password });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(message);
+    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: user.password })).status).toBe(200);
+  });
+
+  test('a reset link expires after 30 minutes, and a newer link replaces an older one', async () => {
+    const user = await registered();
+    await request(app).post('/api/auth/forgot').send({ email: user.email });
+    const first = tokenFrom(lastMail());
+    await request(app).post('/api/auth/forgot').send({ email: user.email });
+    const second = tokenFrom(lastMail());
+    expect(second).not.toBe(first);
+    expect((await request(app).post('/api/auth/reset').send({ token: first, password: 'long-enough-password' })).status).toBe(400);
+
+    const now = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(now + 31 * 60000);
+    try {
+      expect((await request(app).post('/api/auth/reset').send({ token: second, password: 'long-enough-password' })).status).toBe(400);
+    } finally {
+      Date.now.mockRestore();
+    }
+  });
+
+  test('registering sends a confirmation link that marks the email as confirmed', async () => {
+    const user = await registered();
+    expect(user.user.emailVerified).toBe(false);
+    expect(lastMail()).toMatchObject({ to: user.email, subject: expect.stringMatching(/confirm/i) });
+    const token = tokenFrom(lastMail());
+
+    // A reset token is not accepted as a confirmation token, and the reverse.
+    expect((await request(app).post('/api/auth/reset').send({ token, password: 'long-enough-password' })).status).toBe(400);
+
+    await request(app).post('/api/auth/resend-verification').set(user.auth);
+    const fresh = tokenFrom(lastMail());
+    const confirmed = await request(app).post('/api/auth/verify-email').send({ token: fresh });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.user.emailVerified).toBe(true);
+    expect((await request(app).get('/api/auth/me').set(user.auth)).body.user.emailVerified).toBe(true);
+    expect((await request(app).post('/api/auth/verify-email').send({ token: fresh })).status).toBe(400);
+    expect((await request(app).post('/api/auth/resend-verification').set(user.auth)).body.alreadyVerified).toBe(true);
+
+    const visitor = await guest();
+    expect((await request(app).post('/api/auth/resend-verification').set(visitor.auth)).status).toBe(403);
+  });
+
+  test('links are handed back only outside production, and only when no mail provider is set', async () => {
+    const user = await registered();
+    expect(user.res.body.devVerifyLink).toContain('/verify-email?token=');
+    const asked = await request(app).post('/api/auth/forgot').send({ email: user.email });
+    expect(asked.body).toMatchObject({ emailConfigured: false, devResetLink: expect.stringContaining('/reset-password?token=') });
+
+    config.isProd = true;
+    try {
+      const inProd = await request(app).post('/api/auth/forgot').send({ email: user.email });
+      expect(inProd.body.devResetLink).toBeUndefined();
+      expect(JSON.stringify(inProd.body)).not.toContain('token=');
+    } finally {
+      config.isProd = false;
+    }
+  });
+});
+
+describe('public profile', () => {
+  test('a profile is private until its owner shares it, and shows achievements only', async () => {
+    const owner = await registered({ name: 'Meera Nair' });
+    const { sessionId } = await startSandbox(owner);
+    await request(app).post('/api/labs/linux-basics/verify').set(owner.auth).send({ sessionId });
+    const cert = await request(app).post('/api/certificates').set(owner.auth).send({ unitId: 'linux-basics' });
+
+    expect(owner.user.profileSlug).toBeNull();
+    const shared = await request(app).post('/api/auth/profile').set(owner.auth).send({ public: true });
+    expect(shared.status).toBe(200);
+    const slug = shared.body.user.profileSlug;
+    expect(slug).toMatch(/^meera-nair-[0-9a-f]{6}$/);
+
+    const page = await request(app).get(`/api/profiles/${slug}`);
+    expect(page.status).toBe(200);
+    expect(page.body.data).toMatchObject({
+      name: 'Meera Nair',
+      xp: expect.any(Number),
+      level: expect.any(Number),
+      completedUnits: [{ unitId: 'linux-basics', title: units.getUnit('linux-basics').meta.title, completedAt: expect.any(Number) }],
+      certificates: [{ id: cert.body.data.id, unitId: 'linux-basics' }],
+    });
+    // Nothing private: no email, account id, weak topics or hint counts.
+    const text = JSON.stringify(page.body);
+    expect(text).not.toContain(owner.email);
+    expect(text).not.toContain(owner.user.id);
+    expect(text).not.toMatch(/weakTopics|hints|fails|password/);
+
+    // Turning it off hides the page; turning it on again brings back the same address.
+    await request(app).post('/api/auth/profile').set(owner.auth).send({ public: false });
+    expect((await request(app).get(`/api/profiles/${slug}`)).status).toBe(404);
+    const again = await request(app).post('/api/auth/profile').set(owner.auth).send({ public: true });
+    expect(again.body.user.profileSlug).toBe(slug);
+  });
+
+  test.each(['nobody-000000', '..%2F..%2Fetc', 'A', 'x'.repeat(80)])('GET /api/profiles/%s -> 404', async (slug) => {
+    expect((await request(app).get(`/api/profiles/${slug}`)).status).toBe(404);
+  });
+
+  test('a guest cannot have a profile page', async () => {
+    const visitor = await guest();
+    expect((await request(app).post('/api/auth/profile').set(visitor.auth).send({ public: true })).status).toBe(403);
+  });
+});
+
+describe('lab of the day', () => {
+  beforeEach(() => { config.dailyChallenge = true; });
+  afterEach(() => { config.dailyChallenge = false; });
+
+  test('verifying a step in today\'s unit earns the bonus once per day', async () => {
+    const progressService = require('../services/progressService');
+    const today = progressService.dailyUnit();
+    const other = units.listMeta().find((meta) => meta.id !== today.id && units.getSteps(meta.id).length > 0);
+    const learner = await guest();
+
+    const summary = (await request(app).get('/api/progress').set(learner.auth)).body.data;
+    expect(summary.daily).toMatchObject({ unitId: today.id, title: today.title, done: false, bonusXp: 15 });
+
+    // A different unit earns no bonus.
+    const elsewhere = await startSandbox(learner, other.id);
+    const plain = await request(app).post(`/api/labs/${other.id}/verify`).set(learner.auth).send({ sessionId: elsewhere.sessionId, stepNumber: 1 });
+    expect(plain.body).toMatchObject({ xpEarned: 20, dailyBonus: 0 });
+
+    const session = await startSandbox(learner, today.id);
+    const first = await request(app).post(`/api/labs/${today.id}/verify`).set(learner.auth).send({ sessionId: session.sessionId, stepNumber: 1 });
+    expect(first.body).toMatchObject({ xpEarned: 35, dailyBonus: 15 });
+    const second = await request(app).post(`/api/labs/${today.id}/verify`).set(learner.auth).send({ sessionId: session.sessionId, stepNumber: 1 });
+    expect(second.body).toMatchObject({ xpEarned: 0, dailyBonus: 0 });
+    expect((await request(app).get('/api/progress').set(learner.auth)).body.data.daily.done).toBe(true);
+  });
+
+  test('a failed check does not earn the bonus', async () => {
+    const progressService = require('../services/progressService');
+    const today = progressService.dailyUnit();
+    const learner = await guest();
+    const session = await startSandbox(learner, today.id);
+    ctx.engine.passing = false;
+    const res = await request(app).post(`/api/labs/${today.id}/verify`).set(learner.auth).send({ sessionId: session.sessionId, stepNumber: 1 });
+    expect(res.body).toMatchObject({ allPassed: false, dailyBonus: 0 });
+  });
+
+  test('everyone gets the same unit on a day, and it changes over time', () => {
+    const progressService = require('../services/progressService');
+    const day = Date.UTC(2026, 9, 7, 3);
+    expect(progressService.dailyUnit(day).id).toBe(progressService.dailyUnit(day + 20 * 3600000).id);
+    const month = new Set(Array.from({ length: 30 }, (_, i) => progressService.dailyUnit(day + i * 86400000).id));
+    expect(month.size).toBeGreaterThan(5);
+  });
 });
 
 describe('units', () => {
@@ -215,6 +455,16 @@ describe('units', () => {
     const res = await request(app).get('/api/units');
     expect(res.body.count).toBe(units.listMeta().length);
     expect(res.body.data.map((u) => u.id)).toContain('linux-basics');
+  });
+
+  test('unit metadata says which units have a case study', async () => {
+    const list = (await request(app).get('/api/units')).body.data;
+    const withStudy = list.filter((u) => u.hasCaseStudy).map((u) => u.id).sort();
+    expect(withStudy).toEqual(['digital-forensics', 'endpoint-security', 'realworld-internship-case-study']);
+    expect((await request(app).get('/api/units/linux-basics')).body.data.hasCaseStudy).toBe(false);
+    for (const id of withStudy) {
+      expect((await request(app).get(`/api/units/${id}/casestudy`)).status).toBe(200);
+    }
   });
 
   test('practice content does not include the verification commands', async () => {
@@ -352,6 +602,36 @@ describe('sandbox ownership', () => {
     expect(fresh.body.data.sessionId).not.toBe(first.body.data.sessionId);
   });
 
+  test('the page is told when the sandbox will close, and can ask to keep it', async () => {
+    const owner = await guest();
+    const other = await guest();
+    const { sessionId } = await startSandbox(owner);
+    const startedAt = ctx.manager.getSession(sessionId).lastActiveAt;
+    const idleMs = config.sandbox.maxInactivityMinutes * 60000;
+
+    jest.spyOn(Date, 'now').mockReturnValue(startedAt + 10 * 60000);
+    try {
+      const history = await request(app).get(`/api/sandbox/${sessionId}/history`).set(owner.auth);
+      expect(history.body.session).toEqual({
+        expiresAt: ctx.manager.getSession(sessionId).createdAt + config.sandbox.maxSessionMinutes * 60000,
+        idleExpiresAt: startedAt + idleMs,
+        serverTime: startedAt + 10 * 60000,
+      });
+
+      const kept = await request(app).post(`/api/sandbox/${sessionId}/keepalive`).set(owner.auth);
+      expect(kept.status).toBe(200);
+      expect(kept.body.session.idleExpiresAt).toBe(startedAt + 10 * 60000 + idleMs);
+      // The hard limit on a session's age is not extended by it.
+      expect(kept.body.session.expiresAt).toBe(history.body.session.expiresAt);
+
+      expect((await request(app).post(`/api/sandbox/${sessionId}/keepalive`).set(other.auth)).status).toBe(404);
+    } finally {
+      Date.now.mockRestore();
+    }
+    expect(await ctx.manager.sweep(startedAt + 16 * 60000)).toEqual([]);
+    expect(await ctx.manager.sweep(startedAt + 26 * 60000)).toEqual([{ sessionId, reason: 'idle' }]);
+  });
+
   test('the inspector polling telemetry does not keep an unused sandbox alive', async () => {
     const owner = await guest();
     const { sessionId } = await startSandbox(owner);
@@ -402,6 +682,27 @@ describe('admin', () => {
       expect((await request(app).delete(`/api/admin/sandboxes/${sessionId}`).set(admin)).status).toBe(200);
       expect((await request(app).delete(`/api/admin/sandboxes/${sessionId}`).set(admin)).status).toBe(404);
       expect((await request(app).post('/api/admin/pool/refill').set(admin)).status).toBe(200);
+    });
+
+    test('the overview reports sandboxes, accounts and what is configured', async () => {
+      await registered();
+      const visitor = await guest();
+      const { sessionId } = await startSandbox(visitor);
+      await request(app).post('/api/labs/linux-basics/verify').set(visitor.auth).send({ sessionId, stepNumber: 1 });
+
+      expect((await request(app).get('/api/admin/overview')).status).toBe(403);
+      const res = await request(app).get('/api/admin/overview').set('x-admin-token', 'operator-secret');
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({
+        users: { registered: 1, guests: 1 },
+        progress: { learnersWithXp: 1, totalXp: 20 },
+        certificates: 0,
+        sandbox: { activeSessions: 1 },
+        services: { aiHub: true, storeWritable: true, emailDelivers: false },
+        limits: { maxPerUser: config.sandbox.maxPerUser },
+      });
+      expect(res.body.data.sandboxes.map((s) => s.sessionId)).toEqual([sessionId]);
+      expect(JSON.stringify(res.body)).not.toMatch(/\$2[aby]\$|password/);
     });
   });
 });
@@ -773,6 +1074,82 @@ describe('AI mentor hints', () => {
     expect((await request(app).post('/api/agent/scan').set(student.auth).send({ command: 'ls' })).body.data).toEqual({ safe: true });
     ctx.hub.down = true;
     expect((await request(app).post('/api/agent/scan').set(student.auth).send({ command: 'ls' })).status).toBe(503);
+  });
+});
+
+describe('AI mentor hints, streamed', () => {
+  const lines = (res) => res.text.trim().split('\n').map((line) => JSON.parse(line));
+  const ask = (who, body) => request(app).post('/api/agent/hint/stream').set(who.auth)
+    .send({ query: 'verify keeps failing', unitId: 'linux-basics', stepNumber: 2, ...body });
+  // What the student ends up seeing.
+  const shown = (events) => events.reduce((text, e) => (e.type === 'reset' ? '' : e.type === 'delta' ? text + e.text : text), '');
+
+  test('a hint is passed on piece by piece and ends with the same data as the plain endpoint', async () => {
+    const student = await guest();
+    ctx.hub.streamEvents = [
+      { type: 'delta', text: 'Look at the folder. ' },
+      { type: 'delta', text: 'Then compare it with the tasks.' },
+      { type: 'done', data: { blocked: false, hint: 'Look at the folder. Then compare it with the tasks.', source: 'llm', tier: 1 } },
+    ];
+    const res = await ask(student);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/x-ndjson/);
+    expect(res.headers['content-encoding']).toBeUndefined();
+
+    const events = lines(res);
+    expect(events.map((e) => e.type)).toEqual(['delta', 'delta', 'done']);
+    expect(shown(events)).toBe('Look at the folder. Then compare it with the tasks.');
+    expect(events[2].data).toMatchObject({ hint: shown(events), source: 'llm', tier: 1, maxTier: 3, nextTier: 2 });
+
+    // The hub was given the same grounded context as for a plain hint.
+    const call = ctx.hub.calls.find((c) => c.endpoint === 'hintStream');
+    expect(call.payload).toMatchObject({ unitId: 'linux-basics', stepNumber: 2, tier: 1, step: { title: expect.any(String) } });
+    // And the hint counts: the next request may ask for tier 2.
+    ctx.hub.streamEvents = null;
+    expect(lines(await ask(student)).pop().data.tier).toBe(2);
+  });
+
+  test('a reset from the hub is passed on, so a withdrawn draft is replaced', async () => {
+    const student = await guest();
+    ctx.hub.streamEvents = [
+      { type: 'delta', text: 'Draft that will be withdrawn. ' },
+      { type: 'reset' },
+      { type: 'delta', text: 'Safe rule-based hint.' },
+      { type: 'done', data: { blocked: false, hint: 'Safe rule-based hint.', source: 'rules', tier: 1 } },
+    ];
+    const events = lines(await ask(student));
+    expect(events.map((e) => e.type)).toEqual(['delta', 'reset', 'delta', 'done']);
+    expect(shown(events)).toBe('Safe rule-based hint.');
+  });
+
+  test.each([
+    ['the hub is down', (hub) => { hub.down = true; }, ['delta', 'done']],
+    ['the hub dies after sending some text', (hub) => { hub.streamEvents = [{ type: 'delta', text: 'Half a ' }, { type: 'throw' }]; }, ['delta', 'reset', 'delta', 'done']],
+    ['the hub ends without a final event', (hub) => { hub.streamEvents = [{ type: 'delta', text: 'Half a ' }]; }, ['delta', 'reset', 'delta', 'done']],
+  ])('when %s the student still gets the fallback hint', async (_name, breakHub, types) => {
+    const student = await guest();
+    breakHub(ctx.hub);
+    const events = lines(await ask(student));
+    expect(events.map((e) => e.type)).toEqual(types);
+    const done = events[events.length - 1].data;
+    expect(done).toMatchObject({ source: 'fallback', fallback: true, tier: 1 });
+    expect(shown(events)).toBe(done.hint);
+    expect(done.hint).not.toContain('test -d');
+  });
+
+  test('a blocked request sends no text and does not use up a hint', async () => {
+    const student = await guest();
+    ctx.hub.hintResponse = { blocked: true, message: 'That command is blocked.' };
+    const events = lines(await ask(student));
+    expect(events).toEqual([{ type: 'done', data: expect.objectContaining({ blocked: true, nextTier: null }) }]);
+    ctx.hub.hintResponse = null;
+    expect(lines(await ask(student)).pop().data.tier).toBe(1);
+  });
+
+  test('it needs a question and a token like the plain endpoint', async () => {
+    const student = await guest();
+    expect((await ask(student, { query: '   ' })).status).toBe(400);
+    expect((await request(app).post('/api/agent/hint/stream').send({ query: 'help' })).status).toBe(401);
   });
 });
 

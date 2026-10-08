@@ -40,6 +40,12 @@ export function setIdentity(token, user) {
   identityListeners.forEach((listener) => listener(user));
 }
 
+/** Replace the stored user record (same token), e.g. after confirming an email address. */
+export function updateStoredUser(user) {
+  const token = getToken();
+  if (token) setIdentity(token, user);
+}
+
 export function clearIdentity() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
@@ -74,11 +80,16 @@ export function ensureIdentity() {
   return pendingGuest;
 }
 
-const isAuthRoute = (url = '') => url.startsWith('/auth/login') || url.startsWith('/auth/register');
+// Requests made by someone who is signing in or recovering an account: they
+// never need a guest identity first, and a 401 from them is an answer, not a
+// stale token.
+const AUTH_ROUTES = ['/auth/login', '/auth/register', '/auth/forgot', '/auth/reset', '/auth/verify-email'];
+const isAuthRoute = (url = '') => AUTH_ROUTES.some((route) => url.startsWith(route));
 
 // Endpoints anyone may read. They are sent without a token, so they never
 // wait for a guest identity and the browser needs no CORS preflight for them.
-const PUBLIC_ROUTES = [/^\/units(\/|$)/, /^\/sandbox\/stats$/, /^\/certificates\/verify\//, /^\/health$/];
+// (The operator page authenticates with its own header, not a learner's token.)
+const PUBLIC_ROUTES = [/^\/units(\/|$)/, /^\/sandbox\/stats$/, /^\/certificates\/verify\//, /^\/profiles\//, /^\/admin\//, /^\/health$/];
 const isPublicRoute = (url = '') => PUBLIC_ROUTES.some((pattern) => pattern.test(url));
 
 api.interceptors.request.use(async (config) => {
@@ -120,6 +131,41 @@ export const authApi = {
 
   me: () =>
     api.get('/auth/me'),
+
+  forgotPassword: (email) =>
+    api.post('/auth/forgot', { email }),
+
+  resetPassword: (token, password) =>
+    api.post('/auth/reset', { token, password }),
+
+  verifyEmail: (token) =>
+    api.post('/auth/verify-email', { token }),
+
+  resendVerification: () =>
+    api.post('/auth/resend-verification'),
+
+  setProfilePublic: (isPublic) =>
+    api.post('/auth/profile', { public: isPublic }),
+};
+
+// ── Public profile ───────────────────────────────────────────
+export const profileApi = {
+  get: (slug) =>
+    api.get(`/profiles/${encodeURIComponent(slug)}`),
+};
+
+// ── Operator API (needs the server's ADMIN_TOKEN) ────────────
+const adminHeaders = (adminToken) => ({ headers: { 'x-admin-token': adminToken } });
+
+export const adminApi = {
+  overview: (adminToken) =>
+    api.get('/admin/overview', adminHeaders(adminToken)),
+
+  stopSandbox: (adminToken, sessionId) =>
+    api.delete(`/admin/sandboxes/${sessionId}`, adminHeaders(adminToken)),
+
+  refillPool: (adminToken) =>
+    api.post('/admin/pool/refill', null, adminHeaders(adminToken)),
 };
 
 // ── Sandbox API ──────────────────────────────────────────────
@@ -144,6 +190,10 @@ export const sandboxApi = {
 
   reset: (sessionId) =>
     api.post(`/sandbox/${sessionId}/reset`),
+
+  // "I'm still here": restarts the idle countdown
+  keepAlive: (sessionId) =>
+    api.post(`/sandbox/${sessionId}/keepalive`),
 
   stats: () =>
     api.get('/sandbox/stats'),
@@ -194,6 +244,57 @@ export const labApi = {
 export const agentApi = {
   getHint: ({ query, unitId, stepNumber, sessionId, tier }) =>
     api.post('/agent/hint', { query, unitId, stepNumber, sessionId, tier }),
+
+  /**
+   * The same hint, delivered while it is being written. `onEvent` is called
+   * with {type: 'delta', text} for more text and {type: 'reset'} when what
+   * was shown so far must be discarded. Resolves with the final hint data
+   * (the object getHint returns in `data.data`).
+   *
+   * Uses fetch because axios cannot read a response as it arrives in the
+   * browser. Rejects if the stream cannot be opened or ends early; an error
+   * carrying `response` means the server answered and said why.
+   */
+  streamHint: async ({ query, unitId, stepNumber, sessionId, tier }, onEvent) => {
+    const open = async () => fetch(`${API_BASE_URL}/api/agent/hint/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await ensureIdentity()}` },
+      body: JSON.stringify({ query, unitId, stepNumber, sessionId, tier }),
+    });
+
+    let res = await open();
+    if (res.status === 401) {
+      // An expired token: start over as a guest, once, like every other request.
+      clearIdentity();
+      res = await open();
+    }
+    if (!res.ok || !res.body) {
+      const error = new Error('Hint stream unavailable');
+      error.response = { status: res.status, data: await res.json().catch(() => null) };
+      throw error;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let final = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (!line) continue;
+        const event = JSON.parse(line);
+        if (event.type === 'done') final = event.data;
+        else onEvent(event);
+      }
+      if (done) break;
+    }
+    if (!final) throw new Error('Hint stream ended early');
+    return final;
+  },
 };
 
 // ── Progress API ─────────────────────────────────────────────

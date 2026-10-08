@@ -59,19 +59,19 @@ export default function Navbar() {
           <li>
             <Link to="/dashboard" className={`navbar-link ${isActive('/dashboard')}`}>
               <LayoutDashboard size={16} />
-              Dashboard
+              <span>Dashboard</span>
             </Link>
           </li>
           <li>
             <Link to="/roadmap" className={`navbar-link ${isActive('/roadmap')}`}>
               <Compass size={16} />
-              DevOps Roadmap
+              <span>DevOps Roadmap</span>
             </Link>
           </li>
           <li>
             <Link to="/casestudies" className={`navbar-link ${isActive('/casestudies')}`}>
               <Sparkles size={16} className="text-cyan" />
-              Case Studies
+              <span>Case Studies</span>
             </Link>
           </li>
         </ul>
@@ -93,7 +93,7 @@ export default function Navbar() {
             href="https://github.com/yashsrivastava1408/OpsAcademy"
             target="_blank"
             rel="noopener noreferrer"
-            className="btn btn-ghost btn-icon"
+            className="btn btn-ghost btn-icon hide-mobile"
             title="GitHub Repository"
           >
             <ExternalLink size={18} />
@@ -112,7 +112,7 @@ export default function Navbar() {
             </Link>
           )}
 
-          <Link to="/dashboard" className="btn btn-primary btn-sm">
+          <Link to="/dashboard" className="btn btn-primary btn-sm hide-mobile">
             Start Learning
           </Link>
         </div>

@@ -27,3 +27,4 @@ import './components/Flashcard/Flashcard.css';
 import './pages/PreparePage.css';
 import './pages/AuthPage.css';
 import './pages/VerifyPage.css';
+import './pages/ExtraPages.css';

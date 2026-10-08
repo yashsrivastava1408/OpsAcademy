@@ -22,6 +22,7 @@ function pruneGuests() {
   try {
     const removed = userService.pruneExpiredGuests();
     if (removed > 0) logger.info({ removed }, 'removed expired guest records');
+    userService.pruneExpiredTokens();
   } catch (err) {
     logger.warn({ err: err.message }, 'could not prune guest records');
   }
