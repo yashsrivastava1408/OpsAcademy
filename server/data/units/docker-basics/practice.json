@@ -32,11 +32,11 @@
     {
       "step": 3,
       "title": "Run a Background Web Server",
-      "description": "Launch an Nginx web server container running in the background (detached mode) and map port 8080 on your host to port 80 in the container.",
+      "description": "Launch an Nginx web server container running in the background (detached mode) and map a port on your host to port 80 in the container. Your sandbox has a host port set aside for this in `$WEB_PORT` (normally 8080; `echo $WEB_PORT` shows it).",
       "tasks": [
-        "Run Nginx in detached mode: `docker run -d --name my-webserver -p 8080:80 nginx` (if Docker reports that the port is already allocated, pick another host port, for example 8081, and use it in the next tasks)",
+        "Run Nginx in detached mode: `docker run -d --name my-webserver -p $WEB_PORT:80 nginx`",
         "Check running containers with `docker ps`",
-        "Test the web server response: `curl localhost:8080`"
+        "Test the web server response: `curl localhost:$WEB_PORT`"
       ],
       "verification": {
         "command": "p=$(docker port my-webserver 80 2>/dev/null | cut -d: -f2) && test -n \"$p\" && curl -s -m 2 \"http://127.0.0.1:$p/\" | grep -qi nginx && echo PASS || echo FAIL",
@@ -69,8 +69,8 @@
         "Create an index.html: `echo '<h1>Built with OpsAcademy!</h1>' > index.html`",
         "Create a Dockerfile: `echo 'FROM nginx:alpine' > Dockerfile && echo 'COPY index.html /usr/share/nginx/html/' >> Dockerfile`",
         "Build the image: `docker build -t myapp:v1 .`",
-        "Run it: `docker run -d --name myapp -p 9090:80 myapp:v1`",
-        "Check that it serves your page: `curl localhost:9090`"
+        "Run it on your second reserved port, `$APP_PORT` (normally 9090): `docker run -d --name myapp -p $APP_PORT:80 myapp:v1`",
+        "Check that it serves your page: `curl localhost:$APP_PORT`"
       ],
       "verification": {
         "command": "docker images | grep -q myapp && p=$(docker port myapp 80 2>/dev/null | cut -d: -f2) && test -n \"$p\" && curl -s -m 2 \"http://127.0.0.1:$p/\" | grep -q OpsAcademy && echo PASS || echo FAIL",

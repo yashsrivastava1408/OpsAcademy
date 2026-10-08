@@ -48,27 +48,49 @@ function parsePorts(raw) {
   return [...ports].sort((a, b) => a - b);
 }
 
+// One command gathers everything, with a marker line before each part. Three
+// separate commands meant three `docker exec` calls per student on every
+// poll, which is what slowed the gateway down under a classroom of load.
+const SECTION = '@@opsacademy-section@@';
+const SNAPSHOT_COMMAND = [
+  `echo '${SECTION} files'`,
+  // Two passes so directories and files are told apart without parsing `ls`.
+  `find ${HOME} -mindepth 1 -maxdepth ${MAX_DEPTH} -not -path '*/.*' -type d | sed 's/^/d /'`,
+  `find ${HOME} -mindepth 1 -maxdepth ${MAX_DEPTH} -not -path '*/.*' -not -type d | sed 's/^/f /'`,
+  `echo '${SECTION} processes'`,
+  'ps -o pid,user,args 2>/dev/null || ps',
+  `echo '${SECTION} ports'`,
+  'netstat -tln 2>/dev/null || ss -tln 2>/dev/null',
+].join('; ');
+
+/** Split the snapshot output into its named parts. A part that is missing comes back empty. */
+function splitSections(raw) {
+  const sections = { files: '', processes: '', ports: '' };
+  let current = null;
+  for (const line of raw.split('\n')) {
+    if (line.startsWith(SECTION)) {
+      current = line.slice(SECTION.length).trim();
+    } else if (current in sections) {
+      sections[current] += `${line}\n`;
+    }
+  }
+  return sections;
+}
+
 /**
  * @param {{ touch?: boolean }} [options] touch: false for polling, so looking
  *   at the inspector is not counted as the student using the sandbox.
  */
 async function capture(sessionId, { touch = true, manager = getManager() } = {}) {
-  const run = async (command) => {
-    try {
-      return (await manager.exec(sessionId, command, { touch })).stdout || '';
-    } catch {
-      return '';
-    }
-  };
+  let raw = '';
+  try {
+    raw = (await manager.exec(sessionId, SNAPSHOT_COMMAND, { touch })).stdout || '';
+  } catch {
+    // The sandbox has just gone away: an empty snapshot, not an error.
+  }
+  const { files: filesRaw, processes: psRaw, ports: portsRaw } = splitSections(raw);
 
-  const [filesRaw, psRaw, portsRaw] = await Promise.all([
-    // Two passes so directories and files are told apart without parsing `ls`.
-    run(`find ${HOME} -mindepth 1 -maxdepth ${MAX_DEPTH} -not -path '*/.*' -type d | sed 's/^/d /'; find ${HOME} -mindepth 1 -maxdepth ${MAX_DEPTH} -not -path '*/.*' -not -type d | sed 's/^/f /'`),
-    run('ps -o pid,user,args 2>/dev/null || ps'),
-    run('netstat -tln 2>/dev/null || ss -tln 2>/dev/null'),
-  ]);
-
-  const fileTree = parseFiles(filesRaw).sort((a, b) => a.path.localeCompare(b.path));
+  const fileTree = parseFiles(filesRaw).sort((x, y) => x.path.localeCompare(y.path));
 
   return {
     sessionId,
@@ -82,4 +104,4 @@ async function capture(sessionId, { touch = true, manager = getManager() } = {})
   };
 }
 
-module.exports = { capture, parseFiles, parseProcesses, parsePorts };
+module.exports = { capture, parseFiles, parseProcesses, parsePorts, splitSections, SNAPSHOT_COMMAND };

@@ -255,3 +255,40 @@ describe('abuse tripwire', () => {
     expect(term.closed.code).toBe(1009);
   });
 });
+
+describe('messages sent while the shell is still attaching', () => {
+  test('the first resize and keystrokes are applied once the shell is ready, in order', async () => {
+    // An engine that takes a while to attach, like `docker exec` does.
+    const { fakeEngine } = require('./helpers');
+    const engine = fakeEngine();
+    const seen = [];
+    engine.attach = () => new Promise((resolve) => {
+      setTimeout(() => resolve({
+        onData() {},
+        write: (data) => seen.push(['write', data]),
+        resize: (cols, rows) => seen.push(['resize', cols, rows]),
+        close() {},
+      }), 80);
+    });
+
+    await ctx.manager.shutdown();
+    wss.close();
+    await new Promise((resolve) => server.close(resolve));
+    ctx = install({ engine });
+    server = http.createServer(createApp());
+    wss = attachTerminalWebSocket(server, ctx.manager);
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    port = server.address().port;
+
+    const session = await ctx.manager.createSession(alice.id, 'linux-basics');
+    const term = connect({ sessionId: session.sessionId, token: signToken(alice) });
+    await term.opened;
+    // Exactly what the browser does the moment the socket opens.
+    term.type(JSON.stringify({ type: 'resize', cols: 132, rows: 40 }));
+    term.type('l');
+    term.type('s');
+
+    await waitFor(() => seen.length >= 3);
+    expect(seen).toEqual([['resize', 132, 40], ['write', 'l'], ['write', 's']]);
+  });
+});

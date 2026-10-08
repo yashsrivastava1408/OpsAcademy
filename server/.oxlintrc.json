@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": { "node": true, "jest": true },
+  "ignorePatterns": ["node_modules", "coverage", "sandboxes", ".data"],
+  "rules": {
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "ignoreRestSiblings": true }],
+    "unicorn/no-useless-spread": "off",
+    "no-control-regex": "off",
+    "unicorn/no-invalid-fetch-options": "off"
+  }
+}

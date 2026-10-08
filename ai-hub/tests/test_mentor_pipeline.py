@@ -491,3 +491,33 @@ def test_llm_client_stream_turns_any_failure_into_one_error():
     unavailable._resolved = True
     with pytest.raises(llm_module.LLMStreamError):
         list(unavailable.stream("s", "u"))
+
+
+# ── JSON answers (used by the interview answer judge) ────────
+
+SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
+
+
+def test_llm_client_asks_for_json_matching_the_schema():
+    client = FakeAnthropicClient(fake_response('{"ok": true}'))
+    assert LLMClient(client).complete_json("system text", "user text", SCHEMA) == {"ok": True}
+    request = client.requests[0]
+    assert request["output_config"] == {"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}}
+    assert request["model"] == "claude-opus-5-5" and request["system"] == "system text"
+    assert "tool_choice" not in request and "thinking" not in request
+
+
+@pytest.mark.parametrize("response", [
+    fake_response("not json at all"),
+    fake_response('["a list, not an object"]'),
+    fake_response('{"ok": true}', stop_reason="refusal"),
+    fake_response('{"ok": tr', stop_reason="max_tokens"),
+])
+def test_llm_client_json_returns_none_for_anything_unusable(response):
+    assert LLMClient(FakeAnthropicClient(response)).complete_json("s", "u", SCHEMA) is None
+
+
+def test_llm_client_json_returns_none_when_unavailable():
+    unavailable = LLMClient(None)
+    unavailable._resolved = True
+    assert unavailable.complete_json("s", "u", SCHEMA) is None

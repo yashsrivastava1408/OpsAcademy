@@ -48,3 +48,8 @@ test('is labelled so orphans can be found and removed after a crash', () => {
   expect(options.Labels).toEqual({ 'opsacademy.sandbox': 'abc123' });
   expect(options.name).toBe('opsacademy-sbx-abc123');
 });
+
+test('every container gets the lab port variables with the standard numbers', () => {
+  // A container has its own loopback, so students never share these ports.
+  expect(options.Env).toEqual(expect.arrayContaining(['WEB_PORT=8080', 'APP_PORT=9090', 'SITE_PORT=8000', 'HOME=/home/student']));
+});

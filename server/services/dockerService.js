@@ -71,7 +71,12 @@ function buildContainerOptions(engineId, { labId, networkMode }) {
     User: `${STUDENT_UID}:${STUDENT_UID}`,
     WorkingDir: STUDENT_HOME,
     Hostname: 'opsacademy',
-    Env: [`LAB_ID=${labId || 'sandbox'}`, `HOME=${STUDENT_HOME}`],
+    Env: [
+      `LAB_ID=${labId || 'sandbox'}`,
+      `HOME=${STUDENT_HOME}`,
+      // The ports the labs use. Each container has its own loopback, so every student gets the same numbers.
+      ...Object.entries(config.sandbox.labPorts).map(([name, port]) => `${name}=${port}`),
+    ],
     Labels: { 'opsacademy.sandbox': engineId },
     HostConfig: {
       Memory: memoryBytes,

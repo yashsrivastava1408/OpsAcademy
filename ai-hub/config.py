@@ -21,3 +21,9 @@ LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "12"))
 
 HINT_CACHE_SIZE = int(os.getenv("HINT_CACHE_SIZE", "512"))
 HINT_CACHE_TTL_SECONDS = int(os.getenv("HINT_CACHE_TTL_SECONDS", "900"))
+
+# Optional sentence-embedding model for retrieval (needs requirements-semantic.txt).
+SEMANTIC_SEARCH = os.getenv("SEMANTIC_SEARCH", "auto").lower()  # auto | on | off
+SEMANTIC_MODEL = os.getenv("SEMANTIC_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+# Where the model files are kept between starts. The first start downloads about 90 MB into it.
+MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", os.path.join(os.path.expanduser("~"), ".cache", "opsacademy-models"))

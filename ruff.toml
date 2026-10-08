@@ -1,0 +1,18 @@
+# Python lint for the AI hub and the lab simulators (run in CI).
+# Kept to rules that catch real mistakes: undefined names, unused imports and
+# variables, syntax problems, and the common bug patterns in "B".
+line-length = 180
+# The simulators also run with the python3 that ships with macOS (3.9).
+target-version = "py39"
+
+[lint]
+select = ["E", "F", "W", "B"]
+ignore = [
+  "E731",  # small lambdas assigned to a name are used on purpose in a few places
+  "E501",  # long lines are prompt text and test data; wrapping them would not find a bug
+]
+
+[lint.per-file-ignores]
+# Tests add the hub folder to sys.path before importing from it.
+"ai-hub/tests/*" = ["E402"]
+"ai-hub/evals/*" = ["E402"]

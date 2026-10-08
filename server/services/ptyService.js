@@ -28,6 +28,28 @@ const SCROLLBACK_CHARS = 16 * 1024;
 // Map<engineId, { pty, cwd, sessionDir, alive, exitListeners }>
 const sandboxes = new Map();
 
+// PTY shells all share this machine's network ports, so two students who
+// both start a web server on 8080 would collide. Each shell is given its own
+// block of ports instead; a block goes back in the pool when its shell ends.
+const PORT_BLOCK_SIZE = 10;
+const portBlocksInUse = new Set();
+
+function claimPortBlock() {
+  let block = 0;
+  while (portBlocksInUse.has(block)) block += 1;
+  portBlocksInUse.add(block);
+  return block;
+}
+
+/** The lab port variables for a block: the same names a container gets, different numbers. */
+function labPortEnv(block) {
+  const env = {};
+  Object.keys(config.sandbox.labPorts).forEach((name, index) => {
+    env[name] = String(config.sandbox.ptyPortBase + block * PORT_BLOCK_SIZE + index);
+  });
+  return env;
+}
+
 /**
  * Start each shell without the host's startup files and with the lab prompt,
  * so the terminal shows `student@opsacademy` rather than the machine's own
@@ -56,6 +78,8 @@ function create(engineId, { labId } = {}) {
 
   const shell = config.sandbox.defaultShell;
   const { args, promptEnv } = shellProfile(shell);
+  const portBlock = claimPortBlock();
+  const labEnv = labPortEnv(portBlock);
   const ptyProcess = pty.spawn(shell, args, {
     name: 'xterm-256color',
     cols: 120,
@@ -71,10 +95,11 @@ function create(engineId, { labId } = {}) {
       ...promptEnv,
       LANG: 'en_US.UTF-8',
       LAB_ID: labId || 'sandbox',
+      ...labEnv,
     },
   });
 
-  const sandbox = { pty: ptyProcess, cwd: studentHome, sessionDir, alive: true, exitListeners: [], scrollback: '' };
+  const sandbox = { pty: ptyProcess, cwd: studentHome, sessionDir, alive: true, exitListeners: [], scrollback: '', portBlock, labEnv };
   // Keep the tail of the output so a terminal that attaches later (a
   // pre-warmed shell, or a page reload) is shown the prompt and recent lines.
   ptyProcess.onData((data) => {
@@ -102,6 +127,7 @@ async function destroy(engineId) {
   if (!sandbox) return false;
   sandboxes.delete(engineId);
   sandbox.exitListeners = [];
+  portBlocksInUse.delete(sandbox.portBlock);
 
   if (sandbox.alive) {
     const exited = new Promise((resolve) => {
@@ -161,7 +187,8 @@ function exec(engineId, command, { timeoutMs = config.sandbox.execTimeoutMs } = 
         timeout: timeoutMs,
         maxBuffer: 1024 * 1024,
         shell: '/bin/sh',
-        env: { HOME: sandbox.cwd, PATH: SANDBOX_PATH },
+        // The lab checks need the same port numbers the student's shell has.
+        env: { HOME: sandbox.cwd, PATH: SANDBOX_PATH, ...sandbox.labEnv },
       },
       (err, stdout, stderr) => {
         resolve({
@@ -222,6 +249,12 @@ function info() {
   return { mode: 'pty' };
 }
 
+/** The lab port variables of one sandbox (tests). */
+function labEnvOf(engineId) {
+  const sandbox = sandboxes.get(engineId);
+  return sandbox ? { ...sandbox.labEnv } : null;
+}
+
 /** Remove working directories left behind by a previous gateway process. */
 function cleanupOrphans() {
   const dir = config.sandbox.sandboxesDir;
@@ -236,4 +269,4 @@ function cleanupOrphans() {
   return Promise.resolve({ directories: removed });
 }
 
-module.exports = { name: 'pty', create, destroy, isAlive, onExit, exec, attach, reset, info, cleanupOrphans, mapStudentHome };
+module.exports = { name: 'pty', create, destroy, isAlive, onExit, exec, attach, reset, info, cleanupOrphans, mapStudentHome, labEnvOf };

@@ -49,3 +49,6 @@ ai-hub/evals/report.json
 
 # Kubernetes secrets (commit secret.example.yaml only)
 k8s/secret.yaml
+
+# Python lint cache
+.ruff_cache/

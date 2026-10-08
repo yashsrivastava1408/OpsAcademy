@@ -3,10 +3,24 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy requirements
-COPY requirements.txt ./
+COPY requirements.txt requirements-semantic.txt ./
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Sentence embeddings for retrieval (agents/embedder.py). On by default: the
+# model is downloaded into the image here, so the container needs no network
+# for it at run time. It adds about 450 MB of memory (the hub settles near
+# 600 MB in a container instead of about 125 MB); build with
+# --build-arg WITH_SEMANTIC=false for a small host, and the hub uses its
+# lexical rankers only.
+ARG WITH_SEMANTIC=true
+ENV MODEL_CACHE_DIR=/opt/models
+RUN if [ "$WITH_SEMANTIC" = "true" ]; then \
+      pip install --no-cache-dir -r requirements-semantic.txt \
+      && python -c "from fastembed import TextEmbedding; list(TextEmbedding('sentence-transformers/all-MiniLM-L6-v2', cache_dir='/opt/models').embed(['warm up']))" \
+      && chmod -R a+rX /opt/models; \
+    fi
 
 # Copy AI Hub application code
 COPY . .

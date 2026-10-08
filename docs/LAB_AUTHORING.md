@@ -85,6 +85,18 @@ Steps are numbered 1, 2, 3 in order.
 - **Finish within 10 seconds.** Longer checks are cut off and count as failed.
 - **Only use tools that are in the sandbox image** (`sandbox-image/Dockerfile`). The audit lists steps that need something missing. Sandboxes have no network by default.
 
+### Ports: use the variables, never a fixed number
+
+When a task starts something that listens on a port, write the port as one of the three variables every sandbox has:
+
+| Variable | In a container | Use it for |
+| :--- | :--- | :--- |
+| `$WEB_PORT` | 8080 | the first published web server |
+| `$APP_PORT` | 9090 | a second one |
+| `$SITE_PORT` | 8000 | a server the student starts by hand |
+
+In Docker mode every sandbox has its own loopback, so everyone gets those numbers. In PTY mode all shells share one machine, so the gateway gives each shell its own block of ports instead. A task that says `-p 8080:80` works for the first student and fails for the second; `-p $WEB_PORT:80` works for both. The variables are also set when a check runs, so a check may use them, guarded with `test -n "$SITE_PORT"` so it cannot pass if the variable is ever missing.
+
 ### The simulators: docker, kubectl and aws
 
 A sandbox has no network, no container runtime and no cluster, so three tools are simulated. They are Python scripts in `sandbox-image/bin/` (copied to `/usr/local/bin` in the image, and put first on the PATH in PTY mode). Each keeps its state per student in `~/.opsacademy/<tool>.json` and prints what the real tool would print, including its error messages and exit codes.

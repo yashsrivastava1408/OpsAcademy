@@ -169,16 +169,55 @@ The pool is what removes the container cold start: 164 ms down to 2 ms at the me
 | :--- | :--- |
 | Hints that give away more than their tier allows | 0 of 2,403 (every step, every tier, three sandbox states) |
 | Stuck-student scenarios handled as expected | 36 of 36 |
-| Retrieval, right unit in the top 3 (no unit hint given) | 94.3% of 53 questions (top 1: 84.9%) |
-| Retrieval, right section in the top 3 | 74.5% (top 1: 54.9%) |
 | Hostile commands blocked by the rules | 31 of 31, including base64-wrapped ones |
-| Course commands wrongly blocked | 0 of 333 |
-| Anomaly model: held-out course commands flagged | 1.8% |
+| Course commands wrongly blocked | 0 of 350 |
+| Anomaly model: held-out course commands flagged | 1.7% |
 | Anomaly model: hostile commands no rule covers | 3 of 10 flagged |
-| Interview scorer: model answer / half of it / off-topic | 92 / 64 / 6 out of 100, in that order for all 45 questions |
-| Time to produce a hint (rule-based, uncached) | p50 1.4 ms, p95 1.5 ms |
+| Interview scorer (rules): model answer / half of it / off-topic | 92 / 64 / 6 out of 100, in that order for all 45 questions |
 
-How to read these: the scenarios and retrieval questions were written alongside the code, so they are a regression suite, not an independent benchmark. The anomaly model is weak, which is why it only flags and never blocks. Section-level retrieval is mediocre; it is lexical (no embeddings). The LLM path has unit tests with a stub client but has not been scored against a live model.
+Retrieval, on 53 labelled questions with no unit hint given:
+
+| | Lexical only (BM25 + character n-grams) | With the embedding ranker added |
+| :--- | ---: | ---: |
+| Right unit ranked first | 84.9% | 94.3% |
+| Right unit in the top 3 | 94.3% | 98.1% |
+| Right section ranked first | 54.9% | 60.8% |
+| Right section in the top 3 | 74.5% | 92.2% |
+| Time to produce a hint (rule-based, uncached) | p50 1.3 ms | p50 3.4 ms |
+| Hub memory | about 125 MB | about 580 MB in a container |
+
+The embedding ranker is a small local model (`all-MiniLM-L6-v2` through ONNX, no API key). It is optional: `pip install -r ai-hub/requirements-semantic.txt`, or the hub's Docker image, which includes it and the model file. Without it the hub uses the lexical column. The Render blueprint turns it off because the free plan does not have the memory.
+
+Interview answers phrased differently from the rubric (`evals/interview_paraphrases.json`: 12 questions, each with a correct answer in other words and a confident answer that is wrong):
+
+| Scorer | Correct, reworded | Confident and wrong | Correct scores higher |
+| :--- | ---: | ---: | ---: |
+| Rules (word matching), the default | 21 / 100 | 13 / 100 | 11 of 12 pairs |
+| Sentence embeddings, tried and **not shipped** | similarity 0.55 | similarity 0.53 | 7 of 12 pairs |
+| LLM judge (when the hub has an API key) | not measured | not measured | not measured |
+
+The rules never pass a wrong answer, but they also fail every correct answer that avoids the rubric's wording. Embeddings were the obvious fix and the measurement rules them out: they score a wrong answer about the right topic almost as close to the model answer as a correct one, so they would give marks for mistakes. Judging correctness needs a language model, so with an LLM configured the hub asks it which rubric points the answer conveys and which statements are wrong, and computes the score from that verdict. `python evals/run_eval.py --llm` fills in the last row; it has not been run because this machine has no API key.
+
+How to read these: the scenarios, retrieval questions and paraphrases were written alongside the code, so they are a regression suite, not an independent benchmark. The anomaly model is weak, which is why it only flags and never blocks. The LLM paths (mentor and answer judge) have unit tests with a stub client but have not been scored against a live model.
+
+### Under load (`server/scripts/loadtest.js`, 25 students for 60 seconds)
+
+Each simulated student starts a sandbox, types at about 8 characters a second, runs commands, verifies a lab step, asks for a hint, and keeps the page's background polling going. 25 is the gateway's default limit on sandboxes.
+
+| What a student waits for | PTY sandboxes (p50 / p95 / p99) | Docker sandboxes (p50 / p95 / p99) |
+| :--- | ---: | ---: |
+| Keystroke to echo | 1.4 / 2 / 5 ms | 2.1 / 10 / 32 ms |
+| Enter to command output | 2.6 / 9 / 19 ms | 2.5 / 12 / 27 ms |
+| Verify a lab step | 7 / 13 / 40 ms | 49 / 77 / 111 ms |
+| Mentor hint (rule-based) | 49 / 111 / 111 ms | 65 / 98 / 140 ms |
+| Inspector refresh | 50 / 62 / 118 ms | 59 / 124 / 339 ms |
+| Start a sandbox | 3.5 / 7 / 9 ms | 3.8 / 19 / 288 ms |
+
+Both runs: about 10,000 keystrokes, 300 commands and 830 HTTP requests, 0 errors, 0 sandboxes left behind. The gateway used 6% (PTY) and 10% (Docker) of one CPU core and 75 to 90 MB of memory.
+
+An earlier Docker run was much worse at the tail (inspector refresh p95 10.5 s, keystroke p99 1 s). Two things changed before the run above: the inspector now gathers its snapshot with one command per poll instead of three, and a Docker image build that was running in the background had finished. The two were not measured separately, so do not read the improvement as coming from the code change alone.
+
+How to read these: everything is on one laptop over localhost, so there is no network latency, and the load generator shares the CPU with the gateway and the sandboxes. It shows the gateway is not the bottleneck at its own limit of 25. It says nothing about more than 25 students, a small cloud instance, or hours of use.
 
 ### Lab content (`npm run labs:audit`, Docker sandbox)
 
@@ -188,7 +227,7 @@ How to read these: the scenarios and retrieval questions were written alongside 
 | Need a tool the sandbox does not have | 0 |
 | Have a check that already passes on an empty sandbox | 0 |
 
-The sandbox has no network and cannot run a container runtime, a cluster or a cloud account. So the Docker, Kubernetes and AWS labs run against **simulators** (`sandbox-image/bin/docker`, `kubectl`, `aws`): small Python programs that keep state per student, print output shaped like the real tools, and say they are simulators in `docker info`, `kubectl cluster-info` and `aws --version`. `docker run -d -p 8080:80 nginx` starts a real local web server, so `curl localhost:8080` answers. The networking lab uses loopback only. Each rewritten check is tested both ways, failing on an empty sandbox and passing after the tasks are done, on macOS and inside the hardened container (`python -m pytest sandbox-image/tests`).
+The sandbox has no network and cannot run a container runtime, a cluster or a cloud account. So the Docker, Kubernetes and AWS labs run against **simulators** (`sandbox-image/bin/docker`, `kubectl`, `aws`): small Python programs that keep state per student, print output shaped like the real tools, and say they are simulators in `docker info`, `kubectl cluster-info` and `aws --version`. `docker run -d -p $WEB_PORT:80 nginx` starts a real local web server, so `curl localhost:$WEB_PORT` answers. Every sandbox has `$WEB_PORT`, `$APP_PORT` and `$SITE_PORT` set: 8080, 9090 and 8000 in a container, and a private block of ports per shell in PTY mode, where all shells share one machine. The networking lab uses loopback only. Each rewritten check is tested both ways, failing on an empty sandbox and passing after the tasks are done, on macOS and inside the hardened container (`python -m pytest sandbox-image/tests`).
 
 --- | :--- |
 | Can be done in the sandbox, with a check that fails until the work is done | 66 of 89 |
@@ -247,12 +286,12 @@ Units are plain JSON under `server/data/units/`. Adding one needs no code: see [
 
 - **Frontend**: React 19, Vite, xterm.js, React Router, plain CSS
 - **API gateway**: Node.js 22, Express, `ws`, `node-pty`, `dockerode`, JWT, bcrypt, helmet, express-rate-limit, pino, prom-client
-- **AI hub**: Python 3.11, Flask, gunicorn, scikit-learn (TF-IDF, Isolation Forest), a small BM25 implementation, optional Anthropic SDK
+- **AI hub**: Python 3.11, Flask, gunicorn, scikit-learn (TF-IDF, Isolation Forest), a small BM25 implementation, optional sentence embeddings (fastembed, ONNX), optional Anthropic SDK
 - **Storage**: one JSON file with atomic writes by default, or SQLite (`STORE_DRIVER=sqlite`, the one built into Node), behind the same small store interface
-- **Testing**: Jest and supertest (303 tests), pytest (284 for the AI hub, 96 for the lab simulators), an end-to-end script that plays a learner over HTTP and WebSocket (56 checks), and Playwright browser tests (118 checks, including typing on a slow connection and a phone-sized screen)
+- **Testing**: Jest and supertest (311 tests), pytest (316 for the AI hub, 97 for the lab simulators), an end-to-end script that plays a learner over HTTP and WebSocket (56 checks), and Playwright browser tests (120 checks, including typing on a slow connection and a phone-sized screen)
 - **Operations**: Docker Compose, Kubernetes manifests, Prometheus, Grafana, GitHub Actions
 
-There is no MongoDB, vector database or agent framework in this project. Retrieval is lexical and the "agents" are plain Python classes called in order.
+There is no MongoDB, vector database or agent framework in this project. Retrieval is lexical with an optional embedding ranker held in memory, and the "agents" are plain Python classes called in order.
 
 ---
 
@@ -304,27 +343,49 @@ Set `ANTHROPIC_API_KEY` for the hub and raise `AI_HUB_TIMEOUT_MS` on the gateway
 
 ```bash
 cd server
-npm test                                  # 303 tests, including real shells over node-pty
+npm run lint                              # oxlint
+npm test                                  # 311 tests, including real shells over node-pty
+npm run test:coverage                     # the same, and fails under the coverage floor in package.json
+npm audit --omit=dev --audit-level=high   # known vulnerabilities in what ships
 npm run labs:validate                     # structure of every unit
-npm run labs:audit                        # every check against an empty Docker sandbox
+npm run labs:audit                        # every check against an empty Docker sandbox (labs:audit:check exits 1 on a finding)
 node scripts/docker-check.js              # try to break out of a real sandbox container
 node scripts/e2e.js http://localhost:4000 # a learner's whole journey, against a running stack
 node scripts/benchmark.js http://localhost:4000
+node scripts/loadtest.js http://localhost:4000 --students 25 --seconds 60
 
 cd ../ai-hub
 pip install -r requirements-dev.txt
-python -m pytest tests -q                 # 284 tests
+ruff check . ../sandbox-image             # lint (rules in ruff.toml at the repository root)
+python -m pytest tests -q                 # 316 tests (add --cov=agents --cov=app --cov=pipeline for coverage)
 python evals/run_eval.py --check          # quality gates, also run in CI
+pip-audit -r requirements.txt             # known vulnerabilities in the hub's packages
 
 cd ..
-python -m pytest sandbox-image/tests -q   # 96 tests: the lab simulators and every rewritten lab check
+python -m pytest sandbox-image/tests -q   # 97 tests: the lab simulators and every rewritten lab check
 
 cd client
 npm run lint && npm test && npm run build
 npm run e2e                               # real browser against a throwaway stack (needs: npx playwright install chromium)
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above except the benchmark, including the sandbox break-out check, the end-to-end script against Docker sandboxes and the browser tests. The browser job and the simulator tests were added after the workflow last ran on GitHub, so treat those two jobs as untested there until the first green run.
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request to `main`:
+
+| Job | What fails the build |
+| :--- | :--- |
+| Gateway | lint (oxlint), any of the 311 tests, coverage under the floor (85% statements, 77% branches; today 89% and 82%), malformed lab content |
+| AI hub | lint (ruff), any test, coverage under 90% (today 97%), the course index out of date, the lab simulator tests, or a quality gate: an answer leak in any of 2,403 hints, a retrieval or scanner regression, a stuck-student case |
+| Client | lint, the local-echo unit tests, the production build |
+| Security | a high or critical vulnerability in what ships (`npm audit`, `pip-audit`), a secret anywhere in the history (gitleaks). Infrastructure files are scanned for risky settings and reported, not gated |
+| Browser | any of the 120 browser checks; screenshots and server logs are kept for a week when it fails |
+| Docker | a critical, fixable vulnerability in any of the four images (Trivy), a sandbox break-out check, a lab step that cannot be done or passes without work (all 89, in a real container), the simulator tests inside the hardened container, the end-to-end journey |
+| Deploy | runs only on `main`, only after every job above passed |
+
+`codeql.yml` adds weekly and per-change code scanning for the JavaScript and Python source, and `dependabot.yml` opens weekly pull requests for outdated packages, base images and the pinned actions. Every third-party action is pinned to a commit hash.
+
+Two honest notes. Most of this was added after the workflow last ran on GitHub, so until the first green run it is checked only by a workflow linter (`actionlint`) and by running the same commands locally. And the deploy job does nothing until you give it deploy hooks (see [Deploying](#deploying)); until then Render and Vercel still deploy every push on their own.
 
 ---
 
@@ -334,6 +395,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above except the benchmark, incl
 - **Gateway.** Needs `JWT_SECRET` (it refuses to start in production without one). Set `CORS_ORIGINS` to the client's URL, and `DATA_DIR` to a persistent disk if accounts and certificates should survive restarts.
 - **Put the gateway near its students.** Every terminal keystroke is a round trip to it. Measured from India, a gateway in Render's Oregon region took 0.3 to 1.1 s to answer a trivial request. Local echo hides that for typing, but command output still waits for the network.
 - **Render (`render.yaml`).** A demo deployment: sandboxes are PTY shells inside the gateway's container, and the free plan has no persistent disk. The blueprint asks for the Singapore region. Render cannot move an existing service, so changing region means creating new services from the blueprint and pointing `VITE_API_URL` at the new URL.
+- **Deploying only what passed CI.** By default Render and Vercel deploy every push to `main`, whether or not the checks passed. To gate it: create a Deploy Hook for each service (Render: service Settings, Deploy Hook; Vercel: project Settings, Git, Deploy Hooks), save the three URLs as repository secrets named `RENDER_HUB_DEPLOY_HOOK`, `RENDER_GATEWAY_DEPLOY_HOOK` and `VERCEL_DEPLOY_HOOK`, then switch off auto-deploy in Render and Vercel. The `deploy` job in CI then triggers them after every other job is green.
 - **A VM with Docker (`docker-compose.yml`).** The setup to use for real learners.
 - **Kubernetes (`k8s/`).** Runs the gateway unprivileged with PTY sandboxes inside the pod; a demo, for the same reason as Render. Create the secret from `k8s/secret.example.yaml` first.
 
@@ -348,21 +410,21 @@ Optional gateway settings (all in `server/.env.example`):
 | `METRICS_TOKEN` | A bearer token on `/metrics` | `/metrics` is open |
 | `DAILY_CHALLENGE=off` | Removes the lab of the day | It is on |
 
-On the AI hub, `ANTHROPIC_API_KEY` switches hint writing to Claude; raise `AI_HUB_TIMEOUT_MS` on the gateway to about 15000 when you set it.
+On the AI hub, `ANTHROPIC_API_KEY` switches hint writing and interview scoring to Claude; raise `AI_HUB_TIMEOUT_MS` on the gateway to about 15000 when you set it. `SEMANTIC_SEARCH=off` keeps the hub on lexical retrieval even when the embedding package is installed.
 
 ---
 
 ## Limitations
 
 - **The Docker, Kubernetes and AWS labs use simulators, not the real tools.** They cover the commands the labs teach and refuse anything else with a clear message. They teach the workflow and the output; they are not a cluster.
-- **PTY mode is not a sandbox.** Do not expose it to people you do not trust. In PTY mode all students also share the host's ports, so two people running the same `-p 8080:80` lab at once collide (the second gets "port is already allocated").
+- **PTY mode is not a sandbox.** Do not expose it to people you do not trust. (Each PTY shell does get its own block of ports for the labs, so students no longer collide on `-p 8080:80`; that is convenience, not isolation.)
 - **One gateway process.** Sessions live in memory, and both stores (JSON file or SQLite) belong to a single process. Running several replicas needs a network database and an async store interface.
 - **Email is not sent unless `RESEND_API_KEY` is set.** Without it, password-reset and confirmation links are only written to the server log (and returned by the API outside production so the flow can be tried). The Resend path has never been run against the real service.
 - **Typing lag depends on where the gateway runs.** Every keystroke is a round trip. Local echo hides it when the round trip is over 50 ms, but output still arrives at network speed; deploy the gateway near its students.
-- **Retrieval is lexical.** It finds the right unit well and the right section only about half the time at rank one.
-- **The interview scorer matches words, not meaning.** A correct answer phrased very differently from the key points scores low.
+- **Section-level retrieval is still imperfect.** With the embedding ranker the right section is ranked first only 61% of the time (in the top 3: 92%). Without it, on a small host, it is 55% and 75%.
+- **The default interview scorer matches words, not meaning.** A correct answer phrased differently from the key points scores about 21 out of 100. The fix that works is the LLM judge, which needs an API key and has not been measured against a live model. Embeddings were measured and do not fix it.
 - **The LLM mentor is untested against a live model**, including streamed answers. Its request shape, the leak check on streamed text and every failure path are tested with stand-ins.
-- **Not load tested.** The numbers above are single-user latencies on one laptop.
+- **Load tested only up to its own limit, on one laptop.** 25 students for a minute, over localhost. More students, a small cloud instance and long runs are unmeasured.
 
 ---
 

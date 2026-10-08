@@ -34,13 +34,13 @@
     {
       "step": 3,
       "title": "HTTP Requests with curl",
-      "description": "Start a small web server on the loopback interface, then make HTTP requests to it and inspect the responses like a pro.",
+      "description": "Start a small web server on the loopback interface, then make HTTP requests to it and inspect the responses like a pro. Your sandbox has a port set aside for it in `$SITE_PORT` (normally 8000; `echo $SITE_PORT` shows it).",
       "tasks": [
         "Create a page to serve: `mkdir -p ~/site && echo '<h1>Hello from OpsAcademy</h1>' > ~/site/index.html`",
-        "Start a web server for that folder in the background: `python3 -m http.server 8000 --bind 127.0.0.1 --directory ~/site > ~/server.log 2>&1 &`",
-        "Headers only: `curl -I http://localhost:8000/`",
-        "Status code only: `curl -o /dev/null -s -w '%{http_code}\\n' http://localhost:8000/`",
-        "Save the response body to a file: `curl -s http://localhost:8000/ -o ~/response.html`",
+        "Start a web server for that folder in the background: `python3 -m http.server $SITE_PORT --bind 127.0.0.1 --directory ~/site > ~/server.log 2>&1 &`",
+        "Headers only: `curl -I http://localhost:$SITE_PORT/`",
+        "Status code only: `curl -o /dev/null -s -w '%{http_code}\\n' http://localhost:$SITE_PORT/`",
+        "Save the response body to a file: `curl -s http://localhost:$SITE_PORT/ -o ~/response.html`",
         "See the requests the server logged: `cat ~/server.log`"
       ],
       "verification": {
@@ -56,12 +56,12 @@
       "tasks": [
         "List listening TCP ports: `ss -tln` (or `netstat -tln`)",
         "Save the list while your web server is still running: `ss -tln > ~/ports.txt`",
-        "Find your server's port in it: `grep 8000 ~/ports.txt`",
+        "Find your server's port in it: `grep \"$SITE_PORT\" ~/ports.txt`",
         "Stop the server: `kill %1` (or find its PID with `ps aux | grep '[h]ttp.server'` and run `kill <PID>`)",
-        "Confirm nothing answers on the port any more: `curl -s -m 2 http://localhost:8000/ || echo closed`"
+        "Confirm nothing answers on the port any more: `curl -s -m 2 http://localhost:$SITE_PORT/ || echo closed`"
       ],
       "verification": {
-        "command": "grep -Eq '[:.]8000([^0-9]|$)' /home/student/ports.txt && ! curl -s -o /dev/null -m 2 http://127.0.0.1:8000/ && echo PASS || echo FAIL",
+        "command": "test -n \"$SITE_PORT\" && grep -Eq \"[:.]$SITE_PORT([^0-9]|\\$)\" /home/student/ports.txt && ! curl -s -o /dev/null -m 2 \"http://127.0.0.1:$SITE_PORT/\" && echo PASS || echo FAIL",
         "expectedOutput": "PASS",
         "check": "contains"
       }

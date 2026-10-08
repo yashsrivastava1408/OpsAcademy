@@ -15,6 +15,14 @@ const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `  -> ${detail}` : ''}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** On a failing run, keep a picture of where the browser ended up (see run.mjs). */
+async function keepScreenshot(target, name) {
+  if (!process.env.E2E_ARTIFACTS || !target) return;
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(process.env.E2E_ARTIFACTS, { recursive: true });
+  await target.screenshot({ path: `${process.env.E2E_ARTIFACTS}/${name}.png`, fullPage: true }).catch(() => {});
+}
+
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -301,6 +309,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (const m of [...new Set(errors.filter((e) => !real.includes(e)).map((e) => e.slice(0, 110)))]) console.log('          ignored: ' + m);
   if (ignored) console.log(`        (${ignored} console messages ignored: failed network loads, incl. the deliberate offline test and Vercel-only analytics scripts)`);
 
+  if (results.includes(false)) await keepScreenshot(page, 'walkthrough');
   await browser.close();
   const passed = results.filter(Boolean).length;
   console.log(`\n${passed}/${results.length} browser checks passed.`);

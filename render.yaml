@@ -72,4 +72,9 @@ services:
         value: 5000
       - key: PYTHON_VERSION
         value: 3.11.9
+      # The embedding ranker needs about 450 MB more memory than the free plan
+      # has. On a larger plan: add requirements-semantic.txt to the build
+      # command and remove this line.
+      - key: SEMANTIC_SEARCH
+        value: "off"
       - fromGroup: opsacademy-shared

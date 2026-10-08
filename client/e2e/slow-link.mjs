@@ -13,6 +13,14 @@ const APP = process.env.APP_URL || 'http://localhost:4173';
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `  -> ${detail}` : ''}`); };
 
+/** On a failing run, keep a picture of where the browser ended up (see run.mjs). */
+async function keepScreenshot(target, name) {
+  if (!process.env.E2E_ARTIFACTS || !target) return;
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(process.env.E2E_ARTIFACTS, { recursive: true });
+  await target.screenshot({ path: `${process.env.E2E_ARTIFACTS}/${name}.png`, fullPage: true }).catch(() => {});
+}
+
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -70,10 +78,21 @@ const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ?
   const session = async (delay) => {
     await page.goto(`${APP}/unit/linux-basics/practice`, { waitUntil: 'networkidle' });
     await page.evaluate((d) => { window.__delay = d; }, delay);
+    // The terminal's web font changes the width of a character, and so the
+    // number of columns. Have it loaded before the terminal is used, so both
+    // sessions are measured with the same font.
+    await page.evaluate(() => document.fonts.load("14px 'JetBrains Mono'").catch(() => {}));
+    await page.evaluate(() => document.fonts.ready);
     await page.getByRole('button', { name: /Start Lab/ }).first().click();
     await page.waitForSelector('.terminal-status.connected');
     await sleep(1200 + delay * 2);
     await page.locator('.terminal-body').click();
+
+    // The shell must believe the same width the browser draws: a mismatch
+    // makes long lines wrap in the wrong place.
+    await type('echo cols-$(stty size | cut -d" " -f2)-end\r'); await settle();
+    const shellCols = Number(((await page.evaluate(() => window.__screen())).join('').match(/cols-(\d+)-end/) || [])[1]);
+    const drawnCols = await page.evaluate(() => document.querySelector('.terminal-body > div').__xterm.cols);
 
     // warm-up so the latency is known, then time single keys
     await type('echo warm', 90); await type('\r'); await settle();
@@ -102,7 +121,7 @@ const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ?
     const stats = await page.evaluate(() => { const t = document.querySelector('.terminal-body > div').__typeahead; return { ...t.stats, latency: Math.round(t.latency), enabled: t.enabled, pending: t.pending }; });
     await page.getByRole('button', { name: 'Stop' }).click();
     await sleep(600 + delay);
-    return { screen, stats, keyMs: median(times), times };
+    return { screen, stats, keyMs: median(times), times, shellCols, drawnCols };
   };
 
   const fast = await session(0);
@@ -111,20 +130,32 @@ const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ?
   console.log(`        slow link (300 ms round trip): key visible after ${slow.keyMs.toFixed(0)} ms (median), worst ${Math.max(...slow.times).toFixed(0)} ms; measured latency ${slow.stats.latency} ms`);
   console.log(`        guesses: ${slow.stats.predicted} made, ${slow.stats.confirmed} confirmed, ${slow.stats.rolledBack} taken back`);
 
+  console.log(`        terminal width: fast session ${fast.drawnCols} columns drawn, shell believes ${fast.shellCols}; slow session ${slow.drawnCols} drawn, shell believes ${slow.shellCols}`);
+  check('the shell and the browser agree on the terminal width (fast link)', fast.shellCols === fast.drawnCols, `shell ${fast.shellCols}, browser ${fast.drawnCols}`);
+  check('the shell and the browser agree on the terminal width (slow link)', slow.shellCols === slow.drawnCols, `shell ${slow.shellCols}, browser ${slow.drawnCols}`);
   check('fast link: local echo stays off', fast.stats.predicted === 0 && !fast.stats.enabled);
   check('slow link: local echo turns itself on', slow.stats.enabled && slow.stats.predicted > 50);
   check('slow link: a typed key is on screen in under 30 ms instead of 300+', slow.keyMs < 30, `${slow.keyMs.toFixed(1)} ms`);
   check('slow link: nothing left as an unconfirmed guess', slow.stats.pending === '');
-  const strip = (lines) => lines.join('\u0001').replace(/sandboxes\/[0-9a-f\u0001]+\/home/g, 'sandboxes/ID/home').split('\u0001').map((l) => l.trimEnd());
-  const a = strip(fast.screen); const b = strip(slow.screen);
+  // Compared as one stream of text with the line breaks removed: where a long
+  // line wraps depends on the width of the terminal, which may differ by a
+  // column or two between two page loads, and is checked on its own above.
+  const flatten = (lines) => lines.join('\u0001')
+    .replace(/sandboxes\/[0-9a-f\u0001]+\/home/g, 'sandboxes/ID/home')
+    .replace(/cols-\d+-end/g, 'cols-N-end')
+    .split('\u0001').map((l) => l.trimEnd());
+  const a = flatten(fast.screen); const b = flatten(slow.screen);
+  const stream = (lines) => lines.join('').replace(/\s+/g, '');
+  const same = stream(a) === stream(b);
   let firstDiff = -1;
-  for (let i = 0; i < Math.max(a.length, b.length); i += 1) if (a[i] !== b[i]) { firstDiff = i; break; }
-  check('slow link ends with exactly the same screen as the fast link', firstDiff === -1, firstDiff === -1 ? `${a.length} lines identical` : `line ${firstDiff}: fast="${a[firstDiff]}" slow="${b[firstDiff]}"`);
+  if (!same) for (let i = 0; i < Math.max(a.length, b.length); i += 1) if (a[i] !== b[i]) { firstDiff = i; break; }
+  check('slow link ends with exactly the same screen text as the fast link', same, same ? `${stream(a).length} characters identical` : `line ${firstDiff}: fast="${a[firstDiff]}" slow="${b[firstDiff]}"`);
   const text = b.join('\n');
   check('commands ran correctly on the slow link', ['hello-42', 'typo-fixed', 'got-s3cret', 'after-less', 'done'].every((t) => text.includes(t)) && /zzdir$/m.test(text) && text.includes('afile.txt'));
   check('the hidden input is not left on screen', !/^s3cret/m.test(text) && !text.includes('hidden; echo got-$hiddens3cret'));
   check('no JavaScript errors', errors.length === 0, errors.join(' | '));
   if (firstDiff !== -1) { console.log('--- fast'); console.log(a.slice(Math.max(0, firstDiff - 3), firstDiff + 4).join('\n')); console.log('--- slow'); console.log(b.slice(Math.max(0, firstDiff - 3), firstDiff + 4).join('\n')); }
+  if (results.includes(false)) await keepScreenshot(page, 'slow-link');
   await browser.close();
   const passed = results.filter(Boolean).length;
   console.log(`\n${passed}/${results.length} slow-link checks passed.`);

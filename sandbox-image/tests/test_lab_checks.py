@@ -67,12 +67,12 @@ STEPS = {
     "docker-basics": {
         1: ["docker --version", "docker info"],
         2: ["docker pull alpine:latest", "docker run alpine echo 'Hello from Docker!'", "docker ps -a"],
-        3: ["docker run -d --name my-webserver -p 8080:80 nginx", "docker ps", "curl -s localhost:8080"],
+        3: ["docker run -d --name my-webserver -p $WEB_PORT:80 nginx", "docker ps", "curl -s localhost:$WEB_PORT"],
         4: [typed("docker exec -it my-webserver /bin/sh", "cat /etc/nginx/nginx.conf\nexit\n"), "docker logs my-webserver"],
         5: ["mkdir ~/myapp && cd ~/myapp && echo '<h1>Built with OpsAcademy!</h1>' > index.html && "
             "echo 'FROM nginx:alpine' > Dockerfile && echo 'COPY index.html /usr/share/nginx/html/' >> Dockerfile && "
-            "docker build -t myapp:v1 . && docker run -d --name myapp -p 9090:80 myapp:v1",
-            "curl -s localhost:9090"],
+            "docker build -t myapp:v1 . && docker run -d --name myapp -p $APP_PORT:80 myapp:v1",
+            "curl -s localhost:$APP_PORT"],
         6: ["docker stats --no-stream", "docker stop my-webserver myapp", "docker rm my-webserver myapp", "docker ps -a"],
     },
     "kubernetes-basics": {
@@ -105,11 +105,11 @@ STEPS = {
         1: [INTERFACES, INTERFACES + " > ~/interfaces.txt", "grep 127.0.0.1 ~/interfaces.txt"],
         2: ["cat /etc/resolv.conf", "cat /etc/hosts", "getent hosts localhost", "getent hosts localhost > ~/dns.txt"],
         3: ["mkdir -p ~/site && echo '<h1>Hello from OpsAcademy</h1>' > ~/site/index.html",
-            bg("python3 -m http.server 8000 --bind 127.0.0.1 --directory ~/site > ~/server.log 2>&1 &"),
-            "curl -sI http://localhost:8000/", "curl -o /dev/null -s -w '%{http_code}\\n' http://localhost:8000/",
-            "curl -s http://localhost:8000/ -o ~/response.html", "cat ~/server.log"],
-        4: [LISTENING, LISTENING + " > ~/ports.txt", "grep 8000 ~/ports.txt", "kill <PID>", wait(0.5),
-            "curl -s -m 2 http://localhost:8000/ || echo closed"],
+            bg("python3 -m http.server $SITE_PORT --bind 127.0.0.1 --directory ~/site > ~/server.log 2>&1 &"),
+            "curl -sI http://localhost:$SITE_PORT/", "curl -o /dev/null -s -w '%{http_code}\\n' http://localhost:$SITE_PORT/",
+            "curl -s http://localhost:$SITE_PORT/ -o ~/response.html", "cat ~/server.log"],
+        4: [LISTENING, LISTENING + " > ~/ports.txt", 'grep "$SITE_PORT" ~/ports.txt', "kill <PID>", wait(0.5),
+            "curl -s -m 2 http://localhost:$SITE_PORT/ || echo closed"],
     },
     "linux-basics": {
         1: ["pwd", "ls -la", "ls /", "ls / > ~/root-dirs.txt"],
@@ -127,9 +127,21 @@ STEPS = {
     },
 }
 
-# Fixed ports named in the task text. If something else on this machine holds one, the steps that need it are skipped.
-PORTS = {"docker-basics": {3: [8080], 4: [8080], 5: [8080, 9090], 6: [8080, 9090]},
-         "networking-fundamentals": {3: [8000], 4: [8000]}}
+# The gateway gives every sandbox its lab ports in these variables (8080, 9090
+# and 8000 in a container, a private block per shell in PTY mode). Here each
+# unit gets three ports that are free on this machine right now.
+PORT_NAMES = ("WEB_PORT", "APP_PORT", "SITE_PORT")
+
+
+def free_ports(count):
+    sockets = [socket.socket() for _ in range(count)]
+    try:
+        for probe in sockets:
+            probe.bind(("127.0.0.1", 0))
+        return [probe.getsockname()[1] for probe in sockets]
+    finally:
+        for probe in sockets:
+            probe.close()
 
 
 def port_in_use(port):
@@ -145,11 +157,11 @@ class Lab:
         self.unit = unit
         self.home = str(home)
         self.env = {"HOME": self.home, "PATH": "%s:%s" % (BIN, SYSTEM_PATH), "LANG": "C.UTF-8"}
+        self.ports = dict(zip(PORT_NAMES, free_ports(len(PORT_NAMES))))
+        self.env.update((name, str(port)) for name, port in self.ports.items())
         self.steps = dict((s["step"], s) for s in json.loads((UNITS / unit / "practice.json").read_text())["steps"])
         self.values = {}
         self.pids = []
-        self.busy = [port for ports in PORTS.get(unit, {}).values() for port in ports if port_in_use(port)]
-        self.skipped = set()
 
     def sh(self, command, stdin=None, background=False):
         """Run one line as /bin/sh would for the student. Output goes to a file so a background job cannot hold a pipe open."""
@@ -182,7 +194,7 @@ class Lab:
             self.values["<PID>"] = str(pid)
             if "http.server" in item["run"]:
                 deadline = time.time() + 10
-                while not port_in_use(8000) and time.time() < deadline:
+                while not port_in_use(self.ports["SITE_PORT"]) and time.time() < deadline:
                     time.sleep(0.05)
 
     def check(self, number):
@@ -238,12 +250,6 @@ def test_check_fails_before_the_work_and_passes_after(labs, unit, number):
         pytest.skip("`getent` is a Linux tool: it is in the sandbox image but not on this machine")
     if unit == "networking-fundamentals" and number == 1 and not (shutil.which("ip") or shutil.which("ifconfig")):
         pytest.skip("neither `ip` nor `ifconfig` is installed on this machine")
-    blocked = [port for port in PORTS.get(unit, {}).get(number, []) if port in lab.busy]
-    if blocked:
-        lab.skipped.add(number)
-        pytest.skip("port %s is already in use on this machine, and the task text names it" % ", ".join(map(str, blocked)))
-    if lab.skipped and unit != "networking-fundamentals":
-        pytest.skip("an earlier step of this unit was skipped and this one builds on it")
 
     assert lab.check(number) is False, "the check passes before any of the step's work is done"
     for item in STEPS[unit][number]:
@@ -256,8 +262,6 @@ def test_no_check_passes_on_an_empty_sandbox(tmp_path, unit):
     """The audit's question, asked of every step at once: a fresh HOME where nothing has been done."""
     lab = Lab(unit, tmp_path)
     for number in sorted(lab.steps):
-        if PORTS.get(unit, {}).get(number) and any(port in lab.busy for port in PORTS[unit][number]):
-            continue
         assert lab.check(number) is False, "%s step %d passes on an empty sandbox" % (unit, number)
 
 
@@ -268,3 +272,21 @@ def test_task_text_never_reveals_how_a_step_is_checked():
             assert "__ran" not in shown and "echo PASS" not in shown, "%s step %d" % (unit, step["step"])
             command = step["verification"]["command"]
             assert "~" not in command and "$HOME" not in command, "%s step %d: use /home/student in checks" % (unit, step["step"])
+
+
+def test_two_sandboxes_with_different_ports_do_not_disturb_each_other(tmp_path):
+    """PTY mode in miniature: two students on one machine, each with their own port variables."""
+    first, second = Lab("docker-basics", tmp_path / "a"), Lab("docker-basics", tmp_path / "b")
+    try:
+        for lab in (first, second):
+            os.makedirs(lab.home)
+            for item in STEPS["docker-basics"][3]:
+                lab.do(item)
+        assert first.ports["WEB_PORT"] != second.ports["WEB_PORT"]
+        assert first.check(3) and second.check(3)
+        # Stopping one student's container leaves the other's running.
+        first.do("docker rm -f my-webserver")
+        assert first.check(3) is False and second.check(3) is True
+    finally:
+        first.cleanup()
+        second.cleanup()

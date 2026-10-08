@@ -59,6 +59,7 @@ def create_app() -> Flask:
             "service": "opsacademy-ai-hub",
             "agents": ["abuse_scanner", "lab_assessor", "container_inspector", "doc_retriever", "ai_mentor", "interview_scorer"],
             "knowledge_base_chunks": len(retriever.docs),
+            "semantic_search": retriever.embedder.describe() if retriever.embedder else {"status": "off"},
             "llm": {"enabled": llm.available, "model": config.LLM_MODEL if llm.available else None},
             "hint_cache": {"size": len(hint_cache.items), "hits": hint_cache.hits, "misses": hint_cache.misses},
         })

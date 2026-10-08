@@ -11,6 +11,7 @@
  *   npm run labs:audit                 # Docker sandbox (needs the daemon and image)
  *   npm run labs:audit -- --mode pty   # the local shell instead
  *   npm run labs:audit -- --json       # machine-readable report
+ *   npm run labs:audit -- --check      # exit 1 if any step cannot be done or passes without work (CI)
  */
 
 const modeIndex = process.argv.indexOf('--mode');
@@ -120,6 +121,11 @@ async function main() {
     for (const r of trivial) console.log(`  ${r.unit}#${r.step}  ${r.title}`);
   }
   console.log('');
+
+  if (process.argv.includes('--check') && (blocked.length || trivial.length)) {
+    console.error(`Lab audit failed: ${blocked.length} step(s) need a missing tool, ${trivial.length} pass on an empty sandbox.`);
+    process.exitCode = 1;
+  }
 }
 
 main().catch((err) => {

@@ -35,7 +35,12 @@ services:
       - AI_HUB_URL=http://ai-hub:5000
       - AI_HUB_TOKEN=${AI_HUB_TOKEN:?Set AI_HUB_TOKEN, e.g. export AI_HUB_TOKEN=$(openssl rand -hex 24)}
       - CORS_ORIGINS=http://localhost:5173
+      - APP_URL=http://localhost:5173
       - DATA_DIR=/data
+      # Optional: sqlite store, real email, operator page (see server/.env.example).
+      - STORE_DRIVER=${STORE_DRIVER:-json}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
     volumes:
       - server-data:/data
       # The gateway starts sandbox containers through the host's Docker daemon.
