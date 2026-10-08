@@ -176,3 +176,68 @@ test('telemetry lists the files and directories the student created', async () =
   expect(Array.isArray(telemetry.ports)).toBe(true);
   await manager.shutdown();
 });
+
+describe('lab ports', () => {
+  const units = require('../lib/units');
+  const stepCheck = (unitId, number) => units.getStep(unitId, number).verification.command;
+
+  test('every shell gets its own ports, in its terminal and in the lab checks', async () => {
+    const [a, b] = [newId(), newId()];
+    await pty.create(a);
+    await pty.create(b);
+
+    const portsA = pty.labEnvOf(a);
+    const portsB = pty.labEnvOf(b);
+    expect(Object.keys(portsA)).toEqual(['WEB_PORT', 'APP_PORT', 'SITE_PORT']);
+    const all = [...Object.values(portsA), ...Object.values(portsB)].map(Number);
+    expect(new Set(all).size).toBe(6);
+    expect(Math.min(...all)).toBeGreaterThanOrEqual(config.sandbox.ptyPortBase);
+
+    // What a lab check sees.
+    expect((await pty.exec(a, 'echo $WEB_PORT $APP_PORT $SITE_PORT')).stdout.trim()).toBe(Object.values(portsA).join(' '));
+    // What the student's own shell sees.
+    const terminal = await pty.attach(a);
+    let screen = '';
+    terminal.onData((data) => { screen += data; });
+    terminal.write('echo port-is-$WEB_PORT\r');
+    await waitFor(() => screen.includes(`port-is-${portsA.WEB_PORT}`));
+    terminal.close();
+  });
+
+  test('a port block is handed out again once its shell is gone', async () => {
+    const first = newId();
+    await pty.create(first);
+    const ports = pty.labEnvOf(first);
+    await pty.destroy(ids.pop());
+
+    const second = newId();
+    await pty.create(second);
+    expect(pty.labEnvOf(second)).toEqual(ports);
+  });
+
+  test('two students can do the "publish a port" docker step at the same time', async () => {
+    const students = [newId(), newId()];
+    for (const id of students) await pty.create(id);
+    const check = stepCheck('docker-basics', 3);
+
+    try {
+      for (const id of students) expect((await pty.exec(id, check)).stdout).toContain('FAIL');
+
+      // Both run exactly what the task text says.
+      const started = await Promise.all(students.map((id) => pty.exec(id, 'docker run -d --name my-webserver -p $WEB_PORT:80 nginx')));
+      for (const result of started) expect(result.exitCode).toBe(0);
+
+      for (const id of students) {
+        expect((await pty.exec(id, check)).stdout).toContain('PASS');
+        const page = await pty.exec(id, 'curl -s -m 2 localhost:$WEB_PORT');
+        expect(page.stdout).toMatch(/nginx/i);
+      }
+      // Each is talking to their own server, not the other student's.
+      const [portA, portB] = students.map((id) => pty.labEnvOf(id).WEB_PORT);
+      expect(portA).not.toBe(portB);
+    } finally {
+      for (const id of students) await pty.exec(id, 'docker rm -f my-webserver');
+    }
+    for (const id of students) expect((await pty.exec(id, 'curl -s -m 1 localhost:$WEB_PORT || echo closed')).stdout).toContain('closed');
+  }, 30000);
+});

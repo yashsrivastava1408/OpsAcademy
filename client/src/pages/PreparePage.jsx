@@ -119,6 +119,17 @@ function MockInterview({ unitId, questions }) {
               </div>
             )}
 
+            {result.incorrect?.length > 0 && (
+              <div className="key-points-box">
+                <div className="box-label">Statements to correct</div>
+                <ul className="mock-points">
+                  {result.incorrect.map((statement, i) => (
+                    <li key={i} className="missed"><XCircle size={14} /> {statement}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="model-answer-box">
               <div className="box-label">Model Interview Answer</div>
               <p>{result.modelAnswer}</p>

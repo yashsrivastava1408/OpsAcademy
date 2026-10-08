@@ -1,16 +1,19 @@
 """
 Agent 2: Knowledge Retriever
 
-Hybrid lexical retrieval over the course's own content (learn sections and
-flashcards, built by scripts/build_corpus.py). Two rankers run on every
-query and are merged with reciprocal rank fusion:
+Hybrid retrieval over the course's own content (learn sections and
+flashcards, built by scripts/build_corpus.py). Each ranker orders the chunks
+on its own and the orders are merged with reciprocal rank fusion:
 
   - BM25 over word tokens: strong on exact terms like `kubectl` or `chmod`
   - TF-IDF cosine over character n-grams: tolerant of typos and word forms
+  - sentence embeddings (optional, see agents/embedder.py): matches by
+    meaning when the question shares no words with the right section
 
 Chunks from the unit the student is working in get a small boost. There is
-no embedding model or vector database here; evals/run_eval.py measures how
-well this does on labelled questions.
+no vector database: the corpus is a few hundred chunks, so the embeddings
+are one small matrix in memory. evals/run_eval.py measures retrieval with
+and without the embedding ranker on labelled questions.
 """
 
 import json
@@ -18,6 +21,7 @@ import math
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 
@@ -32,6 +36,10 @@ CANDIDATES = 30
 # Added to a chunk's fused score when it belongs to the student's current unit:
 # worth about as much as ranking first in one of the two rankers.
 UNIT_BOOST = 1.0 / (RRF_K + 1)
+# A chunk must be at least this close in meaning to count as a semantic match.
+# Without a floor the embedding ranker would return its nearest chunks for
+# any text at all, and a question about nothing in the course would get answers.
+SEMANTIC_MIN_SIMILARITY = 0.25
 
 
 class DocRetriever:
@@ -50,6 +58,30 @@ class DocRetriever:
         # Character n-gram TF-IDF index
         self.vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True, min_df=1)
         self.matrix = self.vectorizer.fit_transform(texts) if texts else None
+
+        # Sentence embeddings: filled in by attach() once the optional model has loaded.
+        self.embedder = None
+        self.doc_vectors = None
+
+    def attach(self, embedder, background: bool = True):
+        """Use an embedding model as a third ranker once it has loaded and the corpus is embedded."""
+        self.embedder = embedder
+
+        def index(loaded):
+            if self.docs:
+                self.doc_vectors = loaded.embed([self.searchable(doc) for doc in self.docs])
+
+        embedder.start(after_load=index, background=background)
+        return self
+
+    @property
+    def semantic(self) -> bool:
+        return self.embedder is not None and self.embedder.ready and self.doc_vectors is not None
+
+    def semantic_ranked(self, query: str) -> list:
+        """Indexes of the chunks closest in meaning to the query, best first."""
+        similarity = self.doc_vectors @ self.embedder.embed([query])[0]
+        return [int(i) for i in np.argsort(-similarity)[:CANDIDATES] if similarity[i] >= SEMANTIC_MIN_SIMILARITY]
 
     @staticmethod
     def load_corpus() -> list:
@@ -94,9 +126,16 @@ class DocRetriever:
         if not self.docs or not query or not query.strip():
             return []
 
+        rankings = [self.ranked(self.bm25_scores(query)), self.ranked(self.tfidf_scores(query))]
+        if self.semantic:
+            try:
+                rankings.append(self.semantic_ranked(query))
+            except Exception:  # the lexical rankers still answer
+                pass
+
         fused = Counter()
-        for scores in (self.bm25_scores(query), self.tfidf_scores(query)):
-            for rank, index in enumerate(self.ranked(scores)):
+        for ranking in rankings:
+            for rank, index in enumerate(ranking):
                 fused[index] += 1.0 / (RRF_K + rank + 1)
 
         if unit_id:
@@ -110,4 +149,10 @@ class DocRetriever:
         return results
 
 
-retriever = DocRetriever()
+
+def default_retriever():
+    from agents.embedder import embedder
+    return DocRetriever().attach(embedder)
+
+
+retriever = default_retriever()

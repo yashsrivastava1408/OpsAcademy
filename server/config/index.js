@@ -122,6 +122,12 @@ const config = {
     dockerImage: process.env.SANDBOX_IMAGE || 'opsacademy-sandbox:latest',
     dockerSeccompProfile: process.env.SANDBOX_SECCOMP_PROFILE || null,
     sandboxesDir: process.env.SANDBOXES_DIR || path.join(__dirname, '..', 'sandboxes'),
+    // Ports the labs tell a student to use, exported to every sandbox as
+    // $WEB_PORT, $APP_PORT and $SITE_PORT. A container has its own loopback,
+    // so every container gets these same numbers. PTY shells share the
+    // host's ports, so each one is given its own block starting at ptyPortBase.
+    labPorts: { WEB_PORT: 8080, APP_PORT: 9090, SITE_PORT: 8000 },
+    ptyPortBase: int('SANDBOX_PORT_BASE', 20000),
     // The lab simulators (docker, kubectl, aws). The sandbox image has them in
     // /usr/local/bin; PTY shells get this folder put first on their PATH.
     toolsDir: process.env.SANDBOX_TOOLS_DIR || path.join(__dirname, '..', '..', 'sandbox-image', 'bin'),

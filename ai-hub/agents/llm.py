@@ -7,6 +7,7 @@ key, a timeout, an API error or a refusal all surface, and the caller then
 answers from rules instead.
 """
 
+import json
 import logging
 import os
 
@@ -80,6 +81,44 @@ class LLMClient:
 
         text = "".join(block.text for block in response.content if block.type == "text").strip()
         return text or None
+
+    def complete_json(self, system: str, user: str, schema: dict):
+        """
+        Ask for an answer that must match a JSON schema.
+        @returns the parsed object, or None if the LLM is unavailable, did not finish or sent something unusable.
+        """
+        if not self.available:
+            return None
+
+        try:
+            response = self.client.messages.create(
+                model=config.LLM_MODEL,
+                max_tokens=16000,
+                output_config={"effort": config.LLM_EFFORT, "format": {"type": "json_schema", "schema": schema}},
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+        except anthropic.RateLimitError:
+            logger.warning("LLM rate limited; using the rule-based result")
+            return None
+        except anthropic.APIStatusError as err:
+            logger.warning("LLM API error %s; using the rule-based result", err.status_code)
+            return None
+        except anthropic.APIConnectionError:
+            logger.warning("LLM unreachable or timed out; using the rule-based result")
+            return None
+
+        if response.stop_reason != "end_turn":
+            logger.warning("LLM stopped with %s; using the rule-based result", response.stop_reason)
+            return None
+
+        text = "".join(block.text for block in response.content if block.type == "text").strip()
+        try:
+            data = json.loads(text)
+        except ValueError:
+            logger.warning("LLM answer was not valid JSON; using the rule-based result")
+            return None
+        return data if isinstance(data, dict) else None
 
     def stream(self, system: str, user: str):
         """

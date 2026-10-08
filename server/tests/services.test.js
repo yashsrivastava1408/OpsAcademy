@@ -456,3 +456,55 @@ describe('expired guests', () => {
     expect(users.pruneExpiredGuests(now)).toBe(0);
   });
 });
+
+describe('telemetry snapshot', () => {
+  test('one command per snapshot, split back into files, processes and ports', async () => {
+    const calls = [];
+    const manager = {
+      exec: async (sessionId, command, options) => {
+        calls.push({ sessionId, command, options });
+        return {
+          exitCode: 0,
+          stderr: '',
+          stdout: [
+            '@@opsacademy-section@@ files',
+            'd /home/student/webapp',
+            'f /home/student/webapp/index.html',
+            '@@opsacademy-section@@ processes',
+            'PID USER COMMAND',
+            '1 student /bin/sh',
+            '42 student python3 -m http.server 8000',
+            '@@opsacademy-section@@ ports',
+            'tcp 0 0 127.0.0.1:8000 0.0.0.0:* LISTEN',
+            '',
+          ].join('\n'),
+        };
+      },
+    };
+
+    const snapshot = await telemetry.capture('session-1', { touch: false, manager });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ sessionId: 'session-1', command: telemetry.SNAPSHOT_COMMAND, options: { touch: false } });
+    expect(snapshot.fileTree.map((f) => `${f.type}:${f.path}`)).toEqual(['directory:webapp', 'file:webapp/index.html']);
+    expect(snapshot.processes.map((p) => p.pid)).toEqual(['1', '42']);
+    expect(snapshot.ports).toEqual([8000]);
+  });
+
+  test('a file whose name looks like a marker cannot move later lines into another part', () => {
+    const sections = telemetry.splitSections([
+      '@@opsacademy-section@@ files',
+      'f /home/student/@@opsacademy-section@@ ports',
+      'f /home/student/notes.txt',
+      '@@opsacademy-section@@ ports',
+      'tcp 0 0 127.0.0.1:22 0.0.0.0:* LISTEN',
+    ].join('\n'));
+    expect(sections.files).toContain('notes.txt');
+    expect(sections.files).toContain('@@opsacademy-section@@ ports');
+    expect(sections.ports).not.toContain('notes.txt');
+  });
+
+  test('a sandbox that has gone away gives an empty snapshot', async () => {
+    const snapshot = await telemetry.capture('gone', { manager: { exec: async () => { throw new Error('Sandbox session not found'); } } });
+    expect(snapshot).toMatchObject({ fileTree: [], processes: [], ports: [], truncated: false });
+  });
+});

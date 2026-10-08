@@ -13,6 +13,14 @@ const APP = process.env.APP_URL || 'http://localhost:4173';
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `  -> ${detail}` : ''}`); };
 
+/** On a failing run, keep a picture of where the browser ended up (see run.mjs). */
+async function keepScreenshot(target, name) {
+  if (!process.env.E2E_ARTIFACTS || !target) return;
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(process.env.E2E_ARTIFACTS, { recursive: true });
+  await target.screenshot({ path: `${process.env.E2E_ARTIFACTS}/${name}.png`, fullPage: true }).catch(() => {});
+}
+
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -125,6 +133,7 @@ const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ?
   check('the hidden input is not left on screen', !/^s3cret/m.test(text) && !text.includes('hidden; echo got-$hiddens3cret'));
   check('no JavaScript errors', errors.length === 0, errors.join(' | '));
   if (firstDiff !== -1) { console.log('--- fast'); console.log(a.slice(Math.max(0, firstDiff - 3), firstDiff + 4).join('\n')); console.log('--- slow'); console.log(b.slice(Math.max(0, firstDiff - 3), firstDiff + 4).join('\n')); }
+  if (results.includes(false)) await keepScreenshot(page, 'slow-link');
   await browser.close();
   const passed = results.filter(Boolean).length;
   console.log(`\n${passed}/${results.length} slow-link checks passed.`);

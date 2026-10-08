@@ -15,10 +15,20 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'e2e-admin-token';
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `  -> ${detail}` : ''}`); };
 
+/** On a failing run, keep a picture of where the browser ended up (see run.mjs). */
+async function keepScreenshot(target, name) {
+  if (!process.env.E2E_ARTIFACTS || !target) return;
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(process.env.E2E_ARTIFACTS, { recursive: true });
+  await target.screenshot({ path: `${process.env.E2E_ARTIFACTS}/${name}.png`, fullPage: true }).catch(() => {});
+}
+let lastPage = null;
+
 const browser = await chromium.launch();
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
+  lastPage = page;
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -184,6 +194,7 @@ try {
   // ── Phone layout of the lab ──────────────────────────────
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const mobile = await phone.newPage();
+  lastPage = mobile;
   const phoneErrors = [];
   mobile.on('pageerror', (e) => phoneErrors.push(e.message));
   await mobile.goto(`${APP}/unit/git-basics/practice`, { waitUntil: 'domcontentloaded' });
@@ -243,6 +254,7 @@ try {
 } catch (err) {
   console.error('FEATURE TEST CRASHED:', err);
   results.push(false);
+  await keepScreenshot(lastPage, 'features');
 } finally {
   await browser.close();
 }

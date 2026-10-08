@@ -36,7 +36,7 @@ from sklearn.model_selection import KFold  # noqa: E402
 
 from agents.abuse_scanner import AntiAbuseScanner, extract_features, load_benign_commands  # noqa: E402
 from agents.doc_retriever import retriever  # noqa: E402
-from agents.interview_scorer import scorer  # noqa: E402
+from agents.interview_scorer import InterviewScorer, default_scorer  # noqa: E402
 from agents.mentor import AIMentor, leaks  # noqa: E402
 from agents.text import backticked  # noqa: E402
 from pipeline import TTLCache, run_agent_pipeline  # noqa: E402
@@ -262,6 +262,8 @@ def eval_scanner():
 
 
 def eval_interview():
+    # The gates need the same answer every run, so they measure the rule-based scorer.
+    scorer = InterviewScorer(llm=None)
     off_topic = ("I am not sure about this one. I would probably search online, ask a senior colleague for help "
                  "and then try a few things until the problem goes away, then write down what I learned.")
     model_scores, off_scores, half_scores = [], [], []
@@ -288,6 +290,43 @@ def eval_interview():
         "off_topic_max": max(off_scores),
         "separation": round(statistics.mean(model_scores) - statistics.mean(off_scores), 1),
         "ordering_holds": sum(m >= h >= o for m, h, o in zip(model_scores, half_scores, off_scores)) / count,
+    }
+
+
+def find_question(unit, question_id):
+    prepare = json.loads((UNITS_DIR / unit / "prepare.json").read_text())
+    for index, question in enumerate(prepare.get("interviewQuestions") or prepare.get("questions") or []):
+        if str(question.get("id", "iq-%d" % (index + 1))) == question_id:
+            return question
+    raise KeyError("%s has no interview question %s" % (unit, question_id))
+
+
+def eval_paraphrases(scorer):
+    """
+    The scorer's known weak spot: a correct answer in words the rubric does
+    not use, against a confident answer that is wrong. A good scorer puts the
+    first well above the second.
+    """
+    cases = json.loads((EVALS_DIR / "interview_paraphrases.json").read_text())
+    correct, wrong, sources = [], [], set()
+    for case in cases:
+        question = find_question(case["unit"], case["question"])
+        model = question.get("modelAnswer") or question.get("answer") or ""
+        points = question.get("keyPoints") or []
+        for answer, bucket in ((case["paraphrase"], correct), (case["wrong"], wrong)):
+            result = scorer.score(question["question"], answer, points, model)
+            bucket.append(result["score"])
+            sources.add(result["source"])
+    return {
+        "pairs": len(cases),
+        "scored_by": sorted(sources),
+        "correct_paraphrase_mean": round(statistics.mean(correct), 1),
+        "correct_paraphrase_min": min(correct),
+        "wrong_answer_mean": round(statistics.mean(wrong), 1),
+        "wrong_answer_max": max(wrong),
+        "correct_beats_wrong": sum(c > w for c, w in zip(correct, wrong)),
+        "correct_passes_70": sum(c >= 70 for c in correct),
+        "wrong_passes_70": sum(w >= 70 for w in wrong),
     }
 
 
@@ -326,6 +365,15 @@ def pct(value):
 
 def main():
     steps = load_steps()
+
+    # Everything below is first measured with the lexical rankers only, so the
+    # gates do not depend on whether the optional embedding model is installed.
+    embedder = retriever.embedder
+    semantic_available = False
+    if embedder is not None and "--lexical" not in sys.argv:
+        semantic_available = embedder.wait(300)
+    doc_vectors, retriever.doc_vectors = retriever.doc_vectors, None
+
     report = {
         "steps": len(steps),
         "leak": eval_leaks(steps),
@@ -334,7 +382,19 @@ def main():
         "scanner": eval_scanner(),
         "interview": eval_interview(),
         "latency": eval_latency(steps),
+        "paraphrases": eval_paraphrases(InterviewScorer(llm=None)),
     }
+
+    if semantic_available:
+        retriever.doc_vectors = doc_vectors
+        report["semantic"] = {
+            "model": embedder.model_name,
+            "retrieval": eval_retrieval(),
+            "latency": eval_latency(steps),
+        }
+    if "--llm" in sys.argv:
+        # Costs real API calls (two per pair). Not part of the gates.
+        report["paraphrases_llm"] = eval_paraphrases(default_scorer())
 
     leak, cases, retrieval, scan, interview, latency = (report[k] for k in ("leak", "cases", "retrieval", "scanner", "interview", "latency"))
     print(f"Lab steps: {report['steps']}\n")
@@ -357,6 +417,24 @@ def main():
           f"half answer {interview['half_answer_mean']}, off-topic {interview['off_topic_mean']} (max {interview['off_topic_max']}) "
           f"over {interview['questions']} questions; ordering holds for {pct(interview['ordering_holds'])}")
     print(f"Hint latency     p50 {latency['p50_ms']} ms, p95 {latency['p95_ms']} ms (rule-based, uncached, {latency['runs']} runs)")
+
+    def paraphrase_line(label, result):
+        print(f"{label} correct answer in other words {result['correct_paraphrase_mean']} (min {result['correct_paraphrase_min']}), "
+              f"confident wrong answer {result['wrong_answer_mean']} (max {result['wrong_answer_max']}); correct scores higher in "
+              f"{result['correct_beats_wrong']}/{result['pairs']} pairs; reach the pass mark of 70: {result['correct_passes_70']} correct, "
+              f"{result['wrong_passes_70']} wrong (scored by {', '.join(result['scored_by'])})")
+
+    paraphrase_line("Paraphrases     ", report["paraphrases"])
+    if "paraphrases_llm" in report:
+        paraphrase_line("  with LLM judge", report["paraphrases_llm"])
+    if "semantic" in report:
+        sem = report["semantic"]["retrieval"]
+        print(f"With embeddings  unit hit@1 {pct(sem['unit_hit1'])}, hit@3 {pct(sem['unit_hit3'])}; "
+              f"section hit@1 {pct(sem['section_hit1'])}, hit@3 {pct(sem['section_hit3'])} "
+              f"(p50 {sem['latency_ms_p50']} ms; {report['semantic']['model']}); "
+              f"hint latency p50 {report['semantic']['latency']['p50_ms']} ms, p95 {report['semantic']['latency']['p95_ms']} ms")
+    else:
+        print("With embeddings  not measured (install requirements-semantic.txt to enable the embedding ranker)")
 
     (EVALS_DIR / "report.json").write_text(json.dumps(report, indent=2) + "\n")
 

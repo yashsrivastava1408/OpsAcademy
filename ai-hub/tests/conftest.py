@@ -1,8 +1,13 @@
 import json
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+# The optional embedding model would make results depend on whether it is
+# installed and how far it has loaded; its own tests use a stand-in.
+os.environ["SEMANTIC_SEARCH"] = "off"
 
 HUB_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HUB_DIR))
