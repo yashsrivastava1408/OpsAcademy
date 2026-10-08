@@ -89,6 +89,14 @@ function attachTerminalWebSocket(server, manager = getManager()) {
 }
 
 async function handleConnection(ws, sessionId, manager) {
+  // The browser sends the terminal's size the moment the socket opens. In
+  // Docker mode attaching takes tens of milliseconds, so that first message
+  // used to arrive before anyone was listening and the shell kept a wrong
+  // width. Messages are held here until the shell is attached.
+  const early = [];
+  const holdEarly = (msg) => early.push(msg);
+  ws.on('message', holdEarly);
+
   const terminal = await manager.attach(sessionId);
   if (!terminal) {
     ws.close(CLOSE.SESSION_ENDED, 'Sandbox not found');
@@ -124,7 +132,7 @@ async function handleConnection(ws, sessionId, manager) {
   let messagesInWindow = 0;
 
   // Browser → sandbox stdin
-  ws.on('message', (msg) => {
+  const onMessage = (msg) => {
     const now = Date.now();
     if (now - windowStart > MESSAGE_WINDOW_MS) {
       windowStart = now;
@@ -183,7 +191,11 @@ async function handleConnection(ws, sessionId, manager) {
       ws.send(notice(`Command blocked (${verdict.rule}). Strike ${strikes} of ${config.sandbox.maxStrikes}.`));
       terminal.write('\r');
     }
-  });
+  };
+
+  ws.off('message', holdEarly);
+  ws.on('message', onMessage);
+  for (const msg of early.splice(0)) onMessage(msg);
 
   const cleanup = () => {
     unsubscribe();

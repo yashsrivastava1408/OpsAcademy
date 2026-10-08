@@ -288,7 +288,7 @@ Units are plain JSON under `server/data/units/`. Adding one needs no code: see [
 - **API gateway**: Node.js 22, Express, `ws`, `node-pty`, `dockerode`, JWT, bcrypt, helmet, express-rate-limit, pino, prom-client
 - **AI hub**: Python 3.11, Flask, gunicorn, scikit-learn (TF-IDF, Isolation Forest), a small BM25 implementation, optional sentence embeddings (fastembed, ONNX), optional Anthropic SDK
 - **Storage**: one JSON file with atomic writes by default, or SQLite (`STORE_DRIVER=sqlite`, the one built into Node), behind the same small store interface
-- **Testing**: Jest and supertest (310 tests), pytest (315 for the AI hub, 97 for the lab simulators), an end-to-end script that plays a learner over HTTP and WebSocket (56 checks), and Playwright browser tests (118 checks, including typing on a slow connection and a phone-sized screen)
+- **Testing**: Jest and supertest (311 tests), pytest (316 for the AI hub, 97 for the lab simulators), an end-to-end script that plays a learner over HTTP and WebSocket (56 checks), and Playwright browser tests (120 checks, including typing on a slow connection and a phone-sized screen)
 - **Operations**: Docker Compose, Kubernetes manifests, Prometheus, Grafana, GitHub Actions
 
 There is no MongoDB, vector database or agent framework in this project. Retrieval is lexical with an optional embedding ranker held in memory, and the "agents" are plain Python classes called in order.
@@ -343,9 +343,12 @@ Set `ANTHROPIC_API_KEY` for the hub and raise `AI_HUB_TIMEOUT_MS` on the gateway
 
 ```bash
 cd server
-npm test                                  # 310 tests, including real shells over node-pty
+npm run lint                              # oxlint
+npm test                                  # 311 tests, including real shells over node-pty
+npm run test:coverage                     # the same, and fails under the coverage floor in package.json
+npm audit --omit=dev --audit-level=high   # known vulnerabilities in what ships
 npm run labs:validate                     # structure of every unit
-npm run labs:audit                        # every check against an empty Docker sandbox
+npm run labs:audit                        # every check against an empty Docker sandbox (labs:audit:check exits 1 on a finding)
 node scripts/docker-check.js              # try to break out of a real sandbox container
 node scripts/e2e.js http://localhost:4000 # a learner's whole journey, against a running stack
 node scripts/benchmark.js http://localhost:4000
@@ -353,8 +356,10 @@ node scripts/loadtest.js http://localhost:4000 --students 25 --seconds 60
 
 cd ../ai-hub
 pip install -r requirements-dev.txt
-python -m pytest tests -q                 # 315 tests
+ruff check . ../sandbox-image             # lint (rules in ruff.toml at the repository root)
+python -m pytest tests -q                 # 316 tests (add --cov=agents --cov=app --cov=pipeline for coverage)
 python evals/run_eval.py --check          # quality gates, also run in CI
+pip-audit -r requirements.txt             # known vulnerabilities in the hub's packages
 
 cd ..
 python -m pytest sandbox-image/tests -q   # 97 tests: the lab simulators and every rewritten lab check
@@ -370,11 +375,11 @@ npm run e2e                               # real browser against a throwaway sta
 
 | Job | What fails the build |
 | :--- | :--- |
-| Gateway | lint (oxlint), any of the 310 tests, coverage under the floor (85% statements, 77% branches; today 89% and 82%), malformed lab content |
+| Gateway | lint (oxlint), any of the 311 tests, coverage under the floor (85% statements, 77% branches; today 89% and 82%), malformed lab content |
 | AI hub | lint (ruff), any test, coverage under 90% (today 97%), the course index out of date, the lab simulator tests, or a quality gate: an answer leak in any of 2,403 hints, a retrieval or scanner regression, a stuck-student case |
 | Client | lint, the local-echo unit tests, the production build |
 | Security | a high or critical vulnerability in what ships (`npm audit`, `pip-audit`), a secret anywhere in the history (gitleaks). Infrastructure files are scanned for risky settings and reported, not gated |
-| Browser | any of the 118 browser checks; screenshots and server logs are kept for a week when it fails |
+| Browser | any of the 120 browser checks; screenshots and server logs are kept for a week when it fails |
 | Docker | a critical, fixable vulnerability in any of the four images (Trivy), a sandbox break-out check, a lab step that cannot be done or passes without work (all 89, in a real container), the simulator tests inside the hardened container, the end-to-end journey |
 | Deploy | runs only on `main`, only after every job above passed |
 

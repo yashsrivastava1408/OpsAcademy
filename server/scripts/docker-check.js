@@ -71,7 +71,7 @@ async function main() {
   // Each fork is tried in a subshell (a failed fork would abort the main
   // shell) and counted with built-ins only: at the limit, `ps` cannot start.
   const forks = await run(
-    'n=0; f=0; i=0; while [ $i -lt 400 ]; do i=$((i+1)); if (sleep 20 &) 2>/dev/null; then n=$((n+1)); else f=$((f+1)); fi; done; set -- /proc/[0-9]*; echo "$n $f $#"',
+    'n=0; f=0; i=0; while [ $i -lt 400 ]; do i=$((i+1)); if (sleep 8 &) 2>/dev/null; then n=$((n+1)); else f=$((f+1)); fi; done; set -- /proc/[0-9]*; echo "$n $f $#"',
     { timeoutMs: 20000 }
   );
   const [startedForks, failedForks, processes] = forks.stdout.trim().split('\n').pop().split(' ').map(Number);
@@ -80,10 +80,26 @@ async function main() {
     failedForks > 0 && processes <= config.sandbox.maxPids,
     `400 forks tried: ${startedForks} started, ${failedForks} refused, ${processes} processes, cap ${config.sandbox.maxPids}`
   );
+  // The container is now at its process limit, so a clean-up command may not
+  // be able to start at all (it cannot on GitHub's runners). The sleeps end on
+  // their own; wait until a new process can run before testing anything else,
+  // or every later check would fail for the wrong reason.
   await run('pkill sleep');
+  let recovered = false;
+  for (let attempt = 0; attempt < 60 && !recovered; attempt += 1) {
+    recovered = (await run('echo recovered')).stdout.includes('recovered');
+    if (!recovered) await sleep(500);
+  }
+  check('the sandbox is usable again once the fork bomb\'s processes end', recovered);
 
   const memory = await run(`python3 -c "x = bytearray(${config.sandbox.maxMemoryMB * 2} * 1024 * 1024); print('allocated')"`, { timeoutMs: 20000 });
-  check('memory is capped (over-allocation is killed)', !memory.stdout.includes('allocated'), `tried ${config.sandbox.maxMemoryMB * 2} MB, cap ${config.sandbox.maxMemoryMB} MB, exit ${memory.exitCode}`);
+  // Exit 137 is a kill by the kernel; a Python MemoryError exits 1. Anything
+  // else means the program never ran, which would prove nothing.
+  check(
+    'memory is capped (over-allocation is killed)',
+    !memory.stdout.includes('allocated') && [137, 1].includes(memory.exitCode),
+    `tried ${config.sandbox.maxMemoryMB * 2} MB, cap ${config.sandbox.maxMemoryMB} MB, exit ${memory.exitCode}`
+  );
   check('sandbox survives the out-of-memory kill', docker.isAlive(id) && (await out('echo ok')) === 'ok');
 
   start = process.hrtime.bigint();

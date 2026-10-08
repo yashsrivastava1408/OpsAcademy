@@ -11,6 +11,8 @@ import './Terminal.css';
 // Close codes after which the sandbox itself is gone, so there is nothing to
 // reconnect to: 4000 session ended (stopped, idle, max age, abuse),
 // 4029 input flood, 1001 the gateway is shutting down.
+const FONT_STACK = "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace";
+
 const SESSION_OVER_CODES = new Set([4000, 4029, 1001]);
 const MAX_RECONNECT_ATTEMPTS = 6;
 const RECONNECT_BASE_MS = 500;
@@ -68,7 +70,7 @@ const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStart
         brightCyan: '#56d364',
         brightWhite: '#f0f6fc',
       },
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      fontFamily: FONT_STACK,
       fontSize: 14,
       lineHeight: 1.35,
       cursorBlink: true,
@@ -142,7 +144,28 @@ const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStart
     });
     observer.observe(termRef.current);
 
+    // The terminal font is a web font. If it arrives after the terminal was
+    // measured, every character changes width while the column count stays
+    // the same, so the grid no longer matches its panel. When fonts finish
+    // loading, make xterm measure again (it only does so when the font
+    // option changes, hence the equivalent second spelling) and refit.
+    let disposed = false;
+    let alternate = false;
+    const remeasure = () => {
+      if (disposed) return;
+      alternate = !alternate;
+      term.options.fontFamily = alternate ? `${FONT_STACK}, monospace` : FONT_STACK;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => fitAddon.fit());
+    };
+    if (document.fonts) {
+      document.fonts.ready.then(remeasure).catch(() => {});
+      document.fonts.addEventListener?.('loadingdone', remeasure);
+    }
+
     return () => {
+      disposed = true;
+      document.fonts?.removeEventListener?.('loadingdone', remeasure);
       cancelAnimationFrame(frame);
       observer.disconnect();
       typeahead.reset();
