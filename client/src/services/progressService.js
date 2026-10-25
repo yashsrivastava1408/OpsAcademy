@@ -58,10 +58,6 @@ export function refreshProgress() {
   return inFlight;
 }
 
-export function isUnitCompleted(unitId) {
-  return current.completedUnits.includes(unitId);
-}
-
 // A different user means different progress.
 onIdentityChange(() => {
   current = EMPTY_PROGRESS;

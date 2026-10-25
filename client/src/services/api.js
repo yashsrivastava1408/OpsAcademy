@@ -336,9 +336,6 @@ export const certificateApi = {
     api.get(`/certificates/verify/${encodeURIComponent(certificateId)}`),
 };
 
-// ── Health Check ─────────────────────────────────────────────
-export const healthCheck = () => api.get('/health');
-
 // ── WebSocket URL helper ─────────────────────────────────────
 // Browsers cannot send headers on a WebSocket, so the token goes in the URL.
 export async function getTerminalWsUrl(sessionId) {
