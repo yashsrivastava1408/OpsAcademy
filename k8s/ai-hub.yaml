@@ -37,6 +37,9 @@ spec:
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef: { name: opsacademy-secrets, key: ANTHROPIC_API_KEY, optional: true }
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef: { name: opsacademy-secrets, key: GROQ_API_KEY, optional: true }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

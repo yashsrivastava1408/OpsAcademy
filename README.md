@@ -127,7 +127,7 @@ sequenceDiagram
 
 A student cannot jump to the strongest hint: each request unlocks one more tier for that step, and the number of hints used feeds the "focus areas" on the dashboard. If the hub is down, the gateway answers from the step's own instructions and says so.
 
-The mentor works without any LLM. Setting `ANTHROPIC_API_KEY` on the hub switches hint writing to Claude; the rule-based hint remains the fallback when the call fails, is refused, or gives too much away for the tier.
+The mentor works without any LLM. Setting `ANTHROPIC_API_KEY` (Claude) or `GROQ_API_KEY` (Groq) on the hub switches hint writing to the LLM backend; the rule-based hint remains the fallback when the call fails, is refused, or gives too much away for the tier.
 
 The chat window receives the hint while it is being written (`POST /api/agent/hint/stream`, one JSON event per line, passed through the gateway). Streaming does not weaken the leak guard: the hub holds text back until the end of a sentence, and the whole hint so far must pass the guard before that sentence is released. If the model gives too much away, fails or stops early, the client is told to discard what it showed and gets the rule-based hint instead. If streaming is not available at all, the client falls back to the plain request above.
 
@@ -335,7 +335,7 @@ Open `http://localhost:5173`. The gateway starts one locked-down container per l
 
 ### Optional LLM mentor
 
-Set `ANTHROPIC_API_KEY` for the hub and raise `AI_HUB_TIMEOUT_MS` on the gateway to about 15000. `LLM_MODEL` and `LLM_EFFORT` are in `ai-hub/.env.example`.
+Set `ANTHROPIC_API_KEY` (Claude) or `GROQ_API_KEY` (Groq) for the hub and raise `AI_HUB_TIMEOUT_MS` on the gateway to about 15000. `LLM_PROVIDER`, `LLM_MODEL`, and `LLM_EFFORT` are in `ai-hub/.env.example`.
 
 ---
 
@@ -410,7 +410,7 @@ Optional gateway settings (all in `server/.env.example`):
 | `METRICS_TOKEN` | A bearer token on `/metrics` | `/metrics` is open |
 | `DAILY_CHALLENGE=off` | Removes the lab of the day | It is on |
 
-On the AI hub, `ANTHROPIC_API_KEY` switches hint writing and interview scoring to Claude; raise `AI_HUB_TIMEOUT_MS` on the gateway to about 15000 when you set it. `SEMANTIC_SEARCH=off` keeps the hub on lexical retrieval even when the embedding package is installed.
+On the AI hub, `ANTHROPIC_API_KEY` or `GROQ_API_KEY` switches hint writing and interview scoring to an LLM; raise `AI_HUB_TIMEOUT_MS` on the gateway to about 15000 when you set it. `SEMANTIC_SEARCH=off` keeps the hub on lexical retrieval even when the embedding package is installed.
 
 ---
 
