@@ -7,7 +7,7 @@
 #
 # Build:  docker build -t opsacademy-sandbox:latest sandbox-image
 
-FROM alpine:3.20
+FROM alpine:3.24
 
 RUN apk add --no-cache \
       bash coreutils findutils grep sed gawk tar gzip \
