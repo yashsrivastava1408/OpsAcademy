@@ -6,4 +6,4 @@ python-dotenv==1.2.2
 # Optional LLM mentor: only used when ANTHROPIC_API_KEY is set.
 anthropic>=1,<2
 # Groq backend (GROQ_API_KEY) talks to its HTTP API directly.
-requests>=2.31,<3
+requests>=2.34.2,<3
