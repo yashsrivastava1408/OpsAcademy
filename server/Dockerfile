@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Build tools for compiling node-pty, plus the basic tools labs expect when
 # sandboxes run as PTY shells inside this container (SANDBOX_MODE=pty).
-RUN apk add --no-cache python3 make g++ bash git curl procps
+RUN apk upgrade --no-cache && apk add --no-cache python3 make g++ bash git curl procps
 
 # Copy dependency manifests
 COPY package*.json ./
