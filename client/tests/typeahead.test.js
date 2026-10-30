@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTypeahead } from '../src/components/Terminal/typeahead.js';

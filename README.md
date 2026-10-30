@@ -56,45 +56,58 @@ Every unit has three modes:
 
 ```mermaid
 graph TB
-    subgraph Client["Client"]
-        UI["React 19 SPA"]
-        TERM["xterm.js terminal"]
+    subgraph Client["Client Tier"]
+        UI["React 19 SPA (Vite + Nginx)"]
+        TERM["xterm.js (Local Echo Predictor)"]
     end
 
     subgraph Gateway["API Gateway (Node.js / Express)"]
-        AUTH["JWT auth, rate limits, ownership checks"]
-        MGR["Sandbox manager: sessions, limits, reaper"]
-        POOL["Pre-warmed sandbox pool"]
-        GUARD["Terminal tripwire"]
-        STORE[("JSON data store: users, progress, certificates")]
-        METRICS["/metrics"]
+        AUTH["Auth & Security (JWT, Rate Limiting, Helmet)"]
+        MGR["Sandbox Manager (Lifecycle, Limits, Reaper)"]
+        POOL["Pre-Warmed Sandbox Pool"]
+        GUARD["Terminal Tripwire (Command Guard)"]
+        STORE[("Pluggable Data Store (JSON / SQLite)")]
+        STREAM["SSE / Stream Relay"]
+        METRICS["/metrics (Prometheus Exporter)"]
     end
 
-    subgraph Engines["Sandbox engines"]
-        DOCKER["Docker: one locked-down container per learner"]
-        PTY["PTY: local shell, development only"]
+    subgraph Engines["Sandbox Engines"]
+        DOCKER["Docker Engine (Isolated Containers, Network: none)"]
+        SIMS["Simulated CLIs (Docker, K8s, AWS)"]
+        PTY["PTY Engine (Local Shell, Development)"]
     end
 
-    subgraph Hub["AI Hub (Python / Flask)"]
-        A0["Abuse scanner"]
-        A1["Lab assessor"]
-        A15["Container inspector"]
-        A2["Hybrid retriever (BM25 + TF-IDF)"]
-        A3["Mentor (rules, optional Claude)"]
-        A4["Interview scorer"]
+    subgraph Hub["AI Hub (Python / Flask / Gunicorn)"]
+        A0["Abuse & Injection Scanner"]
+        A1["Lab Assessor & Diagnostician"]
+        A15["Container Filesystem Inspector"]
+        A2["Hybrid Retriever (BM25 + TF-IDF + Dense Embeddings)"]
+        CACHE["In-Memory LRU Hint Cache"]
+        A3["AI Mentor (Rules + Claude / Groq LLMs)"]
+        A4["Interview Scorer (Rubric + Semantic Judge)"]
     end
 
-    Client -->|HTTPS + WSS| Gateway
+    subgraph Monitoring["Observability & Cloud"]
+        PROM["Prometheus + Alertmanager"]
+        GRAF["Grafana Dashboards"]
+        LLM_EXT["LLM Providers (Anthropic Claude / Groq)"]
+    end
+
+    Client -->|"HTTPS + WSS"| Gateway
     MGR --> POOL
     POOL --> DOCKER
+    DOCKER --> SIMS
     POOL --> PTY
-    Gateway -->|"REST, shared token"| Hub
-    METRICS -.-> PROM["Prometheus + Grafana"]
+    Gateway -->|"REST + SSE (Shared Token)"| Hub
+    A3 -.-> LLM_EXT
+    METRICS -.-> PROM
+    PROM --> GRAF
 
     style Client fill:#0f172a,stroke:#0284c7,color:#f8fafc
     style Gateway fill:#0f172a,stroke:#6366f1,color:#f8fafc
     style Hub fill:#0f172a,stroke:#d97706,color:#f8fafc
     style Engines fill:#0f172a,stroke:#059669,color:#f8fafc
+    style Monitoring fill:#0f172a,stroke:#10b981,color:#f8fafc
 ```
 
 The gateway is the only service the browser talks to. It owns every session, so each sandbox, terminal connection and hint request is tied to one authenticated identity (a guest token is issued on first visit; registering upgrades it in place and keeps the progress).

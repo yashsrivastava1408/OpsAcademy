@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex */
 /**
  * Typing on a slow connection.
  *
@@ -13,6 +14,7 @@ const APP = process.env.APP_URL || 'http://localhost:4173';
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `  -> ${detail}` : ''}`); };
 
+/* eslint-disable no-control-regex */
 /** On a failing run, keep a picture of where the browser ended up (see run.mjs). */
 async function keepScreenshot(target, name) {
   if (!process.env.E2E_ARTIFACTS || !target) return;
