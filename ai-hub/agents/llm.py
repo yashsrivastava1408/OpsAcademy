@@ -1,7 +1,8 @@
 """
-Optional LLM backend for the mentor (Claude, via the Anthropic SDK).
+Optional LLM backend for the mentor: Claude (Anthropic SDK) or Groq.
 
-Enabled when credentials are available and LLM_ENABLED is not "off". Every
+LLM_PROVIDER picks one; "auto" uses Claude when ANTHROPIC_API_KEY is set,
+otherwise Groq when GROQ_API_KEY is set. Enabled unless LLM_ENABLED is "off". Every
 caller must be ready for `complete` to return None: that is how a missing
 key, a timeout, an API error or a refusal all surface, and the caller then
 answers from rules instead.
@@ -12,6 +13,7 @@ import logging
 import os
 
 import config
+from agents.llm_groq import GroqClient, LLMStreamError
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +21,6 @@ try:
     import anthropic
 except ImportError:  # the SDK is an optional dependency
     anthropic = None
-
-
-class LLMStreamError(Exception):
-    """The model could not finish a streamed answer (unavailable, cut off or refused)."""
 
 
 class LLMClient:
@@ -155,4 +153,35 @@ class LLMClient:
             raise LLMStreamError(str(final.stop_reason))
 
 
-llm = LLMClient()
+def build_default():
+    """The client the app uses, chosen from LLM_PROVIDER and the keys that are set."""
+    provider = config.LLM_PROVIDER
+    if config.LLM_ENABLED == "off":
+        return LLMClient()
+    if provider == "auto":
+        provider = "anthropic" if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN") else "groq"
+    if provider == "groq":
+        return GroqClient(os.getenv("GROQ_API_KEY", ""))
+    return LLMClient()
+
+
+class _LazyDefault:
+    """Resolves the provider on first use, so .env and test settings are read first."""
+
+    _client = None
+
+    def _resolve(self):
+        if self._client is None:
+            self._client = build_default()
+        return self._client
+
+    def __getattr__(self, name):
+        return getattr(self._resolve(), name)
+
+    @property
+    def model(self):
+        client = self._resolve()
+        return getattr(client, "model", None) or config.LLM_MODEL
+
+
+llm = _LazyDefault()

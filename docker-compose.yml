@@ -68,6 +68,8 @@ services:
       - AI_HUB_TOKEN=${AI_HUB_TOKEN:?Set AI_HUB_TOKEN}
       # Optional LLM mentor; leave unset for the rule-based mentor.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-auto}
     restart: unless-stopped
     networks:
       - opsacademy-net

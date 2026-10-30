@@ -17,6 +17,9 @@ RUN npm run build
 # Stage 2: Serve static files with Nginx
 FROM nginx:alpine
 
+# Upgrade packages to pull in security patches (e.g. brotli-libs CVE fix)
+RUN apk upgrade --no-cache
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 

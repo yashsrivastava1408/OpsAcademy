@@ -15,7 +15,11 @@ INTERNAL_TOKEN = os.getenv("AI_HUB_TOKEN", "")
 # Optional LLM mentor. Without credentials the hub answers from its rules
 # and retrieval alone, which is also the fallback when the LLM call fails.
 LLM_ENABLED = os.getenv("LLM_ENABLED", "auto").lower()  # auto | on | off
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "auto").lower()  # auto | anthropic | groq
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-opus-5-5")
+# A Claude model name left in LLM_MODEL must not be sent to Groq.
+_explicit_model = os.getenv("LLM_MODEL", "")
+GROQ_MODEL = _explicit_model if _explicit_model and not _explicit_model.startswith("claude") else "openai/gpt-oss-120b"
 LLM_EFFORT = os.getenv("LLM_EFFORT", "low")
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "12"))
 

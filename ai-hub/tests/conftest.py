@@ -9,6 +9,12 @@ import pytest
 # installed and how far it has loaded; its own tests use a stand-in.
 os.environ["SEMANTIC_SEARCH"] = "off"
 
+# A developer's real keys in ai-hub/.env must not switch the LLM on in tests.
+# load_dotenv() never overrides a variable that is already set, so blank ones win.
+for key in ("GROQ_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+    os.environ[key] = ""
+os.environ["LLM_PROVIDER"] = "auto"
+
 HUB_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HUB_DIR))
 
