@@ -110,8 +110,8 @@ function createStore(config) {
     const store = new SupabaseStore({
       supabaseUrl: config.supabaseUrl,
       supabaseKey: config.supabaseSecretKey || config.supabaseKey,
+      importPath: jsonPath,
     });
-    if (fs.existsSync(jsonPath)) store.importJson(jsonPath);
     return store;
   }
 
