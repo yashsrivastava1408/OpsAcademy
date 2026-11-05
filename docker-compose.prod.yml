@@ -69,7 +69,10 @@ services:
       - SERVICE_ROLE=all
       - SANDBOX_MODE=docker
       - SANDBOX_IMAGE=opsacademy-sandbox:latest
-      - STORE_DRIVER=sqlite
+      - STORE_DRIVER=${STORE_DRIVER:-sqlite}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
+      - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY:-}
       - DATA_DIR=/data
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - CERT_SECRET=${CERT_SECRET:-}

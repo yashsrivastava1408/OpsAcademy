@@ -74,7 +74,12 @@ AI_HUB_TOKEN=${AI_HUB_TOKEN}
 ADMIN_TOKEN=${ADMIN_TOKEN}
 METRICS_TOKEN=
 
-STORE_DRIVER=sqlite
+# Pilot data store is Supabase (Postgres). Fill the three SUPABASE_* values, or
+# set STORE_DRIVER=sqlite to fall back to a local database on this server.
+STORE_DRIVER=supabase
+SUPABASE_URL=
+SUPABASE_SECRET_KEY=
+SUPABASE_PUBLISHABLE_KEY=
 DATA_DIR=/data
 
 RESEND_API_KEY=
@@ -86,15 +91,18 @@ CORS_ORIGINS=http://localhost
 ANTHROPIC_API_KEY=
 GROQ_API_KEY=
 LLM_PROVIDER=auto
-AI_HUB_TIMEOUT_MS=8000
+AI_HUB_TIMEOUT_MS=10000
 WITH_SEMANTIC=true
 
-SANDBOX_MAX_TOTAL=35
-SANDBOX_POOL_SIZE=4
+SANDBOX_MAX_TOTAL=45
+SANDBOX_POOL_SIZE=5
 SANDBOX_MEMORY_MB=256
 SANDBOX_CPUS=0.5
+CAMPUS_IPS=
+CAMPUS_RATE_MULTIPLIER=15
 EOF
-  echo -e "${GREEN}Created ${ENV_FILE} with auto-generated secrets.${NC}"
+  chmod 600 "${ENV_FILE}"
+  echo -e "${GREEN}Created ${ENV_FILE} (mode 600) with auto-generated secrets.${NC}"
   echo -e "${YELLOW}[NOTICE] Edit ${ENV_FILE} to set your custom DOMAIN, ACME_EMAIL, and RESEND_API_KEY if desired.${NC}"
 else
   echo -e "${GREEN}[3/6] Existing .env.production found.${NC}"
@@ -139,7 +147,7 @@ docker compose -f docker-compose.prod.yml ps
 echo -e "\n${BLUE}==============================================================================${NC}"
 echo -e "${GREEN}✓ OpsAcademy Production Stack successfully deployed!${NC}"
 echo -e "  - Reverse Proxy (TLS / WebSockets): ports 80, 443"
-echo -e "  - SQLite Store Persistence: volume 'server-data'"
+echo -e "  - Data store: Supabase when STORE_DRIVER=supabase (else SQLite in volume 'server-data')"
 echo -e "  - Isolated AI Hub: running on internal bridge network"
 echo -e "  - Service auto-starts on EC2 reboot via systemd: opsacademy.service"
 echo -e "${BLUE}==============================================================================${NC}"
