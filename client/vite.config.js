@@ -9,8 +9,11 @@ const DEFAULT_API_URL = 'http://localhost:4000'
  * index.html from VITE_API_URL, so the policy always matches the deployment.
  */
 function apiContentSecurityPolicy(apiUrl) {
-  const origin = new URL(apiUrl).origin
-  const sources = `${origin} ${origin.replace(/^http/, 'ws')}`
+  // Same-origin setups (VITE_API_URL empty, "/" or "/api") are already covered
+  // by 'self', so nothing extra is added to the policy.
+  const absolute = /^https?:\/\//.test(apiUrl)
+  const origin = absolute ? new URL(apiUrl).origin : ''
+  const sources = absolute ? `${origin} ${origin.replace(/^http/, 'ws')}` : ''
   return {
     name: 'opsacademy-api-csp',
     transformIndexHtml: (html) => html.replace('__API_CONNECT_SRC__', sources),
@@ -21,6 +24,6 @@ function apiContentSecurityPolicy(apiUrl) {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   return {
-    plugins: [react(), apiContentSecurityPolicy(env.VITE_API_URL || DEFAULT_API_URL)],
+    plugins: [react(), apiContentSecurityPolicy(env.VITE_API_URL ?? DEFAULT_API_URL)],
   }
 })
