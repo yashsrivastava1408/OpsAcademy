@@ -211,7 +211,6 @@ services:
       - opsacademy-public
 
 volumes:
-    driver: local
   caddy-data:
     driver: local
   caddy-config:
