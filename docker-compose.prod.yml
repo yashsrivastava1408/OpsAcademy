@@ -44,7 +44,7 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${PUBLIC_API_URL:-/api}
+        VITE_API_URL: ${PUBLIC_API_URL-}  # empty = same origin, via Caddy
     container_name: opsacademy-client
     restart: unless-stopped
     expose:

@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { normalizeApiBase, wsBase } from '../lib/apiBase';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API_BASE_URL = normalizeApiBase(import.meta.env.VITE_API_URL);
 const TOKEN_KEY = 'opsacademy_token';
 const USER_KEY = 'opsacademy_user';
 
@@ -344,8 +345,8 @@ export const certificateApi = {
 // Browsers cannot send headers on a WebSocket, so the token goes in the URL.
 export async function getTerminalWsUrl(sessionId) {
   const token = await ensureIdentity();
-  const wsBase = API_BASE_URL.replace(/^http/, 'ws');
-  return `${wsBase}/api/terminal?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`;
+  const base = wsBase(API_BASE_URL, window.location.origin);
+  return `${base}/api/terminal?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`;
 }
 
 export default api;
