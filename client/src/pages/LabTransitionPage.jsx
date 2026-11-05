@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { safeInternalPath } from '../lib/safePath';
 import {
   Terminal,
   Shield,
@@ -57,7 +58,11 @@ export default function LabTransitionPage() {
   // Determine target destination
   const unitParam = searchParams.get('unit');
   const toParam = searchParams.get('to');
-  const targetUrl = toParam || (unitParam ? `/unit/${encodeURIComponent(unitParam)}/practice` : '/dashboard');
+  const targetUrl = toParam
+    ? safeInternalPath(toParam)
+    : unitParam
+      ? `/unit/${encodeURIComponent(unitParam)}/practice`
+      : '/dashboard';
 
   const [progress, setProgress] = useState(0);
   const [isRedirecting, setIsRedirecting] = useState(false);
@@ -81,14 +86,17 @@ export default function LabTransitionPage() {
   }, []);
 
   useEffect(() => {
-    if (progress >= 100 && !isRedirecting) {
-      setIsRedirecting(true);
-      const redirectTimeout = setTimeout(() => {
-        navigate(targetUrl, { replace: true });
-      }, 350);
-      return () => clearTimeout(redirectTimeout);
-    }
-  }, [progress, isRedirecting, navigate, targetUrl]);
+    if (progress >= 100) setIsRedirecting(true);
+  }, [progress]);
+
+  // Separate effect: setting isRedirecting must not cancel the pending navigation.
+  useEffect(() => {
+    if (!isRedirecting) return undefined;
+    const redirectTimeout = setTimeout(() => {
+      navigate(targetUrl, { replace: true });
+    }, 350);
+    return () => clearTimeout(redirectTimeout);
+  }, [isRedirecting, navigate, targetUrl]);
 
   return (
     <div className="lab-portal-stage">
