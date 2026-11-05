@@ -390,7 +390,7 @@ sudo ./scripts/deploy-ec2.sh
 This single command provisions:
 - **Automatic TLS**: Caddy edge proxy issuing and renewing free Let's Encrypt certificates on ports 80/443.
 - **WebSocket Streaming**: Long-lived terminal tunnels with zero timeouts and low-latency keystroke echoes.
-- **Session Reconciliation**: Server restarts or deployments do not drop students' running containers; the orchestrator automatically re-attaches to live containers and restores shell states from Postgres.db`).
+- **Session Reconciliation**: Server restarts or deployments do not drop students' running containers; the orchestrator automatically re-attaches to live containers and restores session records from Postgres.
 - **Network Isolation**: The AI Hub runs on an internal Docker network with zero public port exposure.
 - **Zero-Touch Boot**: Configures `opsacademy.service` in systemd for automatic startup on EC2 reboot.
 
