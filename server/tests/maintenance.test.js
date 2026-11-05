@@ -45,6 +45,32 @@ describe('maintenance jobs (#78, #79)', () => {
   });
 });
 
+describe('job scheduling', () => {
+  test('jobs never overlap, even when they start together', async () => {
+    jest.useFakeTimers();
+    try {
+      let running = 0;
+      let peak = 0;
+      const slow = (name) => ({
+        name,
+        everyMs: 1000,
+        run: async () => {
+          running += 1;
+          peak = Math.max(peak, running);
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          running -= 1;
+        },
+      });
+      const stop = startJobs([slow('a'), slow('b'), slow('c')]);
+      await jest.advanceTimersByTimeAsync(5000);
+      stop();
+      expect(peak).toBe(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
 describe('async handler and repository errors', () => {
   const app = express();
   app.get('/boom', asyncHandler(async () => { throw new Error('async failure'); }));

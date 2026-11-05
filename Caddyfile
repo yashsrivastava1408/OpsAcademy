@@ -1,6 +1,9 @@
 {
     email {$ACME_EMAIL:admin@example.com}
     admin off
+    # A client that connects to a bare IP sends no server name (SNI). Behind NAT (AWS) Caddy would
+    # then look for a certificate for the machine's private address and fail the handshake.
+    default_sni {$DOMAIN:localhost}
 }
 
 # TLS mode. A real domain uses automatic Let's Encrypt certificates (the default). Let's Encrypt cannot

@@ -144,7 +144,7 @@ services:
       # The worker holds advisory locks, which need a session-mode connection (the session pooler
       # or direct string), never the transaction pooler the gateway uses. worker.js switches to this.
       - WORKER_DATABASE_URL=${WORKER_DATABASE_URL:-${MIGRATION_DATABASE_URL:-}}
-      - DATABASE_POOL_SIZE=2
+      - DATABASE_POOL_SIZE=3
     depends_on:
       migrate:
         condition: service_completed_successfully
