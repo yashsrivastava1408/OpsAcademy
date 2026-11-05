@@ -93,6 +93,26 @@ function getById(id) {
   return getStore().get(USERS, id);
 }
 
+/**
+ * Make sure a verified Supabase identity has a user record. This is the only
+ * place a first-time Supabase user is created (token verification stays
+ * read-only). Returns the stored user.
+ */
+function ensureSupabaseUser(identity) {
+  const existing = getStore().get(USERS, identity.id);
+  if (existing) return existing;
+  const user = {
+    id: identity.id,
+    name: identity.name,
+    email: identity.email,
+    guest: Boolean(identity.guest),
+    emailVerified: Boolean(identity.emailVerified),
+    createdAt: new Date().toISOString(),
+  };
+  getStore().set(USERS, user.id, user);
+  return user;
+}
+
 function validatePassword(password) {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH || password.length > 128) {
     throw new UserError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
@@ -273,6 +293,7 @@ function pruneExpiredGuests(now = Date.now()) {
 module.exports = {
   createGuest,
   getById,
+  ensureSupabaseUser,
   register,
   login,
   publicUser,

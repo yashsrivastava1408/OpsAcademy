@@ -11,15 +11,37 @@ const config = require('../config');
 const logger = require('./logger');
 
 const JWKS_CACHE = new Map(); // kid -> crypto.KeyObject
+const ALLOWED_ALGORITHMS = ['ES256', 'RS256']; // asymmetric only; never trust the header
+const AUDIENCE = 'authenticated';
+const MIN_REFRESH_INTERVAL_MS = 60 * 1000;
 let jwksUrl = null;
+let issuer = null;
+let lastFetchAt = 0;
+let inflight = null;
 
 if (config.supabaseUrl) {
-  jwksUrl = `${config.supabaseUrl.replace(/\/+$/, '')}/auth/v1/.well-known/jwks.json`;
+  const base = config.supabaseUrl.replace(/\/+$/, '');
+  jwksUrl = `${base}/auth/v1/.well-known/jwks.json`;
+  issuer = `${base}/auth/v1`;
 }
 
-/** Preload JWKS public keys from Supabase */
-async function refreshJwks() {
-  if (!jwksUrl) return;
+/**
+ * Fetch JWKS public keys from Supabase. Calls are coalesced and, unless
+ * `force` is set, limited to one network fetch per minute so unknown key ids
+ * cannot be used to hammer Supabase.
+ */
+function refreshJwks({ force = false } = {}) {
+  if (!jwksUrl) return Promise.resolve();
+  if (inflight) return inflight;
+  if (!force && lastFetchAt && Date.now() - lastFetchAt < MIN_REFRESH_INTERVAL_MS) return Promise.resolve();
+  lastFetchAt = Date.now();
+  inflight = fetchJwks().finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+async function fetchJwks() {
   try {
     const res = await fetch(jwksUrl);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -38,11 +60,16 @@ async function refreshJwks() {
   }
 }
 
-// Initial JWKS fetch in background
+// First load at startup; `ready()` lets the server wait for it.
+const initialLoad = jwksUrl && !config.isTest ? refreshJwks({ force: true }) : Promise.resolve();
 if (jwksUrl && !config.isTest) {
-  refreshJwks();
   // Refresh daily
-  setInterval(refreshJwks, 24 * 60 * 60 * 1000).unref();
+  setInterval(() => refreshJwks({ force: true }), 24 * 60 * 60 * 1000).unref();
+}
+
+/** Resolves once the first JWKS load has finished (successfully or not). */
+function ready() {
+  return initialLoad;
 }
 
 
@@ -58,7 +85,8 @@ function verifySupabaseToken(token) {
     if (!decoded || !decoded.header) return null;
 
     const kid = decoded.header.kid;
-    const alg = decoded.header.alg || 'ES256';
+    const alg = decoded.header.alg;
+    if (!ALLOWED_ALGORITHMS.includes(alg)) return null;
 
     let key = kid ? JWKS_CACHE.get(kid) : null;
 
@@ -70,7 +98,7 @@ function verifySupabaseToken(token) {
 
     if (!key) return null;
 
-    const payload = jwt.verify(token, key, { algorithms: [alg] });
+    const payload = jwt.verify(token, key, { algorithms: ALLOWED_ALGORITHMS, issuer, audience: AUDIENCE });
     if (!payload || !payload.sub) return null;
 
     const metadata = payload.user_metadata || {};
@@ -90,4 +118,5 @@ function verifySupabaseToken(token) {
 module.exports = {
   verifySupabaseToken,
   refreshJwks,
+  ready,
 };

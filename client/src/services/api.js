@@ -132,6 +132,10 @@ export const authApi = {
   me: () =>
     api.get('/auth/me'),
 
+  // First call after a Supabase sign-in: creates the learner's record.
+  session: () =>
+    api.post('/auth/session'),
+
   forgotPassword: (email) =>
     api.post('/auth/forgot', { email }),
 

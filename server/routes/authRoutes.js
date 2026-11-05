@@ -76,6 +76,19 @@ router.post('/login', authLimiter, async (req, res, next) => {
 });
 
 /**
+ * POST /api/auth/session
+ * First call after a Supabase sign-in: creates the learner's record if needed.
+ * Token verification itself never writes, so this is the one explicit write.
+ */
+router.post('/session', authLimiter, requireAuth, (req, res) => {
+  const user = req.user.supabase ? userService.ensureSupabaseUser(req.user) : userService.getById(req.user.id);
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: account no longer exists' });
+  }
+  res.json({ success: true, user: userService.publicUser(user) });
+});
+
+/**
  * GET /api/auth/me
  */
 router.get('/me', requireAuth, (req, res) => {

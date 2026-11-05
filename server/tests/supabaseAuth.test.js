@@ -9,8 +9,8 @@ function makeKeys() {
   return { jwk, privateKey };
 }
 
-function sign(privateKey, payload, header = {}) {
-  return jwt.sign(payload, privateKey, {
+function sign(privateKey, payload, { iss = `${SUPABASE_URL}/auth/v1`, aud = 'authenticated', ...header } = {}) {
+  return jwt.sign({ iss, aud, ...payload }, privateKey, {
     algorithm: 'ES256',
     keyid: 'test-kid',
     ...header,
@@ -85,6 +85,44 @@ describe('supabaseAuth', () => {
     expect(verifySupabaseToken(sign(other.privateKey, { sub: 'x' }))).toBeNull();
     expect(verifySupabaseToken(sign(privateKey, { sub: 'x', exp: Math.floor(Date.now() / 1000) - 60 }))).toBeNull();
     expect(verifySupabaseToken(sign(privateKey, { email: 'a@b.c' }))).toBeNull();
+  });
+
+  it('rejects the wrong issuer, the wrong audience and an unexpected algorithm', async () => {
+    const { jwk, privateKey } = makeKeys();
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ keys: [jwk] }) });
+    const { verifySupabaseToken, refreshJwks } = loadModule(fetchMock);
+    await refreshJwks();
+
+    expect(verifySupabaseToken(sign(privateKey, { sub: 'x' }, { iss: 'https://evil.example/auth/v1' }))).toBeNull();
+    expect(verifySupabaseToken(sign(privateKey, { sub: 'x' }, { aud: 'anon' }))).toBeNull();
+    // HS256 token "signed" with a public value: must be refused before any key lookup.
+    const hs = jwt.sign({ sub: 'x', iss: `${SUPABASE_URL}/auth/v1`, aud: 'authenticated' }, 'secret', {
+      algorithm: 'HS256',
+      keyid: 'test-kid',
+    });
+    expect(verifySupabaseToken(hs)).toBeNull();
+    expect(verifySupabaseToken(sign(privateKey, { sub: 'ok' }))).toMatchObject({ id: 'ok' });
+  });
+
+  it('fetches the JWKS at most once per minute, however many unknown key ids arrive', async () => {
+    const { privateKey } = makeKeys();
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ keys: [] }) });
+    const { verifySupabaseToken, refreshJwks } = loadModule(fetchMock);
+    await refreshJwks();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    for (let i = 0; i < 25; i += 1) {
+      verifySupabaseToken(sign(privateKey, { sub: 'x' }, { keyid: `unknown-${i}` }));
+    }
+    await refreshJwks();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await refreshJwks({ force: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('exposes ready() for startup', async () => {
+    const { ready } = loadModule(jest.fn());
+    await expect(ready()).resolves.toBeUndefined();
   });
 
   it('returns null and refreshes in the background when the key is not cached yet', () => {
