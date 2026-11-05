@@ -71,14 +71,18 @@ graph TB
         MGR["Sandbox Manager (Lifecycle, Reconciliation, Limits, Reaper)"]
         POOL["Pre-Warmed Sandbox Pool (Standby Containers)"]
         GUARD["Terminal Tripwire (Command Guard)"]
-        STORE[("Data Store (SQLite WAL / JSON / Supabase Postgres)")]
+        REPO["Repository layer (async): users, progress, certificates, sessions"]
         STREAM["SSE / Stream Relay"]
         METRICS["/metrics (Prometheus Exporter)"]
     end
 
-    subgraph Supa["Supabase (optional)"]
+    subgraph Worker["Worker (separate process)"]
+        JOBS["Pruning of guests and tokens, leaderboard refresh"]
+    end
+
+    subgraph Supa["Supabase"]
         SAUTH["Supabase Auth (JWKS-verified access tokens)"]
-        SPG[("Postgres (document store driver)")]
+        SPG[("Postgres: versioned SQL migrations, RLS on every table")]
     end
 
     subgraph Engines["Sandbox Engines"]
@@ -109,7 +113,9 @@ graph TB
     CADDY -->|"/api/* (REST)"| Gateway
     UI -.->|"sign-in (Supabase JS)"| SAUTH
     AUTH -.->|"verify JWT locally via JWKS"| SAUTH
-    STORE -.->|"STORE_DRIVER=supabase"| SPG
+    REPO -->|"pg pool (transaction pooler)"| SPG
+    JOBS -->|"advisory-locked jobs"| SPG
+    MIGRATE["migrate (one-shot, before each deploy)"] -->|"direct connection"| SPG
     MGR --> POOL
     POOL --> DOCKER
     DOCKER --> SIMS
@@ -123,12 +129,13 @@ graph TB
     style Ingress fill:#0f172a,stroke:#38bdf8,color:#f8fafc
     style Gateway fill:#0f172a,stroke:#6366f1,color:#f8fafc
     style Hub fill:#0f172a,stroke:#d97706,color:#f8fafc
+    style Worker fill:#0f172a,stroke:#a78bfa,color:#f8fafc
     style Supa fill:#0f172a,stroke:#3ecf8e,color:#f8fafc
     style Engines fill:#0f172a,stroke:#059669,color:#f8fafc
     style Monitoring fill:#0f172a,stroke:#10b981,color:#f8fafc
 ```
 
-The gateway owns every session, so each sandbox, terminal connection and hint request is tied to one authenticated identity (a guest token is issued on first visit; registering upgrades it in place and keeps the progress). In production, sessions are persisted in SQLite and reconciled with running Docker containers across restarts, ensuring students never lose an active lab session during redeploys.
+The gateway owns every session, so each sandbox, terminal connection and hint request is tied to one authenticated identity (a guest token is issued on first visit; registering upgrades it in place and keeps the progress). All learner data lives in Postgres (Supabase), so the application servers are stateless: session records are persisted there and reconciled with running Docker containers across restarts, ensuring students never lose an active lab session during redeploys. The schema is plain SQL migrations (`supabase/migrations/`) applied by a small runner with checksums and an advisory lock; every table has row-level security with the browser roles locked out (proved in CI). See [ADR 0001](docs/adr/0001-postgres-schema-and-migrations.md).
 
 ---
 
@@ -318,8 +325,8 @@ Units are plain JSON under `server/data/units/`. Adding one needs no code: see [
 - **Frontend**: React 19, Vite, xterm.js, React Router, plain CSS
 - **API gateway**: Node.js 22, Express, `ws`, `node-pty`, `dockerode`, JWT, bcrypt, helmet, express-rate-limit, pino, prom-client
 - **AI hub**: Python 3.11, Flask, gunicorn, scikit-learn (TF-IDF, Isolation Forest), a small BM25 implementation, optional sentence embeddings (fastembed, ONNX), optional Anthropic SDK
-- **Storage**: one JSON file with atomic writes by default, SQLite (`STORE_DRIVER=sqlite`, the one built into Node), or Supabase Postgres (`STORE_DRIVER=supabase`, with Supabase Auth for sign-in), behind the same small store interface
-- **Testing**: Jest and supertest (311 tests), pytest (316 for the AI hub, 97 for the lab simulators), an end-to-end script that plays a learner over HTTP and WebSocket (56 checks), and Playwright browser tests (120 checks, including typing on a slow connection and a phone-sized screen)
+- **Storage**: Postgres (Supabase) through an async repository layer (a Postgres implementation and an in-memory one sharing one contract test suite), versioned SQL migrations, a background worker for housekeeping, Supabase Auth for sign-in. Without `DATABASE_URL` the gateway keeps data in memory (development only; production refuses to start without it).
+- **Testing**: Jest and supertest (362 tests, and the same suite re-run against real Postgres in CI, plus migration, schema, repository-contract and data-import tests), pytest (316 for the AI hub, 97 for the lab simulators), an end-to-end script that plays a learner over HTTP and WebSocket (56 checks), and Playwright browser tests (120 checks, including typing on a slow connection and a phone-sized screen)
 - **Operations**: Docker Compose, Kubernetes manifests, Prometheus, Grafana, GitHub Actions
 
 There is no MongoDB, vector database or agent framework in this project. Retrieval is lexical with an optional embedding ranker held in memory, and the "agents" are plain Python classes called in order.
@@ -383,7 +390,7 @@ sudo ./scripts/deploy-ec2.sh
 This single command provisions:
 - **Automatic TLS**: Caddy edge proxy issuing and renewing free Let's Encrypt certificates on ports 80/443.
 - **WebSocket Streaming**: Long-lived terminal tunnels with zero timeouts and low-latency keystroke echoes.
-- **Session Reconciliation**: Server restarts or deployments do not drop students' running containers; the orchestrator automatically re-attaches to live containers and restores shell states from SQLite (`store.db`).
+- **Session Reconciliation**: Server restarts or deployments do not drop students' running containers; the orchestrator automatically re-attaches to live containers and restores session records from Postgres.
 - **Network Isolation**: The AI Hub runs on an internal Docker network with zero public port exposure.
 - **Zero-Touch Boot**: Configures `opsacademy.service` in systemd for automatic startup on EC2 reboot.
 
@@ -427,7 +434,7 @@ npm run e2e                               # real browser against a throwaway sta
 
 | Job | What fails the build |
 | :--- | :--- |
-| Gateway | lint (oxlint), any of the 311 tests, coverage under the floor (85% statements, 77% branches; today 89% and 82%), malformed lab content |
+| Gateway | lint (oxlint), any of the backend tests, coverage under the floor (85% statements, 77% branches; today 89% and 82%), malformed lab content |
 | AI hub | lint (ruff), any test, coverage under 90% (today 97%), the course index out of date, the lab simulator tests, or a quality gate: an answer leak in any of 2,403 hints, a retrieval or scanner regression, a stuck-student case |
 | Client | lint, the local-echo unit tests, the production build |
 | Security | a high or critical vulnerability in what ships (`npm audit`, `pip-audit`), a secret anywhere in the history (gitleaks). Infrastructure files are scanned for risky settings and reported, not gated |
@@ -444,23 +451,23 @@ Two honest notes. Most of this was added after the workflow last ran on GitHub, 
 ## Deploying
 
 - **Client (Vercel or any static host).** Set `VITE_API_URL` to the gateway's public URL at build time. It is compiled into the bundle and into the page's Content-Security-Policy; without it the browser will only talk to `localhost:4000`.
-- **Gateway.** Needs `JWT_SECRET` (it refuses to start in production without one). Set `CORS_ORIGINS` to the client's URL, and `DATA_DIR` to a persistent disk if accounts and certificates should survive restarts.
+- **Gateway.** Needs `JWT_SECRET` (it refuses to start in production without one). Set `CORS_ORIGINS` to the client's URL and `DATABASE_URL` to a Postgres (required in production; see `docs/BACKUP_AND_RESTORE.md`).
 - **Put the gateway near its students.** Every terminal keystroke is a round trip to it. Measured from India, a gateway in Render's Oregon region took 0.3 to 1.1 s to answer a trivial request. Local echo hides that for typing, but command output still waits for the network.
-- **Render (`render.yaml`).** A demo deployment: sandboxes are PTY shells inside the gateway's container, and the free plan has no persistent disk. The blueprint asks for the Singapore region. Render cannot move an existing service, so changing region means creating new services from the blueprint and pointing `VITE_API_URL` at the new URL.
+- **Render (`render.yaml`).** A demo deployment: sandboxes are PTY shells inside the gateway's container, and without `DATABASE_URL` accounts live only in memory. The blueprint asks for the Singapore region. Render cannot move an existing service, so changing region means creating new services from the blueprint and pointing `VITE_API_URL` at the new URL.
 - **Deploying only what passed CI.** By default Render and Vercel deploy every push to `main`, whether or not the checks passed. To gate it: create a Deploy Hook for each service (Render: service Settings, Deploy Hook; Vercel: project Settings, Git, Deploy Hooks), save the three URLs as repository secrets named `RENDER_HUB_DEPLOY_HOOK`, `RENDER_GATEWAY_DEPLOY_HOOK` and `VERCEL_DEPLOY_HOOK`, then switch off auto-deploy in Render and Vercel. The `deploy` job in CI then triggers them after every other job is green.
 - **A VM with Docker (`docker-compose.yml` or `docker-compose.prod.yml`).** The setup to use for real learners. For production on an AWS EC2 instance (Ubuntu 22.04 / 24.04 LTS), use the automated setup script:
   ```bash
   sudo ./scripts/deploy-ec2.sh
   ```
-  This provisions the complete production stack with automatic Let's Encrypt TLS (Caddy), SQLite WAL persistence, container session reconciliation, and zero-exposure internal network isolation for the AI Hub. See full details in [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md).
+  This provisions the complete production stack with automatic Let's Encrypt TLS (Caddy), Supabase Postgres persistence with migrations and pre-deploy backups, a background worker, container session reconciliation, and zero-exposure internal network isolation for the AI Hub. See full details in [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md).
 - **Kubernetes (`k8s/`).** Runs the gateway unprivileged with PTY sandboxes inside the pod; a demo, for the same reason as Render. Create the secret from `k8s/secret.example.yaml` first.
 
 Optional gateway settings (all in `server/.env.example`):
 
 | Variable | What it turns on | Without it |
 | :--- | :--- | :--- |
-| `STORE_DRIVER=sqlite` | One database row per document, in `DATA_DIR/store.db`. An existing `store.json` is imported on first start. | One JSON file, rewritten on every save |
-| `STORE_DRIVER=supabase`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_PUBLISHABLE_KEY` | Documents live in Supabase Postgres and the gateway accepts Supabase Auth access tokens (verified locally against the project's JWKS). | Local SQLite or JSON store |
+| `DATABASE_URL` (+ optional `MIGRATION_DATABASE_URL`, `DATABASE_POOL_SIZE`) | Data lives in Postgres: use the transaction-pooler string for the gateway and the direct string for migrations. Apply the schema with `npm run migrate`. | In-memory store (development only); production refuses to start |
+| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` | The gateway accepts Supabase Auth access tokens (verified locally against the project's JWKS). | Only gateway-issued tokens |
 | `RESEND_API_KEY`, `MAIL_FROM` | Password-reset and confirmation emails are really sent | Links are only written to the server log |
 | `APP_URL` | The web app's address, used to build the links in those emails | `CLIENT_URL`, else `http://localhost:5173` |
 | `ADMIN_TOKEN` | The operator page at `/admin` and the `/api/admin` endpoints | Those endpoints answer 404 |
@@ -475,7 +482,7 @@ On the AI hub, `ANTHROPIC_API_KEY` or `GROQ_API_KEY` switches hint writing and i
 
 - **The Docker, Kubernetes and AWS labs use simulators, not the real tools.** They cover the commands the labs teach and refuse anything else with a clear message. They teach the workflow and the output; they are not a cluster.
 - **PTY mode is not a sandbox.** Do not expose it to people you do not trust. (Each PTY shell does get its own block of ports for the labs, so students no longer collide on `-p 8080:80`; that is convenience, not isolation.)
-- **Single-node gateway host.** Sessions are persisted in SQLite (`store.db`) and reconciled with running Docker containers across server restarts. The gateway supports process role separation via `SERVICE_ROLE=api|terminal|all` so WebSocket terminal streaming can be decoupled from the REST API. Multi-node clustering across multiple physical hosts requires a network database and distributed pub/sub.
+- **Single-node gateway host.** Sessions are persisted in Postgres and reconciled with running Docker containers across server restarts. The gateway supports process role separation via `SERVICE_ROLE=api|terminal|all` so WebSocket terminal streaming can be decoupled from the REST API. Multi-node clustering across multiple physical hosts requires a network database and distributed pub/sub.
 - **Email is not sent unless `RESEND_API_KEY` is set.** Without it, password-reset and confirmation links are only written to the server log (and returned by the API outside production so the flow can be tried). The Resend path has never been run against the real service.
 - **Typing lag depends on where the gateway runs.** Every keystroke is a round trip. Local echo hides it when the round trip is over 50 ms, but output still arrives at network speed; deploy the gateway near its students.
 - **Section-level retrieval is still imperfect.** With the embedding ranker the right section is ranked first only 61% of the time (in the top 3: 92%). Without it, on a small host, it is 55% and 75%.

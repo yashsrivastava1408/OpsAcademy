@@ -109,7 +109,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17  # same major version as Supabase (17.x), so pg_dump/pg_restore match
         env:
           POSTGRES_HOST_AUTH_METHOD: trust # throwaway container, no password
         ports:
@@ -141,6 +141,25 @@ jobs:
           npm ci
           npm run test:db   # migration runner, schema constraints, repository contract on Postgres
           npm run test:pg   # the entire backend suite against real Postgres
+
+      - name: Validate the Docker Compose files
+        env:
+          JWT_SECRET: ci
+          AI_HUB_TOKEN: ci
+          DATABASE_URL: postgres://ci@localhost/ci
+          MIGRATION_DATABASE_URL: postgres://ci@localhost/ci
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.prod.yml config --quiet
+
+      - name: Backup and restore drill (dump, restore into a scratch database, compare)
+        env:
+          SOURCE_DATABASE_URL: postgres://postgres@localhost:5432/postgres
+          SCRATCH_DATABASE_URL: postgres://postgres@localhost:5432/restore_drill
+        run: |
+          psql "$SOURCE_DATABASE_URL" -c "create database restore_drill"
+          dump="$(BACKUP_DATABASE_URL="$SOURCE_DATABASE_URL" scripts/backup-db.sh "$RUNNER_TEMP/backups")"
+          BACKUP_FILE="$dump" scripts/restore-drill.sh
 
   security:
     name: Dependency audit and secret scan
@@ -341,7 +360,7 @@ jobs:
           AI_HUB_TOKEN: ci-shared-token
         run: |
           (cd ai-hub && PORT=5005 gunicorn --bind 127.0.0.1:5005 --workers 1 --threads 8 --keep-alive 15 app:app > ../hub.log 2>&1 &)
-          (cd server && SANDBOX_MODE=docker PORT=4000 AI_HUB_URL=http://127.0.0.1:5005 DATA_DIR=$RUNNER_TEMP/data node server.js > ../gateway.log 2>&1 &)
+          (cd server && SANDBOX_MODE=docker PORT=4000 AI_HUB_URL=http://127.0.0.1:5005 node server.js > ../gateway.log 2>&1 &)
           for _ in $(seq 1 30); do
             curl -sf http://127.0.0.1:4000/api/ready | grep -q '"status":"ready"' && exit 0
             sleep 2

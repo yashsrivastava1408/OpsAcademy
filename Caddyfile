@@ -3,7 +3,19 @@
     admin off
 }
 
+# TLS mode. A real domain uses automatic Let's Encrypt certificates (the default). Let's Encrypt cannot
+# issue certificates for a bare IP address, so an IP-only deployment sets TLS_SNIPPET=tls_internal
+# (a self-signed certificate: traffic is encrypted, browsers show a warning). Use a domain for real users.
+(tls_acme) {
+    header -Server
+}
+(tls_internal) {
+    tls internal
+}
+
 {$DOMAIN:localhost} {
+    import {$TLS_SNIPPET:tls_acme}
+
     # Modern compression for text, JSON and scripts
     encode zstd gzip
 

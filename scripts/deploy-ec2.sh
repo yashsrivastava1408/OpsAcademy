@@ -81,7 +81,6 @@ MIGRATION_DATABASE_URL=
 DATABASE_POOL_SIZE=10
 SUPABASE_URL=
 SUPABASE_PUBLISHABLE_KEY=
-DATA_DIR=/data
 
 RESEND_API_KEY=
 MAIL_FROM=OpsAcademy <noreply@opsacademy.in>
@@ -132,6 +131,20 @@ EOF
 
 systemctl daemon-reload
 systemctl enable opsacademy.service
+
+# 5b. Back up the database before any migration runs (set SKIP_BACKUP=1 to skip, e.g. the very first deploy)
+if [ "${SKIP_BACKUP:-0}" != "1" ]; then
+  # Read the URL from the env file without sourcing it (passwords may contain shell characters).
+  env_value() { grep -E "^$1=" "${ENV_FILE}" | head -1 | cut -d= -f2-; }
+  DB_URL="$(env_value MIGRATION_DATABASE_URL)"; [ -n "${DB_URL}" ] || DB_URL="$(env_value DATABASE_URL)"
+  if [ -n "${DB_URL}" ]; then
+    echo -e "${YELLOW}[backup] Dumping the database before migrating...${NC}"
+    BACKUP_DATABASE_URL="${DB_URL}" "${ROOT_DIR}/scripts/backup-db.sh" "${ROOT_DIR}/backups" \
+      || { echo -e "${RED}[ERROR] Backup failed; aborting before any migration. Set SKIP_BACKUP=1 to override.${NC}"; exit 1; }
+  else
+    echo -e "${YELLOW}[backup] No DATABASE_URL in ${ENV_FILE}; skipping backup.${NC}"
+  fi
+fi
 
 # 6. Build and Launch Containers
 echo -e "${YELLOW}[5/6] Building images and starting production containers...${NC}"
