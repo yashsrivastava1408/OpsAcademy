@@ -103,6 +103,30 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  supabase-rls:
+    name: Supabase migrations and RLS
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Apply migrations and check that the anon key is locked out
+        env:
+          PGURL: postgres://postgres:postgres@localhost:5432/postgres
+        run: supabase/tests/rls.sh
+
   security:
     name: Dependency audit and secret scan
     runs-on: ubuntu-latest
@@ -333,7 +357,7 @@ jobs:
     name: Deploy (after every check passes)
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [server, ai-hub, client, security, browser-e2e, sandbox-e2e]
+    needs: [server, ai-hub, client, security, supabase-rls, browser-e2e, sandbox-e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
     env:
