@@ -38,6 +38,8 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     maxSessionMs: config.sandbox.maxSessionMinutes * 60 * 1000,
     maxIdleMs: config.sandbox.maxInactivityMinutes * 60 * 1000,
     historyLimit: config.sandbox.historyLimit,
+    // Session records are rewritten at most this often (create/destroy are immediate).
+    persistIntervalMs: 30 * 1000,
     ...limits,
   };
 
@@ -49,7 +51,10 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
   const claimLatencies = { pool: [], cold: [] };
   const SESSIONS = 'sessions';
 
-  function persist(session) {
+  function persist(session, { force = false } = {}) {
+    const now = Date.now();
+    if (!force && session.persistedAt && now - session.persistedAt < settings.persistIntervalMs) return;
+    session.persistedAt = now;
     try {
       const store = require('../lib/store').getStore();
       if (store) {
@@ -136,7 +141,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
       closeListeners: new Set(),
     };
     sessions.set(session.sessionId, session);
-    persist(session);
+    persist(session, { force: true });
     metrics.sandboxesActive.set(sessions.size);
 
     // If the shell or container exits on its own, drop the session too.
@@ -253,6 +258,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     if (!session) return;
     session.history.push({ command, at: Date.now() });
     if (session.history.length > settings.historyLimit) session.history.shift();
+    persist(session); // throttled: at most one write per persistIntervalMs
   }
 
   function getHistory(sessionId) {
@@ -265,6 +271,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     const session = sessions.get(sessionId);
     if (!session) return 0;
     session.strikes += 1;
+    persist(session, { force: true }); // rare, and the reaper reads strikes
     return session.strikes;
   }
 
