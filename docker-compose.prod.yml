@@ -20,6 +20,7 @@ services:
     environment:
       - DOMAIN=${DOMAIN:-localhost}
       - ACME_EMAIL=${ACME_EMAIL:-admin@localhost}
+      - TLS_SNIPPET=${TLS_SNIPPET:-tls_acme}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

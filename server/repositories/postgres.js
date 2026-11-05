@@ -80,7 +80,8 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
     max,
     ssl,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
+    // A new connection to a remote database takes ~1 s (TLS + auth + distance); allow generously.
+    connectionTimeoutMillis: 10_000,
     query_timeout: 15_000,
   });
   if (!injected) pool.on('error', (err) => logger.error({ err: err.message }, '[postgres] idle client error'));
