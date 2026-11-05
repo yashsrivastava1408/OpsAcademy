@@ -73,7 +73,6 @@ services:
       - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-10}
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY:-}
-      - DATA_DIR=/data
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - CERT_SECRET=${CERT_SECRET:-}
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}
@@ -93,7 +92,6 @@ services:
       - SANDBOX_MEMORY_MB=${SANDBOX_MEMORY_MB:-256}
       - SANDBOX_CPUS=${SANDBOX_CPUS:-0.5}
     volumes:
-      - server-data:/data
       # Mount host Docker socket to manage isolated learner sandboxes
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -210,7 +208,6 @@ services:
       - opsacademy-public
 
 volumes:
-  server-data:
     driver: local
   caddy-data:
     driver: local

@@ -14,4 +14,3 @@ data:
   SANDBOX_MODE: "pty"
   AI_HUB_URL: "http://opsacademy-ai-hub.opsacademy.svc.cluster.local:5000"
   CORS_ORIGINS: "https://opsacademy.dev"
-  DATA_DIR: "/data"

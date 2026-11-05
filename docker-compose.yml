@@ -36,22 +36,62 @@ services:
       - AI_HUB_TOKEN=${AI_HUB_TOKEN:?Set AI_HUB_TOKEN, e.g. export AI_HUB_TOKEN=$(openssl rand -hex 24)}
       - CORS_ORIGINS=http://localhost:5173
       - APP_URL=http://localhost:5173
-      - DATA_DIR=/data
-      # Optional: sqlite store, real email, operator page (see server/.env.example).
-      - STORE_DRIVER=${STORE_DRIVER:-json}
+      # Local Postgres (service below); the schema is applied by the `migrate` service.
+      - DATABASE_URL=postgres://postgres@postgres:5432/opsacademy
+      # Optional: real email, operator page (see server/.env.example).
       - RESEND_API_KEY=${RESEND_API_KEY:-}
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}
     volumes:
-      - server-data:/data
       # The gateway starts sandbox containers through the host's Docker daemon.
       # This socket is root-equivalent on the host: see docs/THREAT_MODEL.md.
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       sandbox-image:
         condition: service_completed_successfully
       ai-hub:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - opsacademy-net
+
+  # ── Postgres (development only; production uses Supabase) ──
+  # Not published on the host. Trust auth is safe here because only this network can reach it.
+  postgres:
+    image: postgres:16-alpine
+    container_name: opsacademy-postgres
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_DB=opsacademy
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the roles and auth.uid() that Supabase provides, on first start only.
+      - ./supabase/tests/bootstrap.sql:/docker-entrypoint-initdb.d/00-supabase-stubs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d opsacademy"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - opsacademy-net
+
+  # ── Database migrations (one-shot) ─────────────────────────
+  migrate:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: opsacademy-migrate
+    command: ["node", "scripts/migrate.js"]
+    environment:
+      - DATABASE_URL=postgres://postgres@postgres:5432/opsacademy
+      - MIGRATIONS_DIR=/app/migrations
+    volumes:
+      - ./supabase/migrations:/app/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
     networks:
       - opsacademy-net
 
@@ -122,7 +162,7 @@ services:
       - opsacademy-net
 
 volumes:
-  server-data:
+  pgdata:
 
 networks:
   opsacademy-net:

@@ -5,9 +5,9 @@
 #    cannot start sibling containers), so students are NOT isolated from the
 #    gateway process. Fine for a demo; for untrusted users run the gateway on
 #    a VM with Docker and SANDBOX_MODE=docker (see docker-compose.yml).
-#  - The free plan has no persistent disk: accounts, progress and certificates
-#    are lost whenever the service restarts. Attach a disk and set DATA_DIR to
-#    keep them.
+#  - Without DATABASE_URL the gateway keeps accounts, progress and certificates in
+#    memory: they are lost whenever the service restarts. Set DATABASE_URL to a
+#    Postgres (for example a Supabase project) to keep them.
 #  - Set CORS_ORIGINS on the gateway to your frontend's URL after the first deploy.
 #  - Region: every terminal keystroke is a round trip to the gateway, so it
 #    should be near the students. Singapore is the closest Render region to
