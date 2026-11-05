@@ -108,6 +108,11 @@ const config = {
     guestPerWindow: int('RATE_LIMIT_GUEST', 60),
     sandboxStartPerWindow: int('RATE_LIMIT_SANDBOX_START', 10),
     agentPerWindow: int('RATE_LIMIT_AGENT', 30),
+    // A campus shares one public IP. Requests from these addresses or CIDR
+    // ranges (comma separated, e.g. "203.0.113.7,198.51.100.0/24") get their
+    // limits multiplied, so a classroom can sign in together without 429s.
+    campusIps: (process.env.CAMPUS_IPS || '').split(',').map((v) => v.trim()).filter(Boolean),
+    campusMultiplier: int('CAMPUS_RATE_MULTIPLIER', 15),
   },
 
   // Sandbox settings
