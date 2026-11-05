@@ -142,6 +142,16 @@ jobs:
           npm run test:db   # migration runner, schema constraints, repository contract on Postgres
           npm run test:pg   # the entire backend suite against real Postgres
 
+      - name: Validate the Docker Compose files
+        env:
+          JWT_SECRET: ci
+          AI_HUB_TOKEN: ci
+          DATABASE_URL: postgres://ci@localhost/ci
+          MIGRATION_DATABASE_URL: postgres://ci@localhost/ci
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.prod.yml config --quiet
+
       - name: Backup and restore drill (dump, restore into a scratch database, compare)
         env:
           SOURCE_DATABASE_URL: postgres://postgres@localhost:5432/postgres
