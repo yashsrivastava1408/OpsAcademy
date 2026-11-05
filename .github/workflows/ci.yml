@@ -111,7 +111,7 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust # throwaway container, no password
         ports:
           - 5432:5432
         options: >-
@@ -124,7 +124,7 @@ jobs:
 
       - name: Apply migrations and check that the anon key is locked out
         env:
-          PGURL: postgres://postgres:postgres@localhost:5432/postgres
+          PGURL: postgres://postgres@localhost:5432/postgres
         run: supabase/tests/rls.sh
 
   security:
