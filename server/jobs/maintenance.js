@@ -40,12 +40,19 @@ async function runJob(job) {
 }
 
 /**
- * Start every job on its own timer (plus once now). @returns a function that stops them.
+ * Start every job on its own timer (plus once now). Jobs run one at a time: each holds a database
+ * connection for its lock while its queries use another, so running them together would starve a
+ * small connection pool. @returns a function that stops them.
  */
 function startJobs(jobs = JOBS) {
+  let queue = Promise.resolve();
+  const enqueue = (job) => {
+    queue = queue.then(() => runJob(job)); // runJob never rejects
+    return queue;
+  };
   const timers = jobs.map((job) => {
-    runJob(job);
-    return setInterval(() => runJob(job), job.everyMs);
+    enqueue(job);
+    return setInterval(() => enqueue(job), job.everyMs);
   });
   return () => timers.forEach((t) => clearInterval(t));
 }
