@@ -194,7 +194,8 @@ jobs:
     name: Browser walk-through
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [server, ai-hub, client]
+    # No `needs:` on purpose: these start at the same time as the unit-test jobs, which cuts
+    # about 75 s from every run. The deploy job still waits for all of them.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -242,7 +243,6 @@ jobs:
     name: Docker sandbox, image scan and end-to-end
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [server, ai-hub]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -261,12 +261,20 @@ jobs:
       # The hub image normally includes an embedding model that is downloaded
       # while building. CI builds without it, so a slow or failed download of a
       # 90 MB file cannot fail the pipeline; the model has its own tests.
-      - name: Build images
+      # Four image builds and the dependency installs are independent, so they run side by
+      # side (the runner has 4 cores). Any failure fails the step.
+      - name: Build images and install dependencies (in parallel)
         run: |
-          docker build -t opsacademy-sandbox:latest sandbox-image
-          docker build -t opsacademy/server:ci server
-          docker build -t opsacademy/ai-hub:ci --build-arg WITH_SEMANTIC=false ai-hub
-          docker build -t opsacademy/client:ci client
+          pids=()
+          docker build -t opsacademy-sandbox:latest sandbox-image & pids+=($!)
+          docker build -t opsacademy/server:ci server & pids+=($!)
+          docker build -t opsacademy/ai-hub:ci --build-arg WITH_SEMANTIC=false ai-hub & pids+=($!)
+          docker build -t opsacademy/client:ci client & pids+=($!)
+          (cd server && npm ci) & pids+=($!)
+          pip install -r ai-hub/requirements.txt & pids+=($!)
+          status=0
+          for pid in "${pids[@]}"; do wait "$pid" || status=1; done
+          exit $status
 
       # Known vulnerabilities in what the images contain. Only ones that have
       # a fix available fail the build: the others cannot be acted on.
@@ -301,11 +309,6 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: '1'
-
-      - name: Install dependencies
-        run: |
-          (cd server && npm ci)
-          pip install -r ai-hub/requirements.txt
 
       # Tries to break every sandbox restriction from inside a real container.
       - name: Sandbox isolation check
