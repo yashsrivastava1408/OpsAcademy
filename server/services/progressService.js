@@ -75,9 +75,28 @@ function load(userId) {
   return getStore().get(PROGRESS, userId) || emptyProgress(userId);
 }
 
+// What the leaderboard shows from a progress document. Saves that leave this
+// unchanged (a quiz attempt, a hint, a step view) must not throw the cache away.
+const rankSignatures = new WeakMap(); // store -> Map<userId, signature>
+
+function rankSignature(doc) {
+  const days = Array.isArray(doc.activeDays) ? doc.activeDays.length : Object.keys(doc.activeDays || {}).length;
+  return `${doc.xp}|${Object.keys(doc.completedUnits || {}).length}|${days}`;
+}
+
 function save(doc) {
-  getStore().set(PROGRESS, doc.userId, doc);
-  leaderboardCache = null;
+  const store = getStore();
+  store.set(PROGRESS, doc.userId, doc);
+  let signatures = rankSignatures.get(store);
+  if (!signatures) {
+    signatures = new Map();
+    rankSignatures.set(store, signatures);
+  }
+  const signature = rankSignature(doc);
+  if (signatures.get(doc.userId) !== signature) {
+    signatures.set(doc.userId, signature);
+    leaderboardCache = null;
+  }
 }
 
 function dayKey(timestamp) {
@@ -428,8 +447,13 @@ function leaderboard(limit = 20, now = Date.now()) {
 
 /** Forget a learner's progress (used when an expired guest is removed). */
 function remove(userId) {
-  const existed = getStore().delete(PROGRESS, userId);
-  if (existed) leaderboardCache = null;
+  const store = getStore();
+  const existed = store.delete(PROGRESS, userId);
+  if (existed) {
+    leaderboardCache = null;
+    const signatures = rankSignatures.get(store);
+    if (signatures) signatures.delete(userId);
+  }
   return existed;
 }
 
