@@ -23,6 +23,14 @@ except ImportError:  # the SDK is an optional dependency
     anthropic = None
 
 
+def _model_for(job: str) -> str:
+    return config.INTERVIEW_MODEL if job == "interview" else config.HINT_MODEL
+
+
+def _max_tokens_for(job: str) -> int:
+    return config.INTERVIEW_MAX_TOKENS if job == "interview" else config.HINT_MAX_TOKENS
+
+
 class LLMClient:
     def __init__(self, client=None):
         self._client = client
@@ -42,22 +50,22 @@ class LLMClient:
         has_credentials = os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN")
         if config.LLM_ENABLED == "auto" and not has_credentials:
             return None
-        # One retry at most: the gateway is waiting on this request.
-        return anthropic.Anthropic(timeout=config.LLM_TIMEOUT_SECONDS, max_retries=1)
+        # No automatic retry: a retry would double the wait the gateway is timing.
+        return anthropic.Anthropic(timeout=config.LLM_TIMEOUT_SECONDS, max_retries=0)
 
     @property
     def available(self) -> bool:
         return self.client is not None
 
-    def complete(self, system: str, user: str):
+    def complete(self, system: str, user: str, job: str = "hint"):
         """@returns the model's text, or None if the LLM is unavailable or did not answer."""
         if not self.available:
             return None
 
         try:
             response = self.client.messages.create(
-                model=config.LLM_MODEL,
-                max_tokens=16000,
+                model=_model_for(job),
+                max_tokens=_max_tokens_for(job),
                 output_config={"effort": config.LLM_EFFORT},
                 system=system,
                 messages=[{"role": "user", "content": user}],
@@ -80,7 +88,7 @@ class LLMClient:
         text = "".join(block.text for block in response.content if block.type == "text").strip()
         return text or None
 
-    def complete_json(self, system: str, user: str, schema: dict):
+    def complete_json(self, system: str, user: str, schema: dict, job: str = "interview"):
         """
         Ask for an answer that must match a JSON schema.
         @returns the parsed object, or None if the LLM is unavailable, did not finish or sent something unusable.
@@ -90,8 +98,8 @@ class LLMClient:
 
         try:
             response = self.client.messages.create(
-                model=config.LLM_MODEL,
-                max_tokens=16000,
+                model=_model_for(job),
+                max_tokens=_max_tokens_for(job),
                 output_config={"effort": config.LLM_EFFORT, "format": {"type": "json_schema", "schema": schema}},
                 system=system,
                 messages=[{"role": "user", "content": user}],
@@ -118,7 +126,7 @@ class LLMClient:
             return None
         return data if isinstance(data, dict) else None
 
-    def stream(self, system: str, user: str):
+    def stream(self, system: str, user: str, job: str = "hint"):
         """
         Yield the model's answer piece by piece as it is written.
 
@@ -131,8 +139,8 @@ class LLMClient:
 
         try:
             with self.client.messages.stream(
-                model=config.LLM_MODEL,
-                max_tokens=16000,
+                model=_model_for(job),
+                max_tokens=_max_tokens_for(job),
                 output_config={"effort": config.LLM_EFFORT},
                 system=system,
                 messages=[{"role": "user", "content": user}],
@@ -181,7 +189,7 @@ class _LazyDefault:
     @property
     def model(self):
         client = self._resolve()
-        return getattr(client, "model", None) or config.LLM_MODEL
+        return getattr(client, "model", None) or config.HINT_MODEL
 
 
 llm = _LazyDefault()

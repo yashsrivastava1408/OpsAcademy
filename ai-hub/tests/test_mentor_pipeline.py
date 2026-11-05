@@ -191,7 +191,7 @@ def test_llm_client_sends_the_expected_request():
 
     assert text == "Use the task list."
     request = client.requests[0]
-    assert request["model"] == "claude-opus-5-5"
+    assert request["model"] == "claude-haiku-5-5"
     assert request["system"] == "system text"
     assert request["messages"] == [{"role": "user", "content": "user text"}]
     assert request["output_config"] == {"effort": "low"}
@@ -471,7 +471,7 @@ def test_llm_client_streams_text_with_the_same_request_as_a_normal_call():
     client = streaming_client(["Use ", "", "the task list."])
     assert list(LLMClient(client).stream("system text", "user text")) == ["Use ", "the task list."]
     request = client.requests[0]
-    assert request["model"] == "claude-opus-5-5"
+    assert request["model"] == "claude-haiku-5-5"
     assert request["system"] == "system text"
     assert request["messages"] == [{"role": "user", "content": "user text"}]
     assert request["output_config"] == {"effort": "low"}
@@ -503,7 +503,7 @@ def test_llm_client_asks_for_json_matching_the_schema():
     assert LLMClient(client).complete_json("system text", "user text", SCHEMA) == {"ok": True}
     request = client.requests[0]
     assert request["output_config"] == {"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}}
-    assert request["model"] == "claude-opus-5-5" and request["system"] == "system text"
+    assert request["model"] == "claude-sonnet-5-5" and request["system"] == "system text"
     assert "tool_choice" not in request and "thinking" not in request
 
 
@@ -521,3 +521,42 @@ def test_llm_client_json_returns_none_when_unavailable():
     unavailable = LLMClient(None)
     unavailable._resolved = True
     assert unavailable.complete_json("s", "u", SCHEMA) is None
+
+
+# --- per-job models and output caps (#58) ---------------------------------
+
+def test_hints_and_interview_scoring_use_separate_models_and_caps(monkeypatch):
+    monkeypatch.setattr(llm_module.config, "HINT_MODEL", "hint-model")
+    monkeypatch.setattr(llm_module.config, "INTERVIEW_MODEL", "judge-model")
+    monkeypatch.setattr(llm_module.config, "HINT_MAX_TOKENS", 321)
+    monkeypatch.setattr(llm_module.config, "INTERVIEW_MAX_TOKENS", 654)
+
+    hint_client = FakeAnthropicClient()
+    LLMClient(hint_client).complete("s", "u")
+    assert hint_client.requests[0]["model"] == "hint-model"
+    assert hint_client.requests[0]["max_tokens"] == 321
+
+    judge_client = FakeAnthropicClient(fake_response('{"ok": true}'))
+    LLMClient(judge_client).complete_json("s", "u", {"type": "object"})
+    assert judge_client.requests[0]["model"] == "judge-model"
+    assert judge_client.requests[0]["max_tokens"] == 654
+
+
+def test_default_hint_model_is_not_the_most_expensive_one():
+    assert "opus" not in llm_module.config.HINT_MODEL
+    assert llm_module.config.HINT_MAX_TOKENS <= 2000
+
+
+def test_llm_call_is_not_retried_so_the_gateway_timeout_holds(monkeypatch):
+    seen = {}
+
+    class Recorder:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(llm_module.config, "LLM_ENABLED", "on")
+    monkeypatch.setattr(llm_module, "anthropic", types.SimpleNamespace(Anthropic=Recorder))
+    assert LLMClient().client is not None
+    assert seen["max_retries"] == 0
+    assert seen["timeout"] == llm_module.config.LLM_TIMEOUT_SECONDS
