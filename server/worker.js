@@ -6,6 +6,10 @@
  *   node worker.js
  */
 
+// Advisory locks need a session-mode connection, so the worker prefers WORKER_DATABASE_URL
+// (the session pooler) over the transaction-pooler DATABASE_URL the gateway uses.
+if (process.env.WORKER_DATABASE_URL) process.env.DATABASE_URL = process.env.WORKER_DATABASE_URL;
+
 const logger = require('./lib/logger');
 const config = require('./config');
 const { getRepos } = require('./repositories');
