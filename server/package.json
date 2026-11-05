@@ -1,7 +1,7 @@
 {
   "name": "opsacademy-server",
   "version": "1.0.0",
-  "description": "OpsAcademy API Gateway — Terminal streaming, sandbox management, and lab orchestration",
+  "description": "OpsAcademy API Gateway \u2014 Terminal streaming, sandbox management, and lab orchestration",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -14,7 +14,10 @@
     "loadtest": "node scripts/loadtest.js",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
     "lint": "oxlint",
-    "labs:audit:check": "node scripts/audit-labs.js --check"
+    "labs:audit:check": "node scripts/audit-labs.js --check",
+    "migrate": "node scripts/migrate.js",
+    "migrate:status": "node scripts/migrate.js --status",
+    "test:db": "jest tests/migrator.test.js tests/schema.test.js --runInBand --coverage=false"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
@@ -29,6 +32,7 @@
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "node-pty": "^1.0.0",
+    "pg": "^8.23.1",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",
     "prom-client": "^15.1.3",
