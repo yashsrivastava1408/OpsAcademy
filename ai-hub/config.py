@@ -21,7 +21,15 @@ LLM_MODEL = os.getenv("LLM_MODEL", "claude-opus-5-5")
 _explicit_model = os.getenv("LLM_MODEL", "")
 GROQ_MODEL = _explicit_model if _explicit_model and not _explicit_model.startswith("claude") else "openai/gpt-oss-120b"
 LLM_EFFORT = os.getenv("LLM_EFFORT", "low")
-LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "12"))
+# Hints and interview scoring have different quality/cost needs, so each job has its own model
+# and output cap. LLM_MODEL, when set, applies to both (back-compat); HINT_MODEL / INTERVIEW_MODEL win.
+HINT_MODEL = os.getenv("HINT_MODEL") or _explicit_model or "claude-haiku-5-5"
+INTERVIEW_MODEL = os.getenv("INTERVIEW_MODEL") or _explicit_model or "claude-sonnet-5-5"
+HINT_MAX_TOKENS = int(os.getenv("HINT_MAX_TOKENS", "2000"))  # a hint is under ~90 words
+INTERVIEW_MAX_TOKENS = int(os.getenv("INTERVIEW_MAX_TOKENS", "4000"))
+# Keep this below the gateway's AI_HUB_TIMEOUT_MS (default 10000) so the gateway never gives up
+# while the hub is still waiting on the model.
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "8"))
 
 HINT_CACHE_SIZE = int(os.getenv("HINT_CACHE_SIZE", "512"))
 HINT_CACHE_TTL_SECONDS = int(os.getenv("HINT_CACHE_TTL_SECONDS", "900"))

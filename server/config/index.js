@@ -77,7 +77,7 @@ const config = {
   // AI Hub
   aiHubUrl: normaliseUrl(process.env.AI_HUB_URL, int('AI_HUB_PORT', 5000)),
   aiHubToken: process.env.AI_HUB_TOKEN || null,
-  aiHubTimeoutMs: int('AI_HUB_TIMEOUT_MS', 4000),
+  aiHubTimeoutMs: int('AI_HUB_TIMEOUT_MS', 10000),
 
   dockerSocketPath: process.env.DOCKER_SOCKET_PATH || '/var/run/docker.sock',
 
