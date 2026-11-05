@@ -69,9 +69,9 @@ services:
       - SERVICE_ROLE=all
       - SANDBOX_MODE=docker
       - SANDBOX_IMAGE=opsacademy-sandbox:latest
-      - STORE_DRIVER=${STORE_DRIVER:-sqlite}
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required (Supabase transaction-pooler connection string)}
+      - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-10}
       - SUPABASE_URL=${SUPABASE_URL:-}
-      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
       - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY:-}
       - DATA_DIR=/data
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
@@ -97,6 +97,8 @@ services:
       # Mount host Docker socket to manage isolated learner sandboxes
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       sandbox-image:
         condition: service_completed_successfully
       ai-hub:
@@ -104,6 +106,48 @@ services:
     networks:
       - opsacademy-public
       - opsacademy-internal
+
+  # ── 4a. Database migrations (one-shot, before the gateway and worker start) ──
+  # Applies pending supabase/migrations/*.sql under an advisory lock; a failed file rolls
+  # back and stops the deploy, leaving the previous version running. Back up first
+  # (docs/BACKUP_AND_RESTORE.md). Uses the direct connection when MIGRATION_DATABASE_URL is set.
+  migrate:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: opsacademy-migrate
+    restart: "no"
+    command: ["node", "scripts/migrate.js"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - MIGRATION_DATABASE_URL=${MIGRATION_DATABASE_URL:-}
+      - MIGRATIONS_DIR=/app/migrations
+    volumes:
+      - ./supabase/migrations:/app/migrations:ro
+    networks:
+      - opsacademy-public
+
+  # ── 4b. Worker: pruning and leaderboard refresh (one process, not one per gateway) ──
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: opsacademy-worker
+    restart: unless-stopped
+    command: ["node", "worker.js"]
+    healthcheck:
+      disable: true
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - DATABASE_POOL_SIZE=2
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - opsacademy-public
 
   # ── 5. AI Mentor Hub (Python 3.11 / Flask / Gunicorn) ──────
   # Isolated network: NOT accessible from proxy or public internet

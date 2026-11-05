@@ -74,11 +74,12 @@ AI_HUB_TOKEN=${AI_HUB_TOKEN}
 ADMIN_TOKEN=${ADMIN_TOKEN}
 METRICS_TOKEN=
 
-# Pilot data store is Supabase (Postgres). Fill the three SUPABASE_* values, or
-# set STORE_DRIVER=sqlite to fall back to a local database on this server.
-STORE_DRIVER=supabase
+# Data lives in Supabase Postgres. DATABASE_URL is the transaction-pooler string (required);
+# MIGRATION_DATABASE_URL is the direct connection used to apply migrations (optional).
+DATABASE_URL=
+MIGRATION_DATABASE_URL=
+DATABASE_POOL_SIZE=10
 SUPABASE_URL=
-SUPABASE_SECRET_KEY=
 SUPABASE_PUBLISHABLE_KEY=
 DATA_DIR=/data
 
@@ -147,7 +148,7 @@ docker compose -f docker-compose.prod.yml ps
 echo -e "\n${BLUE}==============================================================================${NC}"
 echo -e "${GREEN}✓ OpsAcademy Production Stack successfully deployed!${NC}"
 echo -e "  - Reverse Proxy (TLS / WebSockets): ports 80, 443"
-echo -e "  - Data store: Supabase when STORE_DRIVER=supabase (else SQLite in volume 'server-data')"
+echo -e "  - Data store: Supabase Postgres (DATABASE_URL); migrations run before the app starts"
 echo -e "  - Isolated AI Hub: running on internal bridge network"
 echo -e "  - Service auto-starts on EC2 reboot via systemd: opsacademy.service"
 echo -e "${BLUE}==============================================================================${NC}"
