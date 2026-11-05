@@ -1,0 +1,214 @@
+/**
+ * In-memory repositories: same contract as the Postgres ones (including unique
+ * email/slug, foreign keys and cascading deletes), used by unit tests and by
+ * local development without a database. Data is lost on restart.
+ */
+
+const { RepoError } = require('./errors');
+
+const clone = (value) => (value === undefined ? value : structuredClone(value));
+
+function emptyProgress(userId) {
+  return {
+    userId, xp: 0, completedUnits: {}, steps: {}, hints: {}, quizzes: {}, cards: {},
+    interviews: [], activeDays: [], daily: {},
+  };
+}
+
+function createMemoryRepos() {
+  const users = new Map(); // id -> user
+  const tokens = new Map(); // hash -> token
+  const progress = new Map(); // userId -> doc
+  const certificates = new Map(); // id -> certificate
+  const sessions = new Map(); // sessionId -> session
+  const memberships = []; // { userId, collegeId, sectionId, role }
+  const locks = new Map(); // userId -> tail promise (serialises progress.mutate)
+
+  const findByEmail = (email) => [...users.values()].find((u) => u.email === email);
+  const findBySlug = (slug) => [...users.values()].find((u) => u.profileSlug === slug);
+  const requireUser = (id) => {
+    if (!users.has(id)) throw new RepoError('user_missing', `User ${id} does not exist`);
+  };
+
+  function checkUnique(user) {
+    const sameEmail = user.email && findByEmail(user.email);
+    if (sameEmail && sameEmail.id !== user.id) throw new RepoError('email_taken', 'User with this email already exists');
+    const sameSlug = user.profileSlug && findBySlug(user.profileSlug);
+    if (sameSlug && sameSlug.id !== user.id) throw new RepoError('slug_taken', 'Profile address is taken');
+  }
+
+  function cascadeDelete(id) {
+    users.delete(id);
+    progress.delete(id);
+    for (const [hash, t] of tokens) if (t.userId === id) tokens.delete(hash);
+    for (const [cid, c] of certificates) if (c.userId === id) certificates.delete(cid);
+    for (const [sid, s] of sessions) if (s.userId === id) sessions.delete(sid);
+    for (let i = memberships.length - 1; i >= 0; i -= 1) if (memberships[i].userId === id) memberships.splice(i, 1);
+  }
+
+  return {
+    driver: 'memory',
+    /** Direct access to the maps, for tests that simulate tampering. Not part of the contract. */
+    _test: { users, certificates },
+
+    async ping() { return true; },
+    async close() {},
+
+    users: {
+      async create(user) {
+        if (users.has(user.id)) throw new RepoError('user_exists', `User ${user.id} already exists`);
+        checkUnique(user);
+        users.set(user.id, clone(user));
+        return clone(user);
+      },
+      /** Insert unless the id exists. @returns the stored user either way. */
+      async createIfAbsent(user) {
+        if (!users.has(user.id)) {
+          checkUnique(user);
+          users.set(user.id, clone(user));
+        }
+        return clone(users.get(user.id));
+      },
+      async getById(id) { return clone(users.get(id) || null); },
+      async getByEmail(email) { return clone(findByEmail(email) || null); },
+      async getBySlug(slug) { return clone(findBySlug(slug) || null); },
+      /** Merge `patch` into the user. @returns the updated user, or null if unknown. */
+      async update(id, patch) {
+        const current = users.get(id);
+        if (!current) return null;
+        const next = { ...current, ...clone(patch), id };
+        checkUnique(next);
+        users.set(id, next);
+        return clone(next);
+      },
+      /** @returns { [id]: name } for the ids that exist */
+      async namesByIds(ids) {
+        const out = {};
+        for (const id of ids) if (users.has(id)) out[id] = users.get(id).name;
+        return out;
+      },
+      async counts() {
+        const all = [...users.values()];
+        const guests = all.filter((u) => u.guest).length;
+        return { registered: all.length - guests, guests };
+      },
+      /** Delete guests created before `cutoffMs`, with everything they own. */
+      async pruneGuests(cutoffMs) {
+        const stale = [...users.values()].filter((u) => u.guest && Date.parse(u.createdAt) < cutoffMs);
+        for (const u of stale) cascadeDelete(u.id);
+        return stale.length;
+      },
+    },
+
+    tokens: {
+      /** Store a token, replacing older ones of the same kind for that user. */
+      async issue({ hash, userId, kind, expiresAt }) {
+        requireUser(userId);
+        for (const [h, t] of tokens) if (t.userId === userId && t.kind === kind) tokens.delete(h);
+        tokens.set(hash, { hash, userId, kind, expiresAt });
+      },
+      /** Use a token once. @returns the user id, or null if unknown, of another kind or expired. */
+      async redeem(hash, kind, now = Date.now()) {
+        const t = tokens.get(hash);
+        if (!t || t.kind !== kind) return null;
+        tokens.delete(hash);
+        return t.expiresAt > now ? t.userId : null;
+      },
+      async pruneExpired(now = Date.now()) {
+        let removed = 0;
+        for (const [h, t] of tokens) {
+          if (t.expiresAt <= now) {
+            tokens.delete(h);
+            removed += 1;
+          }
+        }
+        return removed;
+      },
+    },
+
+    progress: {
+      async get(userId) { return clone(progress.get(userId) || null); },
+      /**
+       * Read-modify-write one learner's progress atomically. `fn` receives the
+       * document (a fresh one if none exists), may change it, and its return
+       * value is returned here. Concurrent calls for the same learner run one after another.
+       */
+      async mutate(userId, fn) {
+        requireUser(userId);
+        const previous = locks.get(userId) || Promise.resolve();
+        let release;
+        const gate = new Promise((resolve) => { release = resolve; });
+        locks.set(userId, previous.then(() => gate));
+        await previous;
+        try {
+          const doc = clone(progress.get(userId)) || emptyProgress(userId);
+          const result = await fn(doc);
+          progress.set(userId, doc);
+          return result;
+        } finally {
+          release();
+          if (locks.get(userId) === gate) locks.delete(userId);
+        }
+      },
+      /** Top learners by XP. @returns [{ userId, xp, completedUnits (count), activeDays }] */
+      async leaderboard(limit = 20, { collegeId = null } = {}) {
+        let docs = [...progress.values()].filter((d) => d.xp > 0);
+        if (collegeId) {
+          const members = new Set(memberships.filter((m) => m.collegeId === collegeId && m.role === 'student').map((m) => m.userId));
+          docs = docs.filter((d) => members.has(d.userId));
+        }
+        return docs
+          .sort((a, b) => b.xp - a.xp || (a.userId < b.userId ? -1 : 1))
+          .slice(0, limit)
+          .map((d) => ({ userId: d.userId, xp: d.xp, completedUnits: Object.keys(d.completedUnits).length, activeDays: [...d.activeDays] }));
+      },
+      async totals() {
+        const docs = [...progress.values()];
+        return { learnersWithXp: docs.filter((d) => d.xp > 0).length, totalXp: docs.reduce((n, d) => n + d.xp, 0) };
+      },
+      async remove(userId) { return progress.delete(userId); },
+    },
+
+    memberships: {
+      async add({ userId, collegeId, sectionId = null, role }) {
+        requireUser(userId);
+        memberships.push({ userId, collegeId, sectionId, role });
+      },
+      async forUser(userId) { return memberships.filter((m) => m.userId === userId).map(clone); },
+    },
+
+    certificates: {
+      /** Insert unless this learner already has one for the unit. @returns the stored certificate. */
+      async create(cert) {
+        requireUser(cert.userId);
+        const existing = [...certificates.values()].find((c) => c.userId === cert.userId && c.unitId === cert.unitId);
+        if (existing) return clone(existing);
+        certificates.set(cert.id, clone(cert));
+        return clone(cert);
+      },
+      async getById(id) { return clone(certificates.get(id) || null); },
+      async getForUnit(userId, unitId) {
+        return clone([...certificates.values()].find((c) => c.userId === userId && c.unitId === unitId) || null);
+      },
+      async listForUser(userId) { return [...certificates.values()].filter((c) => c.userId === userId).map(clone); },
+      async count() { return certificates.size; },
+    },
+
+    sessions: {
+      async upsert(session) {
+        requireUser(session.userId);
+        sessions.set(session.sessionId, clone(session));
+      },
+      async delete(sessionId) { return sessions.delete(sessionId); },
+      async all() { return [...sessions.values()].map(clone); },
+    },
+
+    jobs: {
+      /** In memory there is only one process, so the lock is always free. */
+      async withLock(name, fn) { return fn(); },
+      async refreshLeaderboards() {},
+    },
+  };
+}
+
+module.exports = { createMemoryRepos, emptyProgress };

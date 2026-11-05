@@ -11,7 +11,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_DIR = path.join(__dirname, '..', '..', 'supabase', 'migrations');
+// MIGRATIONS_DIR lets the container read the files from a mounted folder (the Docker build context is ./server).
+const DEFAULT_DIR = process.env.MIGRATIONS_DIR || path.join(__dirname, '..', '..', 'supabase', 'migrations');
 const FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/;
 // Arbitrary constant: "opsacademy migrations" as an int, shared by every runner.
 const LOCK_KEY = 7_265_501;

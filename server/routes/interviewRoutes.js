@@ -59,7 +59,7 @@ router.post('/:unitId/:questionId/answer', rateLimit.agent(), async (req, res, n
       return res.status(503).json({ success: false, error: 'Answer scoring is unavailable right now. Please try again shortly.' });
     }
 
-    const { xpAwarded } = progressService.recordInterview(req.user.id, unitId, questionId, evaluation.score);
+    const { xpAwarded } = await progressService.recordInterview(req.user.id, unitId, questionId, evaluation.score);
 
     res.json({
       success: true,

@@ -8,12 +8,9 @@
  */
 
 const config = require('../config');
-const { getStore } = require('../lib/store');
+const { getRepos } = require('../repositories');
 const units = require('../lib/units');
 const sm2 = require('../lib/sm2');
-
-const PROGRESS = 'progress';
-const USERS = 'users';
 
 const XP = { step: 20, unit: 100, quiz: 25, flashcard: 2, interview: 30, daily: 15 };
 const MAX_DAILY_DAYS = 60;
@@ -71,32 +68,30 @@ function dailyChallenge(doc, now = Date.now()) {
   };
 }
 
-function load(userId) {
-  return getStore().get(PROGRESS, userId) || emptyProgress(userId);
+async function load(userId) {
+  return (await getRepos().progress.get(userId)) || emptyProgress(userId);
 }
 
-// What the leaderboard shows from a progress document. Saves that leave this
+// What the leaderboard shows from a progress document. Updates that leave this
 // unchanged (a quiz attempt, a hint, a step view) must not throw the cache away.
-const rankSignatures = new WeakMap(); // store -> Map<userId, signature>
-
 function rankSignature(doc) {
-  const days = Array.isArray(doc.activeDays) ? doc.activeDays.length : Object.keys(doc.activeDays || {}).length;
-  return `${doc.xp}|${Object.keys(doc.completedUnits || {}).length}|${days}`;
+  return `${doc.xp}|${Object.keys(doc.completedUnits || {}).length}|${(doc.activeDays || []).length}`;
 }
 
-function save(doc) {
-  const store = getStore();
-  store.set(PROGRESS, doc.userId, doc);
-  let signatures = rankSignatures.get(store);
-  if (!signatures) {
-    signatures = new Map();
-    rankSignatures.set(store, signatures);
-  }
-  const signature = rankSignature(doc);
-  if (signatures.get(doc.userId) !== signature) {
-    signatures.set(doc.userId, signature);
-    leaderboardCache = null;
-  }
+/**
+ * Change one learner's progress atomically (a row lock in Postgres): `apply`
+ * gets the current document, edits it and returns the result for the caller.
+ */
+async function update(userId, apply) {
+  let rankChanged = false;
+  const result = await getRepos().progress.mutate(userId, (doc) => {
+    const before = rankSignature(doc);
+    const out = apply(doc);
+    rankChanged = rankSignature(doc) !== before;
+    return out;
+  });
+  if (rankChanged) leaderboardCache = null;
+  return result;
 }
 
 function dayKey(timestamp) {
@@ -153,8 +148,7 @@ function computeStreak(activeDays, now = Date.now()) {
  * Record the outcome of a verification run.
  * @param {Array<{ step: number, passed: boolean }>} results
  */
-function recordVerification(userId, unitId, results, now = Date.now()) {
-  const doc = load(userId);
+function applyVerification(doc, unitId, results, now = Date.now()) {
   let xpAwarded = 0;
 
   for (const result of results) {
@@ -200,25 +194,21 @@ function recordVerification(userId, unitId, results, now = Date.now()) {
 
   doc.xp += xpAwarded;
   markActive(doc, now);
-  save(doc);
   return { xpAwarded, unitCompleted, newlyCompleted, dailyBonus };
 }
 
-function hintCount(userId, unitId, step) {
-  return load(userId).hints[stepKey(unitId, step)] || 0;
+async function hintCount(userId, unitId, step) {
+  return (await load(userId)).hints[stepKey(unitId, step)] || 0;
 }
 
-function recordHint(userId, unitId, step, now = Date.now()) {
-  const doc = load(userId);
+function applyHint(doc, unitId, step, now = Date.now()) {
   const key = stepKey(unitId, step);
   doc.hints[key] = (doc.hints[key] || 0) + 1;
   markActive(doc, now);
-  save(doc);
   return doc.hints[key];
 }
 
-function recordQuiz(userId, unitId, quizId, now = Date.now()) {
-  const doc = load(userId);
+function applyQuiz(doc, unitId, quizId, now = Date.now()) {
   const key = `${unitId}:${quizId}`;
   let xpAwarded = 0;
   if (!doc.quizzes[key]) {
@@ -227,13 +217,12 @@ function recordQuiz(userId, unitId, quizId, now = Date.now()) {
     doc.xp += xpAwarded;
   }
   markActive(doc, now);
-  save(doc);
   return { xpAwarded };
 }
 
 /** The unit's flashcards with each card's schedule, due cards first. */
-function getDeck(userId, unitId, now = Date.now()) {
-  const doc = load(userId);
+async function getDeck(userId, unitId, now = Date.now()) {
+  const doc = await load(userId);
   const cards = units.getFlashcards(unitId).map((card) => {
     const state = doc.cards[`${unitId}:${card.id}`] || null;
     return {
@@ -250,20 +239,15 @@ function getDeck(userId, unitId, now = Date.now()) {
   return { cards, dueCount: cards.filter((c) => c.due).length, total: cards.length };
 }
 
-function reviewCard(userId, unitId, cardId, grade, now = Date.now()) {
-  if (!units.getFlashcards(unitId).some((card) => card.id === cardId)) return null;
-
-  const doc = load(userId);
+function applyReview(doc, unitId, cardId, grade, now = Date.now()) {
   const key = `${unitId}:${cardId}`;
   doc.cards[key] = sm2.review(doc.cards[key], grade, now);
   doc.xp += XP.flashcard;
   markActive(doc, now);
-  save(doc);
   return doc.cards[key];
 }
 
-function recordInterview(userId, unitId, questionId, score, now = Date.now()) {
-  const doc = load(userId);
+function applyInterview(doc, unitId, questionId, score, now = Date.now()) {
   const alreadyPassed = doc.interviews.some(
     (i) => i.unitId === unitId && i.questionId === questionId && i.score >= INTERVIEW_PASS_SCORE
   );
@@ -275,8 +259,28 @@ function recordInterview(userId, unitId, questionId, score, now = Date.now()) {
   doc.interviews.push({ unitId, questionId, score, at: now });
   if (doc.interviews.length > MAX_INTERVIEWS) doc.interviews = doc.interviews.slice(-MAX_INTERVIEWS);
   markActive(doc, now);
-  save(doc);
   return { xpAwarded };
+}
+
+function recordVerification(userId, unitId, results, now = Date.now()) {
+  return update(userId, (doc) => applyVerification(doc, unitId, results, now));
+}
+
+async function recordHint(userId, unitId, step, now = Date.now()) {
+  return update(userId, (doc) => applyHint(doc, unitId, step, now));
+}
+
+function recordQuiz(userId, unitId, quizId, now = Date.now()) {
+  return update(userId, (doc) => applyQuiz(doc, unitId, quizId, now));
+}
+
+async function reviewCard(userId, unitId, cardId, grade, now = Date.now()) {
+  if (!units.getFlashcards(unitId).some((card) => card.id === cardId)) return null;
+  return update(userId, (doc) => applyReview(doc, unitId, cardId, grade, now));
+}
+
+function recordInterview(userId, unitId, questionId, score, now = Date.now()) {
+  return update(userId, (doc) => applyInterview(doc, unitId, questionId, score, now));
 }
 
 /**
@@ -322,8 +326,8 @@ function weakTopics(doc, limit = 5) {
     .slice(0, limit);
 }
 
-function summary(userId, now = Date.now()) {
-  const doc = load(userId);
+async function summary(userId, now = Date.now()) {
+  const doc = await load(userId);
 
   const unitProgress = {};
   let stepsPassed = 0;
@@ -378,9 +382,9 @@ function summary(userId, now = Date.now()) {
 }
 
 /** What a public profile page shows: achievements only, nothing about struggles. */
-function publicSummary(userId, now = Date.now()) {
-  const doc = load(userId);
-  const full = summary(userId, now);
+async function publicSummary(userId, now = Date.now()) {
+  const doc = await load(userId);
+  const full = await summary(userId, now);
   return {
     xp: full.xp,
     level: full.level,
@@ -397,13 +401,12 @@ function publicSummary(userId, now = Date.now()) {
 }
 
 function totals() {
-  const docs = getStore().all(PROGRESS);
-  return { learnersWithXp: docs.filter((doc) => doc.xp > 0).length, totalXp: docs.reduce((sum, doc) => sum + doc.xp, 0) };
+  return getRepos().progress.totals();
 }
 
 /** How cleanly a unit was completed: 100 means every step passed first time. */
-function unitAccuracy(userId, unitId) {
-  const doc = load(userId);
+async function unitAccuracy(userId, unitId) {
+  const doc = await load(userId);
   let passed = 0;
   let fails = 0;
   for (const s of units.getSteps(unitId)) {
@@ -415,45 +418,40 @@ function unitAccuracy(userId, unitId) {
   return passed + fails === 0 ? 0 : Math.round((passed / (passed + fails)) * 100);
 }
 
-function isUnitCompleted(userId, unitId) {
-  return Boolean(load(userId).completedUnits[unitId]);
+async function isUnitCompleted(userId, unitId) {
+  return Boolean((await load(userId)).completedUnits[unitId]);
 }
 
-function leaderboard(limit = 20, now = Date.now()) {
-  const store = getStore();
+async function leaderboard(limit = 20, now = Date.now()) {
+  const repos = getRepos();
   let cached = leaderboardCache;
-  if (!cached || cached.store !== store || cached.limit !== limit || now < cached.at || now - cached.at >= LEADERBOARD_TTL_MS) {
-    const ranked = store.all(PROGRESS)
-      .filter((doc) => doc.xp > 0)
-      .sort((a, b) => b.xp - a.xp)
-      .slice(0, limit)
-      .map((doc, index) => ({
+  if (!cached || cached.repos !== repos || cached.limit !== limit || now < cached.at || now - cached.at >= LEADERBOARD_TTL_MS) {
+    const rows = await repos.progress.leaderboard(limit);
+    cached = {
+      repos, limit, at: now,
+      ranked: rows.map((row, index) => ({
         rank: index + 1,
-        userId: doc.userId,
-        xp: doc.xp,
-        completedUnits: Object.keys(doc.completedUnits).length,
-        streak: computeStreak(doc.activeDays, now).current,
-      }));
-    cached = { store, limit, at: now, ranked };
+        userId: row.userId,
+        xp: row.xp,
+        completedUnits: row.completedUnits,
+        streak: computeStreak(row.activeDays, now).current,
+      })),
+    };
     leaderboardCache = cached;
   }
 
-  // Names are read fresh: a guest who registers shows their real name at once.
-  return cached.ranked.map(({ rank, userId, ...row }) => {
-    const user = store.get(USERS, userId);
-    return { rank, userId, name: user ? user.name : 'Learner', ...row };
-  });
+  // Names are read fresh: a guest who registers shows their real name at once, and an
+  // account deleted since the ranking was cached (an expired guest) drops out of it.
+  const names = await repos.users.namesByIds(cached.ranked.map((r) => r.userId));
+  return cached.ranked
+    .filter((r) => names[r.userId] !== undefined)
+    .map(({ userId, ...row }, index) => ({ ...row, rank: index + 1, userId, name: names[userId] }));
 }
 
 /** Forget a learner's progress (used when an expired guest is removed). */
-function remove(userId) {
-  const store = getStore();
-  const existed = store.delete(PROGRESS, userId);
-  if (existed) {
-    leaderboardCache = null;
-    const signatures = rankSignatures.get(store);
-    if (signatures) signatures.delete(userId);
-  }
+async function remove(userId) {
+  const existed = await getRepos().progress.remove(userId);
+  if (existed) leaderboardCache = null;
   return existed;
 }
 

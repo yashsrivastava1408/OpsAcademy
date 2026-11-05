@@ -9,7 +9,7 @@ const { requireAdmin } = require('../middleware/auth');
 const config = require('../config');
 const { getManager } = require('../services/sandboxManager');
 const { getHubClient } = require('../services/aiHubClient');
-const { getStore } = require('../lib/store');
+const { getRepos } = require('../repositories');
 const { getMailer } = require('../lib/mailer');
 const userService = require('../services/userService');
 const progressService = require('../services/progressService');
@@ -30,13 +30,13 @@ router.get('/overview', async (req, res, next) => {
         uptimeSeconds: Math.round(process.uptime()),
         sandbox: manager.stats(),
         sandboxes: manager.listSessions(),
-        users: userService.counts(),
-        progress: progressService.totals(),
-        certificates: getStore().all('certificates').length,
+        users: await userService.counts(),
+        progress: await progressService.totals(),
+        certificates: await getRepos().certificates.count(),
         services: {
           aiHub: await getHubClient().isHealthy(),
-          storeDriver: config.storeDriver,
-          storeWritable: getStore().isWritable(),
+          storeDriver: getRepos().driver,
+          storeWritable: await getRepos().ping().then(() => true, () => false),
           emailDelivers: getMailer().delivers,
         },
         limits: {

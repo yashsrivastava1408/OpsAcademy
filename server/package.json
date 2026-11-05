@@ -17,7 +17,8 @@
     "labs:audit:check": "node scripts/audit-labs.js --check",
     "migrate": "node scripts/migrate.js",
     "migrate:status": "node scripts/migrate.js --status",
-    "test:db": "jest tests/migrator.test.js tests/schema.test.js --runInBand --coverage=false"
+    "test:db": "jest tests/migrator.test.js tests/schema.test.js tests/repositories.postgres.test.js --runInBand --coverage=false",
+    "test:pg": "TEST_REPOS=postgres jest --runInBand --coverage=false --testPathIgnorePatterns migrator schema repositories.postgres"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
@@ -68,6 +69,9 @@
         "functions": 81,
         "lines": 87
       }
-    }
+    },
+    "setupFilesAfterEnv": [
+      "<rootDir>/tests/setup-db.js"
+    ]
   }
 }

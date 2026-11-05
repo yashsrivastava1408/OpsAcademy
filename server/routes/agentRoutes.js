@@ -51,7 +51,7 @@ async function prepareHint(req) {
 
   if (!query.trim()) return { error: 'Ask a question to get a hint' };
 
-  const unlocked = Math.min(MAX_TIER, (unitId ? progressService.hintCount(req.user.id, unitId, stepNumber) : 0) + 1);
+  const unlocked = Math.min(MAX_TIER, (unitId ? await progressService.hintCount(req.user.id, unitId, stepNumber) : 0) + 1);
   const requested = Number(body.tier);
   const tier = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, unlocked) : unlocked;
 
@@ -89,8 +89,8 @@ async function prepareHint(req) {
 }
 
 /** Count the hint and shape the answer the browser gets. */
-function finishHint(req, { unitId, stepNumber, tier }, data) {
-  if (!data.blocked && unitId) progressService.recordHint(req.user.id, unitId, stepNumber);
+async function finishHint(req, { unitId, stepNumber, tier }, data) {
+  if (!data.blocked && unitId) await progressService.recordHint(req.user.id, unitId, stepNumber);
   metrics.hintRequests.inc({ tier: String(tier), source: data.blocked ? 'blocked' : data.source || 'hub' });
   return { ...data, tier, maxTier: MAX_TIER, nextTier: !data.blocked && tier < MAX_TIER ? tier + 1 : null };
 }
@@ -115,7 +115,7 @@ router.post('/hint', async (req, res, next) => {
       data = { blocked: false, hint: fallbackHint(hint.step, hint.tier), tier: hint.tier, source: 'fallback', fallback: true };
     }
 
-    res.json({ success: true, data: finishHint(req, hint, data) });
+    res.json({ success: true, data: await finishHint(req, hint, data) });
   } catch (err) {
     next(err);
   }
@@ -171,7 +171,7 @@ router.post('/hint/stream', async (req, res, next) => {
     send({ type: 'delta', text: data.hint });
   }
 
-  send({ type: 'done', data: finishHint(req, hint, data) });
+  send({ type: 'done', data: await finishHint(req, hint, data) });
   res.end();
 });
 

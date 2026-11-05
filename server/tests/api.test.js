@@ -3,7 +3,7 @@ const config = require('../config');
 const units = require('../lib/units');
 const pty = require('../services/ptyService');
 const { createApp } = require('../app');
-const { fakeEngine, install } = require('./helpers');
+const { fakeEngine, install, tamperCertificate } = require('./helpers');
 
 let app;
 let ctx;
@@ -63,11 +63,15 @@ describe('health and readiness', () => {
     expect(res.body).toMatchObject({ status: 'degraded', checks: { store: true, aiHub: false } });
   });
 
-  test('ready fails when the store cannot be written', async () => {
-    ctx.store.isWritable = () => false;
-    const res = await request(app).get('/api/ready');
-    expect(res.status).toBe(503);
-    expect(res.body.status).toBe('not_ready');
+  test('ready fails when the database cannot be reached', async () => {
+    const ping = jest.spyOn(ctx.repos, 'ping').mockRejectedValue(new Error('database down'));
+    try {
+      const res = await request(app).get('/api/ready');
+      expect(res.status).toBe(503);
+      expect(res.body.status).toBe('not_ready');
+    } finally {
+      ping.mockRestore();
+    }
   });
 
   test('preflight answers can be cached by the browser', async () => {
@@ -114,7 +118,7 @@ describe('auth', () => {
 
   test('passwords are stored hashed', async () => {
     const user = await registered();
-    const stored = ctx.store.get('users', user.user.id);
+    const stored = await ctx.repos.users.getById(user.user.id);
     expect(stored.password).not.toBe(user.password);
     expect(stored.password).toMatch(/^\$2[aby]\$/);
   });
@@ -698,7 +702,7 @@ describe('admin', () => {
         progress: { learnersWithXp: 1, totalXp: 20 },
         certificates: 0,
         sandbox: { activeSessions: 1 },
-        services: { aiHub: true, storeWritable: true, emailDelivers: false },
+        services: { aiHub: true, storeDriver: ctx.repos.driver, storeWritable: true, emailDelivers: false },
         limits: { maxPerUser: config.sandbox.maxPerUser },
       });
       expect(res.body.data.sandboxes.map((s) => s.sessionId)).toEqual([sessionId]);
@@ -909,7 +913,7 @@ describe('certificates', () => {
     const user = await registered();
     const res = await request(app).post('/api/certificates').set(user.auth).send({ unitId: 'linux-basics' });
     expect(res.status).toBe(403);
-    expect(ctx.store.all('certificates')).toEqual([]);
+    expect(await ctx.repos.certificates.count()).toBe(0);
   });
 
   test('guests must create an account first', async () => {
@@ -944,7 +948,7 @@ describe('certificates', () => {
 
     const again = await request(app).post('/api/certificates').set(user.auth).send({ unitId: 'linux-basics' });
     expect(again.body.data.id).toBe(issued.body.data.id);
-    expect(ctx.store.all('certificates')).toHaveLength(1);
+    expect(await ctx.repos.certificates.count()).toBe(1);
 
     const verified = await request(app).get(`/api/certificates/verify/${issued.body.data.id}`);
     expect(verified.body).toMatchObject({ verified: true, data: { studentName: 'Asha Rao', signature: issued.body.data.signature } });
@@ -958,8 +962,7 @@ describe('certificates', () => {
     await completeUnit(user);
     const { id } = (await request(app).post('/api/certificates').set(user.auth).send({ unitId: 'linux-basics' })).body.data;
 
-    const stored = ctx.store.get('certificates', id);
-    ctx.store.set('certificates', id, { ...stored, studentName: 'Forged Name' });
+    await tamperCertificate(ctx.repos, id, { studentName: 'Forged Name' });
 
     const res = await request(app).get(`/api/certificates/verify/${id}`);
     expect(res.status).toBe(404);

@@ -9,24 +9,26 @@ jest.mock('../lib/supabaseAuth', () => ({
   ready: () => Promise.resolve(),
 }));
 
-const { JsonStore, setStore } = require('../lib/store');
+const { createMemoryRepos, setRepos } = require('../repositories');
 const { createApp } = require('../app');
 const { fakeEngine, install } = require('./helpers');
 
 let app;
-let store;
+let repos;
 let writes;
 
 beforeEach(() => {
   install({ engine: fakeEngine() });
-  store = new JsonStore(null);
+  repos = createMemoryRepos();
   writes = 0;
-  const set = store.set.bind(store);
-  store.set = (...args) => {
-    writes += 1;
-    return set(...args);
-  };
-  setStore(store);
+  for (const method of ['create', 'createIfAbsent', 'update']) {
+    const original = repos.users[method].bind(repos.users);
+    repos.users[method] = (...args) => {
+      writes += 1;
+      return original(...args);
+    };
+  }
+  setRepos(repos);
   app = createApp();
 });
 
@@ -38,7 +40,7 @@ describe('Supabase sign-in (#56)', () => {
     await request(app).get('/api/progress/summary').set(auth);
     await request(app).get('/api/units').set(auth);
     expect(writes).toBe(0);
-    expect(store.get('users', 'sb-user-1')).toBeNull();
+    expect(await repos.users.getById('sb-user-1')).toBeNull();
   });
 
   test('/me says the account does not exist until /session creates it', async () => {
@@ -47,7 +49,7 @@ describe('Supabase sign-in (#56)', () => {
     const created = await request(app).post('/api/auth/session').set(auth);
     expect(created.status).toBe(200);
     expect(created.body.user).toMatchObject({ id: 'sb-user-1', name: 'Ada', email: 'ada@example.com' });
-    expect(store.get('users', 'sb-user-1')).toMatchObject({ id: 'sb-user-1' });
+    expect(await repos.users.getById('sb-user-1')).toMatchObject({ id: 'sb-user-1' });
 
     const me = await request(app).get('/api/auth/me').set(auth);
     expect(me.status).toBe(200);
@@ -55,10 +57,10 @@ describe('Supabase sign-in (#56)', () => {
 
   test('/session is idempotent and keeps the existing record', async () => {
     await request(app).post('/api/auth/session').set(auth);
-    const before = writes;
     const again = await request(app).post('/api/auth/session').set(auth);
     expect(again.status).toBe(200);
-    expect(writes).toBe(before);
+    // The second call is an insert-if-absent that finds the row: it never replaces it.
+    expect((await repos.users.getById('sb-user-1')).name).toBe('Ada');
   });
 
   test('/session requires a valid token', async () => {

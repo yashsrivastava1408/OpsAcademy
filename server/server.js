@@ -9,39 +9,31 @@ const http = require('http');
 const config = require('./config');
 const logger = require('./lib/logger');
 const { createApp } = require('./app');
-const { getStore } = require('./lib/store');
+const { getRepos } = require('./repositories');
+const { startJobs } = require('./jobs/maintenance');
 const { getManager } = require('./services/sandboxManager');
 const { attachTerminalWebSocket } = require('./services/terminalService');
 const { startReaper, stopReaper } = require('./services/reaperService');
-const userService = require('./services/userService');
 
 const SHUTDOWN_TIMEOUT_MS = 10000;
-const GUEST_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
-function pruneGuests() {
-  try {
-    const removed = userService.pruneExpiredGuests();
-    if (removed > 0) logger.info({ removed }, 'removed expired guest records');
-    userService.pruneExpiredTokens();
-  } catch (err) {
-    logger.warn({ err: err.message }, 'could not prune guest records');
-  }
-}
 
 async function start() {
   const role = config.serviceRole;
-  // Never serve a request (or prune records) before the store has loaded.
+  // Never serve a request before the keys and the database are reachable.
   await require('./lib/supabaseAuth').ready();
-  const store = getStore();
-  if (typeof store.ready === 'function') {
-    try {
-      await store.ready();
-    } catch (err) {
-      logger.error({ err: err.message }, 'store failed to load; refusing to start');
-      process.exit(1);
-    }
+  const repos = getRepos();
+  try {
+    await repos.ping();
+  } catch (err) {
+    logger.error({ err: err.message }, 'database is not reachable; refusing to start');
+    process.exit(1);
+  }
+  if (config.isProd && repos.driver !== 'postgres') {
+    logger.error('Production needs DATABASE_URL (Postgres). Refusing to start on the in-memory store.');
+    process.exit(1);
   }
   const manager = getManager();
+  let stopJobs = () => {};
   let app = null;
   let server = null;
   let wss = null;
@@ -67,8 +59,9 @@ async function start() {
 
   if (role !== 'terminal') {
     startReaper(manager);
-    pruneGuests();
-    setInterval(pruneGuests, GUEST_PRUNE_INTERVAL_MS).unref();
+    // With Postgres a separate worker process does the housekeeping; without it (local
+    // development, in-memory) there is only this process.
+    if (repos.driver !== 'postgres') stopJobs = startJobs();
   }
 
   if (config.isProd && config.sandboxMode === 'pty') {
@@ -97,7 +90,8 @@ async function start() {
       for (const ws of wss.clients) ws.close(1001, 'Server shutting down');
     }
     await manager.shutdown().catch((err) => logger.warn({ err: err.message }, 'error destroying sandboxes'));
-    await getStore().flush();
+    stopJobs();
+    await repos.close().catch(() => {});
     process.exit(0);
   }
 

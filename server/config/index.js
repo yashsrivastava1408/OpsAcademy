@@ -100,6 +100,13 @@ const config = {
   supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || null,
   supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_KEY || null,
 
+  // Postgres (Supabase). Use the transaction-pooler connection string here and the
+  // direct one for migrations (MIGRATION_DATABASE_URL). Required in production.
+  databaseUrl: process.env.DATABASE_URL || null,
+  databasePoolSize: int('DATABASE_POOL_SIZE', 10),
+  // Optional CA bundle (PEM text or a file path in DATABASE_CA_FILE) to verify the server certificate.
+  databaseCa: process.env.DATABASE_CA || (process.env.DATABASE_CA_FILE ? require('fs').readFileSync(process.env.DATABASE_CA_FILE, 'utf8') : null),
+
   rateLimit: {
     windowMs: 60 * 1000,
     apiPerWindow: int('RATE_LIMIT_API', 300),
