@@ -28,8 +28,18 @@ function pruneGuests() {
   }
 }
 
-function start() {
+async function start() {
   const role = config.serviceRole;
+  // Never serve a request (or prune records) before the store has loaded.
+  const store = getStore();
+  if (typeof store.ready === 'function') {
+    try {
+      await store.ready();
+    } catch (err) {
+      logger.error({ err: err.message }, 'store failed to load; refusing to start');
+      process.exit(1);
+    }
+  }
   const manager = getManager();
   let app = null;
   let server = null;
@@ -86,7 +96,7 @@ function start() {
       for (const ws of wss.clients) ws.close(1001, 'Server shutting down');
     }
     await manager.shutdown().catch((err) => logger.warn({ err: err.message }, 'error destroying sandboxes'));
-    getStore().flush();
+    await getStore().flush();
     process.exit(0);
   }
 
@@ -97,7 +107,10 @@ function start() {
 }
 
 if (require.main === module) {
-  start();
+  start().catch((err) => {
+    logger.error({ err: err.message }, 'failed to start');
+    process.exit(1);
+  });
 }
 
 module.exports = { start };
