@@ -71,9 +71,14 @@ graph TB
         MGR["Sandbox Manager (Lifecycle, Reconciliation, Limits, Reaper)"]
         POOL["Pre-Warmed Sandbox Pool (Standby Containers)"]
         GUARD["Terminal Tripwire (Command Guard)"]
-        STORE[("Data Store (SQLite WAL Mode in Prod / JSON)")]
+        STORE[("Data Store (SQLite WAL / JSON / Supabase Postgres)")]
         STREAM["SSE / Stream Relay"]
         METRICS["/metrics (Prometheus Exporter)"]
+    end
+
+    subgraph Supa["Supabase (optional)"]
+        SAUTH["Supabase Auth (JWKS-verified access tokens)"]
+        SPG[("Postgres (document store driver)")]
     end
 
     subgraph Engines["Sandbox Engines"]
@@ -102,6 +107,9 @@ graph TB
     CADDY -->|"HTTP /assets, /*"| UI
     CADDY -->|"/api/terminal (WSS)"| Gateway
     CADDY -->|"/api/* (REST)"| Gateway
+    UI -.->|"sign-in (Supabase JS)"| SAUTH
+    AUTH -.->|"verify JWT locally via JWKS"| SAUTH
+    STORE -.->|"STORE_DRIVER=supabase"| SPG
     MGR --> POOL
     POOL --> DOCKER
     DOCKER --> SIMS
@@ -115,6 +123,7 @@ graph TB
     style Ingress fill:#0f172a,stroke:#38bdf8,color:#f8fafc
     style Gateway fill:#0f172a,stroke:#6366f1,color:#f8fafc
     style Hub fill:#0f172a,stroke:#d97706,color:#f8fafc
+    style Supa fill:#0f172a,stroke:#3ecf8e,color:#f8fafc
     style Engines fill:#0f172a,stroke:#059669,color:#f8fafc
     style Monitoring fill:#0f172a,stroke:#10b981,color:#f8fafc
 ```
@@ -309,7 +318,7 @@ Units are plain JSON under `server/data/units/`. Adding one needs no code: see [
 - **Frontend**: React 19, Vite, xterm.js, React Router, plain CSS
 - **API gateway**: Node.js 22, Express, `ws`, `node-pty`, `dockerode`, JWT, bcrypt, helmet, express-rate-limit, pino, prom-client
 - **AI hub**: Python 3.11, Flask, gunicorn, scikit-learn (TF-IDF, Isolation Forest), a small BM25 implementation, optional sentence embeddings (fastembed, ONNX), optional Anthropic SDK
-- **Storage**: one JSON file with atomic writes by default, or SQLite (`STORE_DRIVER=sqlite`, the one built into Node), behind the same small store interface
+- **Storage**: one JSON file with atomic writes by default, SQLite (`STORE_DRIVER=sqlite`, the one built into Node), or Supabase Postgres (`STORE_DRIVER=supabase`, with Supabase Auth for sign-in), behind the same small store interface
 - **Testing**: Jest and supertest (311 tests), pytest (316 for the AI hub, 97 for the lab simulators), an end-to-end script that plays a learner over HTTP and WebSocket (56 checks), and Playwright browser tests (120 checks, including typing on a slow connection and a phone-sized screen)
 - **Operations**: Docker Compose, Kubernetes manifests, Prometheus, Grafana, GitHub Actions
 
@@ -451,6 +460,7 @@ Optional gateway settings (all in `server/.env.example`):
 | Variable | What it turns on | Without it |
 | :--- | :--- | :--- |
 | `STORE_DRIVER=sqlite` | One database row per document, in `DATA_DIR/store.db`. An existing `store.json` is imported on first start. | One JSON file, rewritten on every save |
+| `STORE_DRIVER=supabase`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_PUBLISHABLE_KEY` | Documents live in Supabase Postgres and the gateway accepts Supabase Auth access tokens (verified locally against the project's JWKS). | Local SQLite or JSON store |
 | `RESEND_API_KEY`, `MAIL_FROM` | Password-reset and confirmation emails are really sent | Links are only written to the server log |
 | `APP_URL` | The web app's address, used to build the links in those emails | `CLIENT_URL`, else `http://localhost:5173` |
 | `ADMIN_TOKEN` | The operator page at `/admin` and the `/api/admin` endpoints | Those endpoints answer 404 |
