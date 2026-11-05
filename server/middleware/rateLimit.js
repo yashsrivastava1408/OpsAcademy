@@ -42,10 +42,10 @@ function isCampus(ip) {
 }
 
 /** Who to count this request against. The limiter runs before the routes' own auth, so it reads the token itself. */
-function requestKey(req) {
+async function requestKey(req) {
   if (req.user) return `user:${req.user.id}`;
   const header = req.headers.authorization;
-  const user = header && header.startsWith('Bearer ') ? verifyToken(header.slice('Bearer '.length).trim()) : null;
+  const user = header && header.startsWith('Bearer ') ? await verifyToken(header.slice('Bearer '.length).trim()) : null;
   return user ? `user:${user.id}` : ipKeyGenerator(req.ip);
 }
 

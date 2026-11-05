@@ -51,14 +51,20 @@ function notice(text) {
 function attachTerminalWebSocket(server, manager = getManager()) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
 
-  server.on('upgrade', (request, socket, head) => {
+  server.on('upgrade', async (request, socket, head) => {
     const url = new URL(request.url, 'http://localhost');
     if (url.pathname !== TERMINAL_PATH) return socket.destroy();
 
     if (!isAllowedOrigin(request.headers.origin)) return rejectUpgrade(socket, 403, 'Origin not allowed');
 
     // Browsers cannot set headers on a WebSocket, so the token rides in the query string.
-    const user = verifyToken(url.searchParams.get('token'));
+    let user;
+    try {
+      user = await verifyToken(url.searchParams.get('token'));
+    } catch (err) {
+      logger.error({ err: err.message }, '[Terminal] token check failed');
+      return rejectUpgrade(socket, 503, 'Service unavailable');
+    }
     if (!user) return rejectUpgrade(socket, 401, 'Unauthorized');
 
     const sessionId = url.searchParams.get('sessionId');

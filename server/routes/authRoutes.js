@@ -3,7 +3,8 @@
  */
 
 const express = require('express');
-const { requireAuth, optionalAuth, requireRegistered, signToken } = require('../middleware/auth');
+const { requireAuth, optionalAuth, requireRegistered, signToken, forgetUser } = require('../middleware/auth');
+const asyncHandler = require('../middleware/asyncHandler');
 const rateLimit = require('../middleware/rateLimit');
 const config = require('../config');
 const { getMailer } = require('../lib/mailer');
@@ -30,8 +31,8 @@ function sendLater(message) {
   getMailer().send(message).catch(() => {});
 }
 
-function sendVerification(user) {
-  const link = `${config.appUrl}/verify-email?token=${userService.createEmailVerification(user.id)}`;
+async function sendVerification(user) {
+  const link = `${config.appUrl}/verify-email?token=${await userService.createEmailVerification(user.id)}`;
   sendLater({
     to: user.email,
     subject: 'Confirm your OpsAcademy email address',
@@ -44,9 +45,9 @@ function sendVerification(user) {
  * POST /api/auth/guest
  * Issue an anonymous identity so a visitor can start labs without signing up
  */
-router.post('/guest', rateLimit.guest(), (req, res) => {
-  res.status(201).json(session(userService.createGuest()));
-});
+router.post('/guest', rateLimit.guest(), asyncHandler(async (req, res) => {
+  res.status(201).json(session(await userService.createGuest()));
+}));
 
 /**
  * POST /api/auth/register
@@ -56,7 +57,7 @@ router.post('/register', authLimiter, optionalAuth, async (req, res, next) => {
   try {
     const guestId = req.user && req.user.guest ? req.user.id : null;
     const user = await userService.register(req.body || {}, guestId);
-    const link = sendVerification(user);
+    const link = await sendVerification(user);
     res.status(201).json({ ...session(user), devVerifyLink: devLink(link) });
   } catch (err) {
     next(err);
@@ -80,33 +81,33 @@ router.post('/login', authLimiter, async (req, res, next) => {
  * First call after a Supabase sign-in: creates the learner's record if needed.
  * Token verification itself never writes, so this is the one explicit write.
  */
-router.post('/session', authLimiter, requireAuth, (req, res) => {
-  const user = req.user.supabase ? userService.ensureSupabaseUser(req.user) : userService.getById(req.user.id);
+router.post('/session', authLimiter, requireAuth, asyncHandler(async (req, res) => {
+  const user = req.user.supabase ? await userService.ensureSupabaseUser(req.user) : await userService.getById(req.user.id);
   if (!user) {
     return res.status(401).json({ success: false, error: 'Unauthorized: account no longer exists' });
   }
   res.json({ success: true, user: userService.publicUser(user) });
-});
+}));
 
 /**
  * GET /api/auth/me
  */
-router.get('/me', requireAuth, (req, res) => {
-  const user = userService.getById(req.user.id);
+router.get('/me', requireAuth, asyncHandler(async (req, res) => {
+  const user = await userService.getById(req.user.id);
   if (!user) {
     return res.status(401).json({ success: false, error: 'Unauthorized: account no longer exists' });
   }
   res.json({ success: true, user: userService.publicUser(user) });
-});
+}));
 
 /**
  * POST /api/auth/forgot
  * Body: { email }. Always answers the same, whether or not the account exists.
  */
-router.post('/forgot', authLimiter, (req, res, next) => {
+router.post('/forgot', authLimiter, async (req, res, next) => {
   try {
     const mailer = getMailer();
-    const found = userService.requestPasswordReset(req.body && req.body.email);
+    const found = await userService.requestPasswordReset(req.body && req.body.email);
     let link;
     if (found) {
       link = `${config.appUrl}/reset-password?token=${found.token}`;
@@ -136,6 +137,7 @@ router.post('/reset', authLimiter, async (req, res, next) => {
   try {
     const { token, password } = req.body || {};
     const user = await userService.resetPassword(token, password);
+    forgetUser(user.id);
     res.json(session(user));
   } catch (err) {
     next(err);
@@ -146,9 +148,9 @@ router.post('/reset', authLimiter, async (req, res, next) => {
  * POST /api/auth/verify-email
  * Body: { token }
  */
-router.post('/verify-email', authLimiter, (req, res, next) => {
+router.post('/verify-email', authLimiter, async (req, res, next) => {
   try {
-    const user = userService.verifyEmail(req.body && req.body.token);
+    const user = await userService.verifyEmail(req.body && req.body.token);
     res.json({ success: true, user: userService.publicUser(user) });
   } catch (err) {
     next(err);
@@ -159,12 +161,12 @@ router.post('/verify-email', authLimiter, (req, res, next) => {
  * POST /api/auth/resend-verification
  * Send the signed-in account a new confirmation link
  */
-router.post('/resend-verification', authLimiter, requireAuth, requireRegistered, (req, res, next) => {
+router.post('/resend-verification', authLimiter, requireAuth, requireRegistered, async (req, res, next) => {
   try {
-    const user = userService.getById(req.user.id);
+    const user = await userService.getById(req.user.id);
     if (!user) return res.status(401).json({ success: false, error: 'Unauthorized: account no longer exists' });
     if (user.emailVerified) return res.json({ success: true, alreadyVerified: true });
-    const link = sendVerification(user);
+    const link = await sendVerification(user);
     res.json({ success: true, emailConfigured: getMailer().delivers, devVerifyLink: devLink(link) });
   } catch (err) {
     next(err);
@@ -175,9 +177,9 @@ router.post('/resend-verification', authLimiter, requireAuth, requireRegistered,
  * POST /api/auth/profile
  * Body: { public }. Turn the shareable profile page on or off.
  */
-router.post('/profile', requireAuth, requireRegistered, (req, res, next) => {
+router.post('/profile', requireAuth, requireRegistered, async (req, res, next) => {
   try {
-    const user = userService.setProfilePublic(req.user.id, Boolean(req.body && req.body.public));
+    const user = await userService.setProfilePublic(req.user.id, Boolean(req.body && req.body.public));
     res.json({ success: true, user: userService.publicUser(user) });
   } catch (err) {
     next(err);

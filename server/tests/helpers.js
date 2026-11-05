@@ -1,4 +1,33 @@
-const { JsonStore, setStore } = require('../lib/store');
+const { createMemoryRepos, setRepos } = require('../repositories');
+
+/**
+ * Fresh repositories for a test. With TEST_REPOS=postgres (and TEST_DATABASE_URL) the whole
+ * suite runs against a real database (tests/setup-db.js empties it before every test), so
+ * what the services do is proven on Postgres, not only on the in-memory copy.
+ */
+function newRepos() {
+  if (process.env.TEST_REPOS === 'postgres') return require('./setup-db').postgresRepos();
+  return createMemoryRepos();
+}
+
+/** Make a stored certificate look forged (tests only). */
+async function tamperCertificate(repos, id, patch) {
+  if (repos.driver === 'postgres') {
+    await repos.pool.query('update certificates set student_name = $2 where id = $1', [id, patch.studentName]);
+  } else {
+    Object.assign(repos._test.certificates.get(id), patch);
+  }
+}
+
+/** Pretend a user was created `days` ago (tests only). */
+async function backdateUser(repos, id, days, now = Date.now()) {
+  const when = new Date(now - days * 24 * 60 * 60 * 1000);
+  if (repos.driver === 'postgres') {
+    await repos.pool.query('update users set created_at = $2 where id = $1', [id, when]);
+  } else {
+    repos._test.users.get(id).createdAt = when.toISOString();
+  }
+}
 const { createManager, setManager } = require('../services/sandboxManager');
 const { setHubClient } = require('../services/aiHubClient');
 const { createMailer, setMailer } = require('../lib/mailer');
@@ -92,15 +121,15 @@ function fakeHub() {
  * instances the routes use.
  */
 function install({ engine, limits, pool = { enabled: false } } = {}) {
-  const store = new JsonStore(null);
+  const repos = newRepos();
   const manager = createManager({ engine, limits, pool });
   const hub = fakeHub();
-  setStore(store);
+  setRepos(repos);
   setManager(manager);
   setHubClient(hub);
   const mailer = createMailer({ driver: 'memory' });
   setMailer(mailer);
-  return { store, manager, hub, engine, mailer };
+  return { repos, manager, hub, engine, mailer };
 }
 
 function waitFor(predicate, { timeoutMs = 8000, intervalMs = 20 } = {}) {
@@ -121,4 +150,4 @@ function waitFor(predicate, { timeoutMs = 8000, intervalMs = 20 } = {}) {
   });
 }
 
-module.exports = { fakeEngine, fakeHub, install, waitFor };
+module.exports = { fakeEngine, fakeHub, install, waitFor, newRepos, tamperCertificate, backdateUser };

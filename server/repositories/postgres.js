@@ -1,0 +1,336 @@
+/**
+ * Postgres repositories (see docs/adr/0001). Every method is a short query or
+ * transaction; none of them hold a connection across unrelated work.
+ */
+
+const { Pool } = require('pg');
+const { RepoError } = require('./errors');
+const { emptyProgress } = require('./memory');
+const logger = require('../lib/logger');
+
+const toDate = (ms) => new Date(ms);
+const iso = (d) => (d ? d.toISOString() : undefined);
+
+function mapError(err) {
+  if (err instanceof RepoError) return err;
+  if (err && err.code === '23505') {
+    if (/users_email_key/.test(err.constraint || '')) return new RepoError('email_taken', 'User with this email already exists');
+    if (/users_profile_slug_key/.test(err.constraint || '')) return new RepoError('slug_taken', 'Profile address is taken');
+    if (/users_pkey/.test(err.constraint || '')) return new RepoError('user_exists', 'User already exists');
+  }
+  if (err && err.code === '23503' && /user_id_fkey/.test(err.constraint || '')) {
+    return new RepoError('user_missing', 'User does not exist');
+  }
+  return err;
+}
+
+// ── row mappers (database shape <-> the shape the services already use) ──
+
+function userFromRow(r) {
+  const u = { id: r.id, name: r.name, guest: r.guest, emailVerified: r.email_verified, createdAt: iso(r.created_at) };
+  if (r.email) u.email = r.email;
+  if (r.password_hash) u.password = r.password_hash;
+  if (r.profile_public) u.profilePublic = true;
+  if (r.profile_slug) u.profileSlug = r.profile_slug;
+  if (r.password_changed_at) u.passwordChangedAt = r.password_changed_at.getTime();
+  if (r.registered_at) u.registeredAt = iso(r.registered_at);
+  return u;
+}
+
+const USER_PATCH_COLUMNS = {
+  name: ['name', (v) => v],
+  email: ['email', (v) => v],
+  password: ['password_hash', (v) => v],
+  guest: ['guest', Boolean],
+  emailVerified: ['email_verified', Boolean],
+  profilePublic: ['profile_public', Boolean],
+  profileSlug: ['profile_slug', (v) => v],
+  passwordChangedAt: ['password_changed_at', (v) => (v == null ? null : toDate(v))],
+  registeredAt: ['registered_at', (v) => (v == null ? null : new Date(v))],
+};
+
+function progressFromRow(r) {
+  return {
+    userId: r.user_id, xp: r.xp, completedUnits: r.completed_units, steps: r.steps, hints: r.hints,
+    quizzes: r.quizzes, cards: r.cards, interviews: r.interviews, activeDays: r.active_days, daily: r.daily,
+  };
+}
+
+const PROGRESS_SELECT = `user_id, xp, completed_units, steps, hints, quizzes, cards, interviews, daily,
+  active_days::text[] as active_days`;
+
+function certFromRow(r) {
+  return {
+    id: r.id, userId: r.user_id, studentName: r.student_name, unitId: r.unit_id, unitTitle: r.unit_title,
+    score: r.score, issuedAt: iso(r.issued_at), signature: r.signature,
+  };
+}
+
+function sessionFromRow(r) {
+  return {
+    sessionId: r.session_id, engineId: r.engine_id, userId: r.user_id, labId: r.lab_id,
+    createdAt: r.created_ms, lastActiveAt: r.active_ms, fromPool: r.from_pool,
+    claimMs: r.claim_ms === null ? undefined : Number(r.claim_ms), history: r.history, strikes: r.strikes,
+  };
+}
+
+function createPostgresRepos({ connectionString, pool: injected = null, max = 10, ssl } = {}) {
+  const pool = injected || new Pool({
+    connectionString,
+    max,
+    ssl,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+    query_timeout: 15_000,
+  });
+  if (!injected) pool.on('error', (err) => logger.error({ err: err.message }, '[postgres] idle client error'));
+
+  /** Run `fn(client)` in a transaction. */
+  async function tx(fn) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const result = await fn(client);
+      await client.query('commit');
+      return result;
+    } catch (err) {
+      await client.query('rollback').catch(() => {});
+      throw mapError(err);
+    } finally {
+      client.release();
+    }
+  }
+
+  const q = async (sql, params) => {
+    try {
+      return await pool.query(sql, params);
+    } catch (err) {
+      throw mapError(err);
+    }
+  };
+
+  return {
+    driver: 'postgres',
+    pool,
+
+    async ping() {
+      await pool.query('select 1');
+      return true;
+    },
+    async close() {
+      await pool.end();
+    },
+
+    users: {
+      async create(user) {
+        const { rows } = await q(
+          `insert into users (id, name, email, password_hash, guest, email_verified, profile_public, profile_slug,
+                              password_changed_at, created_at, registered_at, auth_provider)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,coalesce($10::timestamptz, now()),$11,$12) returning *`,
+          [user.id, user.name, user.email || null, user.password || null, Boolean(user.guest), Boolean(user.emailVerified),
+            Boolean(user.profilePublic), user.profileSlug || null,
+            user.passwordChangedAt ? toDate(user.passwordChangedAt) : null, user.createdAt || null,
+            user.registeredAt || null, user.authProvider || 'local'],
+        );
+        return userFromRow(rows[0]);
+      },
+      async createIfAbsent(user) {
+        const { rows } = await q(
+          `insert into users (id, name, email, guest, email_verified, created_at, auth_provider)
+           values ($1,$2,$3,$4,$5,coalesce($6::timestamptz, now()),'supabase')
+           on conflict (id) do nothing returning *`,
+          [user.id, user.name, user.email || null, Boolean(user.guest), Boolean(user.emailVerified), user.createdAt || null],
+        );
+        if (rows[0]) return userFromRow(rows[0]);
+        return this.getById(user.id);
+      },
+      async getById(id) {
+        const { rows } = await q('select * from users where id = $1', [id]);
+        return rows[0] ? userFromRow(rows[0]) : null;
+      },
+      async getByEmail(email) {
+        const { rows } = await q('select * from users where email = $1', [email]);
+        return rows[0] ? userFromRow(rows[0]) : null;
+      },
+      async getBySlug(slug) {
+        const { rows } = await q('select * from users where profile_slug = $1', [slug]);
+        return rows[0] ? userFromRow(rows[0]) : null;
+      },
+      async update(id, patch) {
+        const sets = [];
+        const params = [id];
+        for (const [key, value] of Object.entries(patch)) {
+          const spec = USER_PATCH_COLUMNS[key];
+          if (!spec) throw new RepoError('bad_patch', `Cannot update user field "${key}"`);
+          params.push(spec[1](value));
+          sets.push(`${spec[0]} = $${params.length}`);
+        }
+        if (sets.length === 0) return this.getById(id);
+        const { rows } = await q(`update users set ${sets.join(', ')} where id = $1 returning *`, params);
+        return rows[0] ? userFromRow(rows[0]) : null;
+      },
+      async namesByIds(ids) {
+        if (ids.length === 0) return {};
+        const { rows } = await q('select id, name from users where id = any($1::text[])', [ids]);
+        return Object.fromEntries(rows.map((r) => [r.id, r.name]));
+      },
+      async counts() {
+        const { rows } = await q('select count(*) filter (where guest)::int as guests, count(*) filter (where not guest)::int as registered from users');
+        return { registered: rows[0].registered, guests: rows[0].guests };
+      },
+      async pruneGuests(cutoffMs) {
+        const { rowCount } = await q('delete from users where guest and created_at < $1', [toDate(cutoffMs)]);
+        return rowCount;
+      },
+    },
+
+    tokens: {
+      async issue({ hash, userId, kind, expiresAt }) {
+        await tx(async (c) => {
+          await c.query('delete from one_time_tokens where user_id = $1 and kind = $2', [userId, kind]);
+          await c.query('insert into one_time_tokens (hash, user_id, kind, expires_at) values ($1,$2,$3,$4)', [hash, userId, kind, toDate(expiresAt)]);
+        });
+      },
+      async redeem(hash, kind, now = Date.now()) {
+        const { rows } = await q(
+          'delete from one_time_tokens where hash = $1 and kind = $2 returning user_id, (extract(epoch from expires_at) * 1000)::float8 as exp',
+          [hash, kind],
+        );
+        return rows[0] && rows[0].exp > now ? rows[0].user_id : null;
+      },
+      async pruneExpired(now = Date.now()) {
+        const { rowCount } = await q('delete from one_time_tokens where expires_at <= $1', [toDate(now)]);
+        return rowCount;
+      },
+    },
+
+    progress: {
+      async get(userId) {
+        const { rows } = await q(`select ${PROGRESS_SELECT} from progress where user_id = $1`, [userId]);
+        return rows[0] ? progressFromRow(rows[0]) : null;
+      },
+      /** Atomic read-modify-write under a row lock. `fn` must not start another progress.mutate for the same learner. */
+      async mutate(userId, fn) {
+        return tx(async (c) => {
+          await c.query('insert into progress (user_id) values ($1) on conflict (user_id) do nothing', [userId]);
+          const { rows } = await c.query(`select ${PROGRESS_SELECT} from progress where user_id = $1 for update`, [userId]);
+          const doc = rows[0] ? progressFromRow(rows[0]) : emptyProgress(userId);
+          const result = await fn(doc);
+          await c.query(
+            `update progress set xp = $2, completed_unit_count = $3, active_days = $4::date[],
+               completed_units = $5::jsonb, steps = $6::jsonb, hints = $7::jsonb, quizzes = $8::jsonb,
+               cards = $9::jsonb, interviews = $10::jsonb, daily = $11::jsonb
+             where user_id = $1`,
+            [userId, doc.xp, Object.keys(doc.completedUnits).length, doc.activeDays,
+              JSON.stringify(doc.completedUnits), JSON.stringify(doc.steps), JSON.stringify(doc.hints),
+              JSON.stringify(doc.quizzes), JSON.stringify(doc.cards), JSON.stringify(doc.interviews), JSON.stringify(doc.daily || {})],
+          );
+          return result;
+        });
+      },
+      async leaderboard(limit = 20, { collegeId = null } = {}) {
+        const { rows } = collegeId
+          ? await q(
+            `select user_id, xp, completed_unit_count, active_days::text[] as active_days from college_leaderboard
+             where college_id = $1 order by xp desc, user_id asc limit $2`, [collegeId, limit])
+          : await q(
+            `select user_id, xp, completed_unit_count, active_days::text[] as active_days from progress
+             where xp > 0 order by xp desc, user_id asc limit $1`, [limit]);
+        return rows.map((r) => ({ userId: r.user_id, xp: r.xp, completedUnits: r.completed_unit_count, activeDays: r.active_days }));
+      },
+      async totals() {
+        const { rows } = await q('select count(*) filter (where xp > 0)::int as n, coalesce(sum(xp), 0)::float8 as xp from progress');
+        return { learnersWithXp: rows[0].n, totalXp: rows[0].xp };
+      },
+      async remove(userId) {
+        const { rowCount } = await q('delete from progress where user_id = $1', [userId]);
+        return rowCount > 0;
+      },
+    },
+
+    memberships: {
+      async add({ userId, collegeId, sectionId = null, role }) {
+        await q('insert into memberships (user_id, college_id, section_id, role) values ($1,$2,$3,$4)', [userId, collegeId, sectionId, role]);
+      },
+      async forUser(userId) {
+        const { rows } = await q('select user_id, college_id, section_id, role from memberships where user_id = $1', [userId]);
+        return rows.map((r) => ({ userId: r.user_id, collegeId: r.college_id, sectionId: r.section_id, role: r.role }));
+      },
+    },
+
+    certificates: {
+      async create(cert) {
+        const { rows } = await q(
+          `insert into certificates (id, user_id, student_name, unit_id, unit_title, score, issued_at, signature)
+           values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (user_id, unit_id) do nothing returning *`,
+          [cert.id, cert.userId, cert.studentName, cert.unitId, cert.unitTitle, cert.score, cert.issuedAt, cert.signature],
+        );
+        return rows[0] ? certFromRow(rows[0]) : this.getForUnit(cert.userId, cert.unitId);
+      },
+      async getById(id) {
+        const { rows } = await q('select * from certificates where id = $1', [id]);
+        return rows[0] ? certFromRow(rows[0]) : null;
+      },
+      async getForUnit(userId, unitId) {
+        const { rows } = await q('select * from certificates where user_id = $1 and unit_id = $2', [userId, unitId]);
+        return rows[0] ? certFromRow(rows[0]) : null;
+      },
+      async listForUser(userId) {
+        const { rows } = await q('select * from certificates where user_id = $1 order by issued_at', [userId]);
+        return rows.map(certFromRow);
+      },
+      async count() {
+        const { rows } = await q('select count(*)::int as n from certificates');
+        return rows[0].n;
+      },
+    },
+
+    sessions: {
+      async upsert(s) {
+        await q(
+          `insert into sandbox_sessions (session_id, engine_id, user_id, lab_id, from_pool, claim_ms, history, strikes, created_at, last_active_at)
+           values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)
+           on conflict (session_id) do update set last_active_at = excluded.last_active_at, history = excluded.history,
+             strikes = excluded.strikes`,
+          [s.sessionId, s.engineId, s.userId, s.labId || null, Boolean(s.fromPool), s.claimMs ?? null,
+            JSON.stringify(s.history || []), s.strikes || 0, toDate(s.createdAt), toDate(s.lastActiveAt)],
+        );
+      },
+      async delete(sessionId) {
+        const { rowCount } = await q('delete from sandbox_sessions where session_id = $1', [sessionId]);
+        return rowCount > 0;
+      },
+      async all() {
+        const { rows } = await q(
+          `select session_id, engine_id, user_id, lab_id, from_pool, claim_ms, history, strikes,
+                  (extract(epoch from created_at) * 1000)::float8 as created_ms,
+                  (extract(epoch from last_active_at) * 1000)::float8 as active_ms
+           from sandbox_sessions`);
+        return rows.map(sessionFromRow);
+      },
+    },
+
+    jobs: {
+      /** Run `fn` only if no other process holds the named lock. @returns { ran, result } */
+      async withLock(name, fn) {
+        const client = await pool.connect();
+        try {
+          const { rows } = await client.query('select pg_try_advisory_lock(hashtext($1)) as ok', [`opsacademy:${name}`]);
+          if (!rows[0].ok) return { ran: false };
+          try {
+            return { ran: true, result: await fn() };
+          } finally {
+            await client.query('select pg_advisory_unlock(hashtext($1))', [`opsacademy:${name}`]).catch(() => {});
+          }
+        } finally {
+          client.release();
+        }
+      },
+      async refreshLeaderboards() {
+        await pool.query('refresh materialized view concurrently public.college_leaderboard');
+      },
+    },
+  };
+}
+
+module.exports = { createPostgresRepos };

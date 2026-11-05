@@ -11,13 +11,15 @@ const userService = require('../services/userService');
 const progressService = require('../services/progressService');
 const certificateService = require('../services/certificateService');
 
+const asyncHandler = require('../middleware/asyncHandler');
+
 const router = express.Router();
 
 /**
  * GET /api/profiles/:slug
  */
-router.get('/:slug', (req, res) => {
-  const user = userService.getByProfileSlug(req.params.slug);
+router.get('/:slug', asyncHandler(async (req, res) => {
+  const user = await userService.getByProfileSlug(req.params.slug);
   if (!user) return res.status(404).json({ success: false, error: 'Profile not found' });
 
   res.json({
@@ -25,11 +27,11 @@ router.get('/:slug', (req, res) => {
     data: {
       name: user.name,
       memberSince: user.registeredAt || user.createdAt,
-      ...progressService.publicSummary(user.id),
-      certificates: certificateService.listFor(user.id)
+      ...(await progressService.publicSummary(user.id)),
+      certificates: (await certificateService.listFor(user.id))
         .map(({ id, unitId, unitTitle, score, issuedAt }) => ({ id, unitId, unitTitle, score, issuedAt })),
     },
   });
-});
+}));
 
 module.exports = router;

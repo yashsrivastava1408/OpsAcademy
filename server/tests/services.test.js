@@ -1,4 +1,5 @@
-const { JsonStore, setStore } = require('../lib/store');
+const { setRepos } = require('../repositories');
+const { newRepos, backdateUser } = require('./helpers');
 const units = require('../lib/units');
 const progress = require('../services/progressService');
 const certificates = require('../services/certificateService');
@@ -10,7 +11,13 @@ const config = require('../config');
 const DAY = 24 * 60 * 60 * 1000;
 const day = (n) => Date.UTC(2026, 0, n, 12);
 
-beforeEach(() => setStore(new JsonStore(null)));
+let repos;
+beforeEach(async () => {
+  repos = setRepos(newRepos());
+  for (const id of ['u1', 'u2']) {
+    await repos.users.create({ id, name: `User ${id}`, guest: true, createdAt: new Date().toISOString() });
+  }
+});
 
 describe('streaks', () => {
   const streak = (days, today) => progress.computeStreak(days.map((n) => new Date(day(n)).toISOString().slice(0, 10)), day(today));
@@ -37,81 +44,92 @@ describe('streaks', () => {
     expect(progress.computeStreak(days, Date.UTC(2026, 1, 1, 9))).toMatchObject({ current: 3 });
   });
 
-  test('activity on several days builds a streak in the summary', () => {
-    progress.recordHint('u1', 'linux-basics', 1, day(1));
-    progress.recordHint('u1', 'linux-basics', 1, day(2));
-    progress.recordHint('u1', 'linux-basics', 1, day(2) + 3600000);
-    expect(progress.summary('u1', day(2)).streak).toEqual({ current: 2, longest: 2, activeToday: true });
-    expect(progress.summary('u1', day(2)).activeDays).toEqual(['2026-01-01', '2026-01-02']);
+  test('activity on several days builds a streak in the summary', async () => {
+    await progress.recordHint('u1', 'linux-basics', 1, day(1));
+    await progress.recordHint('u1', 'linux-basics', 1, day(2));
+    await progress.recordHint('u1', 'linux-basics', 1, day(2) + 3600000);
+    const summary = await progress.summary('u1', day(2));
+    expect(summary.streak).toEqual({ current: 2, longest: 2, activeToday: true });
+    expect(summary.activeDays).toEqual(['2026-01-01', '2026-01-02']);
   });
 });
 
 describe('verification records', () => {
-  test('fails before the first pass count as struggle; re-check failures afterwards do not', () => {
-    progress.recordVerification('u1', 'linux-basics', [{ step: 2, passed: false }]);
-    progress.recordVerification('u1', 'linux-basics', [{ step: 2, passed: false }]);
-    expect(progress.recordVerification('u1', 'linux-basics', [{ step: 2, passed: true }]).xpAwarded).toBe(20);
-    progress.recordVerification('u1', 'linux-basics', [{ step: 2, passed: false }]);
+  test('fails before the first pass count as struggle; re-check failures afterwards do not', async () => {
+    await progress.recordVerification('u1', 'linux-basics', [{ step: 2, passed: false }]);
+    await progress.recordVerification('u1', 'linux-basics', [{ step: 2, passed: false }]);
+    expect((await progress.recordVerification('u1', 'linux-basics', [{ step: 2, passed: true }])).xpAwarded).toBe(20);
+    await progress.recordVerification('u1', 'linux-basics', [{ step: 2, passed: false }]);
 
-    const summary = progress.summary('u1');
+    const summary = await progress.summary('u1');
     expect(summary.weakTopics[0]).toMatchObject({ unitId: 'linux-basics', fails: 2 });
     expect(summary.unitProgress['linux-basics'].passedSteps).toBe(1);
     expect(summary.unitProgress['linux-basics'].passedStepNumbers).toHaveLength(1);
   });
 
-  test('a unit completes only when every step has passed, across separate runs', () => {
+  test('a unit completes only when every step has passed, across separate runs', async () => {
     const steps = units.getSteps('linux-basics');
     for (const step of steps.slice(0, -1)) {
-      expect(progress.recordVerification('u1', 'linux-basics', [{ step: step.step, passed: true }]).unitCompleted).toBe(false);
+      expect((await progress.recordVerification('u1', 'linux-basics', [{ step: step.step, passed: true }])).unitCompleted).toBe(false);
     }
-    const last = progress.recordVerification('u1', 'linux-basics', [{ step: steps[steps.length - 1].step, passed: true }]);
+    const last = await progress.recordVerification('u1', 'linux-basics', [{ step: steps[steps.length - 1].step, passed: true }]);
     expect(last).toEqual({ xpAwarded: 120, unitCompleted: true, newlyCompleted: true, dailyBonus: 0 });
-    expect(progress.isUnitCompleted('u1', 'linux-basics')).toBe(true);
-    expect(progress.isUnitCompleted('u2', 'linux-basics')).toBe(false);
+    expect(await progress.isUnitCompleted('u1', 'linux-basics')).toBe(true);
+    expect(await progress.isUnitCompleted('u2', 'linux-basics')).toBe(false);
   });
 
-  test('accuracy reflects failed attempts before passing', () => {
+  test('accuracy reflects failed attempts before passing', async () => {
     const all = units.getSteps('linux-basics').map((s) => ({ step: s.step, passed: true }));
-    progress.recordVerification('u1', 'linux-basics', [{ step: 1, passed: false }]);
-    progress.recordVerification('u1', 'linux-basics', all);
-    expect(progress.unitAccuracy('u1', 'linux-basics')).toBe(Math.round((all.length / (all.length + 1)) * 100));
-    expect(progress.unitAccuracy('nobody', 'linux-basics')).toBe(0);
+    await progress.recordVerification('u1', 'linux-basics', [{ step: 1, passed: false }]);
+    await progress.recordVerification('u1', 'linux-basics', all);
+    expect(await progress.unitAccuracy('u1', 'linux-basics')).toBe(Math.round((all.length / (all.length + 1)) * 100));
+    expect(await progress.unitAccuracy('nobody', 'linux-basics')).toBe(0);
   });
 
-  test('weak topics are ranked by fails plus half-weighted hints', () => {
-    progress.recordVerification('u1', 'git-basics', [{ step: 1, passed: false }]);
-    progress.recordHint('u1', 'docker-basics', 2);
-    progress.recordHint('u1', 'docker-basics', 2);
-    progress.recordHint('u1', 'docker-basics', 3);
+  test('weak topics are ranked by fails plus half-weighted hints', async () => {
+    await progress.recordVerification('u1', 'git-basics', [{ step: 1, passed: false }]);
+    await progress.recordHint('u1', 'docker-basics', 2);
+    await progress.recordHint('u1', 'docker-basics', 2);
+    await progress.recordHint('u1', 'docker-basics', 3);
 
-    const weak = progress.summary('u1').weakTopics;
+    const weak = (await progress.summary('u1')).weakTopics;
     expect(weak.map((w) => [w.unitId, w.score])).toEqual([['docker-basics', 1.5], ['git-basics', 1]]);
     expect(weak[0].steps[0]).toMatchObject({ step: 2, hints: 2, title: units.getStep('docker-basics', 2).title });
   });
 
-  test('level rises every 250 XP', () => {
-    expect(progress.summary('u1')).toMatchObject({ xp: 0, level: 1, xpToNextLevel: 250 });
+  test('level rises every 250 XP', async () => {
+    expect(await progress.summary('u1')).toMatchObject({ xp: 0, level: 1, xpToNextLevel: 250 });
     const all = units.getSteps('linux-basics').map((s) => ({ step: s.step, passed: true }));
-    progress.recordVerification('u1', 'linux-basics', all);
-    const summary = progress.summary('u1');
+    await progress.recordVerification('u1', 'linux-basics', all);
+    const summary = await progress.summary('u1');
     expect(summary.xp).toBe(all.length * 20 + 100);
     expect(summary.level).toBe(Math.floor(summary.xp / 250) + 1);
+  });
+
+  test('simultaneous verifications of one learner never lose XP', async () => {
+    const results = await Promise.all(
+      units.getSteps('linux-basics').map((s) => progress.recordVerification('u1', 'linux-basics', [{ step: s.step, passed: true }])),
+    );
+    const total = results.reduce((n, r) => n + r.xpAwarded, 0);
+    expect((await progress.summary('u1')).xp).toBe(total);
+    expect(total).toBe(units.getSteps('linux-basics').length * 20 + 100);
+    expect(results.filter((r) => r.newlyCompleted)).toHaveLength(1);
   });
 });
 
 describe('flashcard deck', () => {
-  test('cards come back when their interval has passed', () => {
+  test('cards come back when their interval has passed', async () => {
     const cardId = units.getFlashcards('linux-basics')[0].id;
-    progress.reviewCard('u1', 'linux-basics', cardId, 4, day(1));
+    await progress.reviewCard('u1', 'linux-basics', cardId, 4, day(1));
 
-    expect(progress.getDeck('u1', 'linux-basics', day(1)).cards.find((c) => c.id === cardId).due).toBe(false);
-    expect(progress.getDeck('u1', 'linux-basics', day(1) + DAY).cards.find((c) => c.id === cardId).due).toBe(true);
-    expect(progress.summary('u1', day(1) + DAY)).toMatchObject({ cardsDue: 1, cardsStarted: 1 });
+    expect((await progress.getDeck('u1', 'linux-basics', day(1))).cards.find((c) => c.id === cardId).due).toBe(false);
+    expect((await progress.getDeck('u1', 'linux-basics', day(1) + DAY)).cards.find((c) => c.id === cardId).due).toBe(true);
+    expect(await progress.summary('u1', day(1) + DAY)).toMatchObject({ cardsDue: 1, cardsStarted: 1 });
   });
 
-  test('reviewing an unknown card changes nothing', () => {
-    expect(progress.reviewCard('u1', 'linux-basics', 'nope', 4)).toBeNull();
-    expect(progress.summary('u1').xp).toBe(0);
+  test('reviewing an unknown card changes nothing', async () => {
+    expect(await progress.reviewCard('u1', 'linux-basics', 'nope', 4)).toBeNull();
+    expect((await progress.summary('u1')).xp).toBe(0);
   });
 });
 
@@ -119,9 +137,9 @@ describe('certificates', () => {
   const user = { id: 'u1', name: 'Asha Rao' };
   const complete = (userId) => progress.recordVerification(userId, 'linux-basics', units.getSteps('linux-basics').map((s) => ({ step: s.step, passed: true })));
 
-  test('the signature covers every field a forger would want to change', () => {
-    complete('u1');
-    const issued = certificates.issue(user, 'linux-basics');
+  test('the signature covers every field a forger would want to change', async () => {
+    await complete('u1');
+    const issued = await certificates.issue(user, 'linux-basics');
     const stored = { ...issued, userId: 'u1' };
 
     for (const [field, value] of Object.entries({ studentName: 'Mallory', unitId: 'kubernetes-basics', unitTitle: 'Kubernetes', score: 99, issuedAt: '2020-01-01T00:00:00.000Z', userId: 'u2', id: 'OPS-AAAAAAAAAAAA' })) {
@@ -130,27 +148,34 @@ describe('certificates', () => {
     expect(certificates.sign(stored)).toBe(issued.signature);
   });
 
-  test('a certificate signed with a different key does not verify', () => {
-    complete('u1');
-    const issued = certificates.issue(user, 'linux-basics');
-    expect(certificates.verify(issued.id)).not.toBeNull();
+  test('a certificate signed with a different key does not verify', async () => {
+    await complete('u1');
+    const issued = await certificates.issue(user, 'linux-basics');
+    expect(await certificates.verify(issued.id)).not.toBeNull();
 
     const original = config.certSecret;
     config.certSecret = 'rotated-key';
     try {
-      expect(certificates.verify(issued.id)).toBeNull();
+      expect(await certificates.verify(issued.id)).toBeNull();
     } finally {
       config.certSecret = original;
     }
   });
 
-  test('each learner gets their own certificate', () => {
-    complete('u1');
-    complete('u2');
-    const a = certificates.issue(user, 'linux-basics');
-    const b = certificates.issue({ id: 'u2', name: 'Ben' }, 'linux-basics');
+  test('each learner gets their own certificate', async () => {
+    await complete('u1');
+    await complete('u2');
+    const a = await certificates.issue(user, 'linux-basics');
+    const b = await certificates.issue({ id: 'u2', name: 'Ben' }, 'linux-basics');
     expect(a.id).not.toBe(b.id);
-    expect(certificates.listFor('u2').map((c) => c.studentName)).toEqual(['Ben']);
+    expect((await certificates.listFor('u2')).map((c) => c.studentName)).toEqual(['Ben']);
+  });
+
+  test('two simultaneous requests for one unit issue a single certificate', async () => {
+    await complete('u1');
+    const [a, b] = await Promise.all([certificates.issue(user, 'linux-basics'), certificates.issue(user, 'linux-basics')]);
+    expect(a.id).toBe(b.id);
+    expect(await repos.certificates.count()).toBe(1);
   });
 });
 
@@ -424,36 +449,33 @@ describe('telemetry parsing', () => {
 describe('expired guests', () => {
   test('guests past their token lifetime are removed with their progress; everyone else stays', async () => {
     const now = Date.now();
-    const backdate = (user, days) => {
-      const { getStore } = require('../lib/store');
-      getStore().set('users', user.id, { ...user, createdAt: new Date(now - days * DAY).toISOString() });
-    };
+    const backdate = (user, days) => backdateUser(repos, user.id, days, now);
 
-    const oldGuest = users.createGuest();
-    const oldGuestWithXp = users.createGuest();
-    const recentGuest = users.createGuest();
-    const upgraded = await users.register({ name: 'Asha Rao', email: 'asha@example.com', password: 'correct-horse' }, users.createGuest().id);
-    backdate(oldGuest, 40);
-    backdate(oldGuestWithXp, 32);
-    backdate(recentGuest, 29);
-    backdate(upgraded, 400);
-    progress.recordQuiz(oldGuestWithXp.id, 'linux-basics', 'q1');
-    progress.recordQuiz(upgraded.id, 'linux-basics', 'q1');
-    expect(progress.leaderboard()).toHaveLength(2);
+    const oldGuest = await users.createGuest();
+    const oldGuestWithXp = await users.createGuest();
+    const recentGuest = await users.createGuest();
+    const upgraded = await users.register({ name: 'Asha Rao', email: 'asha@example.com', password: 'correct-horse' }, (await users.createGuest()).id);
+    await backdate(oldGuest, 40);
+    await backdate(oldGuestWithXp, 32);
+    await backdate(recentGuest, 29);
+    await backdate(upgraded, 400);
+    await progress.recordQuiz(oldGuestWithXp.id, 'linux-basics', 'q1');
+    await progress.recordQuiz(upgraded.id, 'linux-basics', 'q1');
+    expect(await progress.leaderboard()).toHaveLength(2);
 
-    expect(users.pruneExpiredGuests(now)).toBe(2);
+    expect(await users.pruneExpiredGuests(now)).toBe(2);
 
-    expect(users.getById(oldGuest.id)).toBeNull();
-    expect(users.getById(oldGuestWithXp.id)).toBeNull();
-    expect(users.getById(recentGuest.id)).not.toBeNull();
-    expect(users.getById(upgraded.id)).toMatchObject({ guest: false, name: 'Asha Rao' });
-    expect(progress.summary(oldGuestWithXp.id).xp).toBe(0);
-    expect(progress.summary(upgraded.id).xp).toBe(progress.XP.quiz);
-    expect(progress.leaderboard().map((row) => row.name)).toEqual(['Asha Rao']);
+    expect(await users.getById(oldGuest.id)).toBeNull();
+    expect(await users.getById(oldGuestWithXp.id)).toBeNull();
+    expect(await users.getById(recentGuest.id)).not.toBeNull();
+    expect(await users.getById(upgraded.id)).toMatchObject({ guest: false, name: 'Asha Rao' });
+    expect((await progress.summary(oldGuestWithXp.id)).xp).toBe(0);
+    expect((await progress.summary(upgraded.id)).xp).toBe(progress.XP.quiz);
+    expect((await progress.leaderboard()).map((row) => row.name)).toEqual(['Asha Rao']);
     await expect(users.login({ email: 'asha@example.com', password: 'correct-horse' })).resolves.toMatchObject({ id: upgraded.id });
 
     // Nothing left to remove on the next run.
-    expect(users.pruneExpiredGuests(now)).toBe(0);
+    expect(await users.pruneExpiredGuests(now)).toBe(0);
   });
 });
 

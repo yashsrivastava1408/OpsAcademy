@@ -7,27 +7,29 @@ const { requireAuth, requireRegistered } = require('../middleware/auth');
 const userService = require('../services/userService');
 const certificateService = require('../services/certificateService');
 
+const asyncHandler = require('../middleware/asyncHandler');
+
 const router = express.Router();
 
 /**
  * GET /api/certificates
  * The caller's certificates
  */
-router.get('/', requireAuth, (req, res) => {
-  res.json({ success: true, data: certificateService.listFor(req.user.id) });
-});
+router.get('/', requireAuth, asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await certificateService.listFor(req.user.id) });
+}));
 
 /**
  * POST /api/certificates
  * Issue a certificate for a unit the caller has completed
  * Body: { unitId }
  */
-router.post('/', requireAuth, requireRegistered, (req, res, next) => {
+router.post('/', requireAuth, requireRegistered, async (req, res, next) => {
   try {
-    const user = userService.getById(req.user.id);
+    const user = await userService.getById(req.user.id);
     if (!user) return res.status(401).json({ success: false, error: 'Unauthorized: account no longer exists' });
 
-    const certificate = certificateService.issue(user, req.body && req.body.unitId);
+    const certificate = await certificateService.issue(user, req.body && req.body.unitId);
     res.status(201).json({ success: true, data: certificate });
   } catch (err) {
     next(err);
@@ -38,12 +40,12 @@ router.post('/', requireAuth, requireRegistered, (req, res, next) => {
  * GET /api/certificates/verify/:certificateId
  * Public endpoint: confirms a certificate was issued here and is unaltered
  */
-router.get('/verify/:certificateId', (req, res) => {
-  const certificate = certificateService.verify(req.params.certificateId);
+router.get('/verify/:certificateId', asyncHandler(async (req, res) => {
+  const certificate = await certificateService.verify(req.params.certificateId);
   if (!certificate) {
     return res.status(404).json({ success: false, verified: false, error: 'No valid certificate with this ID' });
   }
   res.json({ success: true, verified: true, data: certificate });
-});
+}));
 
 module.exports = router;

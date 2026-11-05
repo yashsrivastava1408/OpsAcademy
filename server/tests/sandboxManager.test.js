@@ -1,6 +1,7 @@
 const { createManager, SandboxError } = require('../services/sandboxManager');
 const { createPool } = require('../services/sandboxPoolService');
 const { fakeEngine, waitFor } = require('./helpers');
+const { createMemoryRepos, setRepos } = require('../repositories');
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -295,10 +296,13 @@ describe('session lifecycle', () => {
   });
 
   test('init restores active unexpired sessions from the store', async () => {
+    const repos = setRepos(createMemoryRepos());
+    await repos.users.create({ id: 'user-restored', name: 'R', guest: true, createdAt: new Date().toISOString() });
     const engine = fakeEngine();
     const manager1 = managerWith(engine);
     await manager1.init();
     const session = await manager1.createSession('user-restored', 'k8s');
+    await settle(); // the session record is written in the background
 
     // Simulate process restart: create a new manager instance sharing the store and engine
     const manager2 = managerWith(engine);

@@ -11,7 +11,7 @@ const pinoHttp = require('pino-http');
 const config = require('./config');
 const logger = require('./lib/logger');
 const metrics = require('./lib/metrics');
-const { getStore } = require('./lib/store');
+const { getRepos } = require('./repositories');
 const rateLimit = require('./middleware/rateLimit');
 const errorHandler = require('./middleware/errorHandler');
 const { safeEqual } = require('./middleware/auth');
@@ -75,7 +75,7 @@ function createApp() {
   // does not fail the probe, because hints fall back without it.
   app.get('/api/ready', async (req, res) => {
     const checks = {
-      store: getStore().isWritable(),
+      store: await getRepos().ping().then(() => true, () => false),
       aiHub: await getHubClient().isHealthy(),
     };
     const ready = checks.store;

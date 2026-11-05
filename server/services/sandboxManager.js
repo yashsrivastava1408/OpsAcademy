@@ -9,6 +9,7 @@
 const { randomUUID } = require('crypto');
 const config = require('../config');
 const logger = require('../lib/logger');
+const { getRepos } = require('../repositories');
 const metrics = require('../lib/metrics');
 const { createPool } = require('./sandboxPoolService');
 
@@ -49,36 +50,30 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
   // Slots reserved by createSession calls that are still starting a sandbox.
   const pending = new Map();
   const claimLatencies = { pool: [], cold: [] };
-  const SESSIONS = 'sessions';
 
+  // Session records are bookkeeping for reconciliation after a restart; a failed
+  // write is logged and must never break the lab, so none of these are awaited.
   function persist(session, { force = false } = {}) {
     const now = Date.now();
     if (!force && session.persistedAt && now - session.persistedAt < settings.persistIntervalMs) return;
     session.persistedAt = now;
-    try {
-      const store = require('../lib/store').getStore();
-      if (store) {
-        store.set(SESSIONS, session.sessionId, {
-          sessionId: session.sessionId,
-          engineId: session.engineId,
-          userId: session.userId,
-          labId: session.labId,
-          createdAt: session.createdAt,
-          lastActiveAt: session.lastActiveAt,
-          fromPool: session.fromPool,
-          claimMs: session.claimMs,
-          history: session.history,
-          strikes: session.strikes,
-        });
-      }
-    } catch {}
+    getRepos().sessions.upsert({
+      sessionId: session.sessionId,
+      engineId: session.engineId,
+      userId: session.userId,
+      labId: session.labId,
+      createdAt: session.createdAt,
+      lastActiveAt: session.lastActiveAt,
+      fromPool: session.fromPool,
+      claimMs: session.claimMs,
+      history: session.history,
+      strikes: session.strikes,
+    }).catch((err) => logger.warn({ err: err.message, sessionId: session.sessionId }, 'could not persist sandbox session'));
   }
 
   function unpersist(sessionId) {
-    try {
-      const store = require('../lib/store').getStore();
-      if (store) store.delete(SESSIONS, sessionId);
-    } catch {}
+    getRepos().sessions.delete(sessionId)
+      .catch((err) => logger.warn({ err: err.message, sessionId }, 'could not remove sandbox session record'));
   }
 
   function countFor(userId) {
@@ -321,9 +316,9 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
 
     const activeEngineIds = new Set();
     try {
-      const store = require('../lib/store').getStore();
-      if (store) {
-        const stored = store.all(SESSIONS);
+      {
+        const repos = getRepos();
+        const stored = await repos.sessions.all();
         const now = Date.now();
         for (const s of stored) {
           const isExpired = (now - s.createdAt > settings.maxSessionMs) || (now - s.lastActiveAt > settings.maxIdleMs);
@@ -342,7 +337,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
             }
           } else {
             if (engine.destroy && alive) await engine.destroy(s.engineId).catch(() => {});
-            store.delete(SESSIONS, s.sessionId);
+            await repos.sessions.delete(s.sessionId);
           }
         }
         if (sessions.size > 0) {

@@ -9,12 +9,11 @@
 
 const crypto = require('crypto');
 const config = require('../config');
-const { getStore } = require('../lib/store');
+const { getRepos } = require('../repositories');
 const units = require('../lib/units');
 const progressService = require('./progressService');
 const { safeEqual } = require('../middleware/auth');
 
-const CERTIFICATES = 'certificates';
 const SIGNED_FIELDS = ['id', 'userId', 'studentName', 'unitId', 'unitTitle', 'score', 'issuedAt'];
 
 class CertificateError extends Error {
@@ -42,15 +41,15 @@ function publicView(certificate) {
 /**
  * Issue a certificate for a completed unit. Asking again returns the same one.
  */
-function issue(user, unitId) {
+async function issue(user, unitId) {
   const unit = units.getUnit(unitId);
   if (!unit) throw new CertificateError(`Unit '${unitId}' not found`, 404);
-  if (!progressService.isUnitCompleted(user.id, unitId)) {
+  if (!(await progressService.isUnitCompleted(user.id, unitId))) {
     throw new CertificateError('Complete and verify every lab step in this unit to earn its certificate', 403);
   }
 
-  const store = getStore();
-  const existing = store.find(CERTIFICATES, (c) => c.userId === user.id && c.unitId === unitId)[0];
+  const repos = getRepos();
+  const existing = await repos.certificates.getForUnit(user.id, unitId);
   if (existing) return publicView(existing);
 
   const certificate = {
@@ -59,24 +58,24 @@ function issue(user, unitId) {
     studentName: user.name,
     unitId,
     unitTitle: unit.meta.title,
-    score: progressService.unitAccuracy(user.id, unitId),
+    score: await progressService.unitAccuracy(user.id, unitId),
     issuedAt: new Date().toISOString(),
   };
   certificate.signature = sign(certificate);
-  store.set(CERTIFICATES, certificate.id, certificate);
-  return publicView(certificate);
+  // If two requests race, the database keeps one certificate per learner and unit.
+  return publicView(await repos.certificates.create(certificate));
 }
 
 /** @returns the certificate if it exists and its signature is intact, otherwise null */
-function verify(certificateId) {
+async function verify(certificateId) {
   if (typeof certificateId !== 'string' || !/^OPS-[0-9A-F]{12}$/.test(certificateId)) return null;
-  const certificate = getStore().get(CERTIFICATES, certificateId);
+  const certificate = await getRepos().certificates.getById(certificateId);
   if (!certificate || !safeEqual(sign(certificate), certificate.signature)) return null;
   return publicView(certificate);
 }
 
-function listFor(userId) {
-  return getStore().find(CERTIFICATES, (c) => c.userId === userId).map(publicView);
+async function listFor(userId) {
+  return (await getRepos().certificates.listForUser(userId)).map(publicView);
 }
 
 module.exports = { issue, verify, listFor, sign, CertificateError };
