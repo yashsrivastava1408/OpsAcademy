@@ -82,7 +82,7 @@ function verifySupabaseToken(token) {
       emailVerified: Boolean(payload.email_confirmed_at),
       supabase: true,
     };
-  } catch (err) {
+  } catch {
     return null;
   }
 }
