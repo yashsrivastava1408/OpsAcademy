@@ -7,19 +7,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 psql() { command psql "$PGURL" -v ON_ERROR_STOP=1 -X -q "$@"; }
 
 # Stand-ins for what Supabase provides.
-psql <<'SQL'
-drop schema if exists public cascade; create schema public;
-drop schema if exists auth cascade; create schema auth;
-do $$ begin
-  if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
-  if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
-  if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
-end $$;
-grant usage on schema public, auth to anon, authenticated, service_role;
-create function auth.uid() returns uuid language sql stable as
-  $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-grant execute on function auth.uid() to anon, authenticated, service_role;
-SQL
+psql -f "$here/bootstrap.sql"
 
 for f in "$here"/../migrations/*.sql; do psql -f "$f"; done
 # Idempotent: applying twice must succeed.
@@ -42,6 +30,14 @@ expect_denied authenticated "insert into public.documents(collection,id,doc) val
 expect_denied authenticated "update public.profiles set name='x'"                              "authenticated cannot update profiles"
 expect_ok     service_role  "insert into public.documents(collection,id,doc) values('users','u1','{}')" "service_role can write documents"
 expect_ok     service_role  "insert into public.profiles(id,name) values('11111111-1111-1111-1111-111111111111','Ada'),('22222222-2222-2222-2222-222222222222','Bob')" "service_role can write profiles"
+
+# Every table in public (current and future migrations) must be closed to the browser roles.
+for t in $(psql -t -A -c "select tablename from pg_tables where schemaname='public' order by 1"); do
+  [ "$t" = "profiles" ] && continue   # profiles has its own narrow policy, checked below
+  expect_denied anon          "select 1 from public.$t limit 1" "anon cannot read $t"
+  expect_denied authenticated "select 1 from public.$t limit 1" "authenticated cannot read $t"
+  expect_denied anon          "delete from public.$t"           "anon cannot delete from $t"
+done
 
 # Authenticated users see only their own profile row.
 rows=$(psql -t -A -c "set role authenticated; set request.jwt.claim.sub='11111111-1111-1111-1111-111111111111'; select count(*) from public.profiles" | tail -1)
