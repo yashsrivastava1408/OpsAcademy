@@ -31,6 +31,7 @@ function pruneGuests() {
 async function start() {
   const role = config.serviceRole;
   // Never serve a request (or prune records) before the store has loaded.
+  await require('./lib/supabaseAuth').ready();
   const store = getStore();
   if (typeof store.ready === 'function') {
     try {
