@@ -59,7 +59,7 @@ services:
   # ── Postgres (development only; production uses Supabase) ──
   # Not published on the host. Trust auth is safe here because only this network can reach it.
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: opsacademy-postgres
     environment:
       - POSTGRES_HOST_AUTH_METHOD=trust

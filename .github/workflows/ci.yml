@@ -109,7 +109,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17  # same major version as Supabase (17.x), so pg_dump/pg_restore match
         env:
           POSTGRES_HOST_AUTH_METHOD: trust # throwaway container, no password
         ports:
