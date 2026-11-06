@@ -12,6 +12,7 @@ const slotService = require('../services/slotService');
 const { dropCached } = require('../routes/labPortalRoutes');
 
 const MIN = 60000;
+const DAY_MS = 24 * 60 * MIN;
 let app;
 let ctx;
 
@@ -498,7 +499,8 @@ describe('capacity plan, analytics and events', () => {
     const boss = await admin();
     const { college: a } = await college('Alpha', 'aa');
     const { college: b } = await college('Beta', 'bb');
-    const base = Date.now() + 2 * 24 * 60 * MIN;
+    // 04:00 UTC two days out: all three slots fall on one calendar day in UTC and in India, whatever time the test runs
+    const base = Math.floor(Date.now() / DAY_MS) * DAY_MS + 2 * DAY_MS + 4 * 60 * MIN;
     await getRepos().slots.createSlots([
       { collegeId: a.id, startsAt: base, endsAt: base + 90 * MIN, capacity: 60 },
       { collegeId: b.id, startsAt: base + 30 * MIN, endsAt: base + 120 * MIN, capacity: 50 }, // overlaps the first
