@@ -5,7 +5,8 @@ const path = require('path');
 function loadConfig(env) {
   const run = spawnSync('node', ['-e', "require('./config'); console.log('loaded')"], {
     cwd: path.join(__dirname, '..'),
-    env: { PATH: process.env.PATH, NODE_ENV: 'production', ...env },
+    // Empty values stop a developer's own server/.env from filling these in.
+    env: { PATH: process.env.PATH, NODE_ENV: 'production', JWT_SECRET: '', CERT_SECRET: '', NODE_TOKEN: '', LAB_NODE: '', ...env },
     encoding: 'utf8',
   });
   return { ok: run.status === 0, out: `${run.stdout}${run.stderr}` };
