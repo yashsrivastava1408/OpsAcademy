@@ -1,11 +1,11 @@
 /**
- * Identity when Supabase Auth is in use. Knows how to sign in, sign up, sign out, recover a
- * password, turn a guest into a member and restore the session after a reload. It talks to the
- * gateway with fetch (not the axios instance) so services/api.js can depend on it.
+ * Identity, through Supabase Auth: sign in, sign up, sign out, recover a password, turn a guest into a
+ * member and restore the session after a reload. It talks to the gateway with fetch (not the axios
+ * instance) so shared/services/api.js can depend on it.
  */
 import { normalizeApiBase } from '../../shared/lib/apiBase';
 import { createSessionManager } from '../lab/sessionManager';
-import { supabase, forgetSupabaseSession, supabaseUrlConfigured, supabaseKeyConfigured } from './supabase';
+import { loadSupabase, forgetSupabaseSession, supabaseUrlConfigured, supabaseKeyConfigured } from './supabase';
 
 const apiBase = normalizeApiBase(import.meta.env.VITE_API_URL);
 
@@ -70,7 +70,7 @@ export function ensureIdentity() {
         if (!user) await loadUser(existing).catch(() => {});
         return existing;
       }
-      const { data, error } = await supabase.auth.signInAnonymously();
+      const { data, error } = await (await loadSupabase()).auth.signInAnonymously();
       fail(error);
       await finish(data.session);
       return sessions.getAccessToken();
@@ -79,7 +79,7 @@ export function ensureIdentity() {
   return pendingGuest;
 }
 
-export const isGuest = () => Boolean(user?.guest);
+const isGuest = () => Boolean(user?.guest);
 
 /**
  * Create an account. A guest is upgraded in place (same user id, so progress is kept): the address is
@@ -94,37 +94,43 @@ export async function signUp({ name, email, password }) {
       headers: { 'content-type': 'application/json', apikey: supabaseKeyConfigured, authorization: `Bearer ${sessions.getAccessToken()}` },
       body: JSON.stringify({ email, password, data: { name } }),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      fail({ message: body.msg || body.message || 'Could not create the account', status: res.status });
-    }
-    return { needsConfirmation: true };
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) fail({ message: body.msg || body.message || 'Could not create the account', status: res.status });
+    // With email confirmation on, the new address waits in `new_email` until the link is opened.
+    if (body.new_email || !body.email_confirmed_at) return { needsConfirmation: true };
+    return { user: await signIn({ email, password }) };
   }
-  const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: redirectTo } });
+  const { data, error } = await (await loadSupabase()).auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: redirectTo } });
   fail(error);
   if (!data.session) return { needsConfirmation: true };
   return { user: await finish(data.session) };
 }
 
 export async function signIn({ email, password }) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await (await loadSupabase()).auth.signInWithPassword({ email, password });
   fail(error);
   return finish(data.session);
 }
 
+/** Send the confirmation link again to an address that signed up but has not confirmed it. */
+export async function resendConfirmation(email) {
+  const { error } = await (await loadSupabase()).auth.resend({ type: 'signup', email, options: { emailRedirectTo: `${window.location.origin}/auth/callback` } });
+  fail(error);
+}
+
 export async function signInWithProvider(provider) {
-  const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/auth/callback` } });
+  const { error } = await (await loadSupabase()).auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/auth/callback` } });
   fail(error);
 }
 
 export async function sendPasswordReset(email) {
-  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
+  const { error } = await (await loadSupabase()).auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
   fail(error);
 }
 
 /** On /reset-password or /auth/callback: the mail link carries a code; turn it into a session. @returns the Supabase session or null */
 export async function sessionFromLink() {
-  const { data, error } = await supabase.auth.getSession();
+  const { data, error } = await (await loadSupabase()).auth.getSession();
   fail(error);
   return data.session;
 }
@@ -133,7 +139,7 @@ export async function sessionFromLink() {
 export async function completePasswordReset(password) {
   const session = await sessionFromLink();
   if (!session) throw Object.assign(new Error('This link is invalid or has expired. Ask for a new one.'), { response: { data: { error: 'This link is invalid or has expired. Ask for a new one.' } } });
-  const { error } = await supabase.auth.updateUser({ password });
+  const { error } = await (await loadSupabase()).auth.updateUser({ password });
   fail(error);
   return finish(session);
 }

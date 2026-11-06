@@ -38,8 +38,14 @@ services:
         value: 4000
       - key: SANDBOX_MODE
         value: pty
-      - key: JWT_SECRET
+      - key: CERT_SECRET
         generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
       - key: AI_HUB_URL
         fromService:
           type: web
@@ -47,11 +53,7 @@ services:
           property: hostport
       - key: CORS_ORIGINS
         sync: false
-      # The web app's public URL: used for the links in password-reset emails.
       - key: APP_URL
-        sync: false
-      # Optional. Without it reset and confirmation links are only logged.
-      - key: RESEND_API_KEY
         sync: false
       # Optional. Comma-separated verified emails that are platform admins (operator page at /admin).
       - key: PLATFORM_ADMIN_EMAILS

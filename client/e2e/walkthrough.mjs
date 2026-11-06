@@ -11,6 +11,7 @@ import { chromium } from 'playwright';
 
 const APP = process.env.APP_URL || 'http://localhost:4173';
 const API = process.env.API_URL || 'http://localhost:4100';
+const AUTH = process.env.AUTH_URL || 'http://127.0.0.1:54399';
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `  -> ${detail}` : ''}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -38,13 +39,21 @@ async function keepScreenshot(target, name) {
 
   let reqs = [];
   const errors = [];
-  page.on('request', (r) => reqs.push({ url: r.url(), method: r.method() }));
+  // The token is kept in memory (never in browser storage), so the tests learn it from the requests the app makes.
+  let lastToken = null;
+  page.on('request', (r) => {
+    reqs.push({ url: r.url(), method: r.method() });
+    const auth = r.headers().authorization;
+    if (auth && r.url().startsWith(`${API}/api`)) lastToken = auth.replace('Bearer ', '');
+  });
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   const api = (method, path) => reqs.filter((r) => r.method === method && r.url.startsWith(`${API}/api${path}`));
   const chunk = (name) => reqs.some((r) => r.url.includes(`/assets/${name}`));
   const termText = () => page.evaluate(() => document.querySelector('.xterm-rows')?.innerText || '');
-  const token = () => page.evaluate(() => localStorage.getItem('opsacademy_token'));
+  const token = async () => lastToken;
+  // Supabase Auth is the fake one; an anonymous sign-in is how a visitor becomes a guest.
+  const guestsMade = () => reqs.filter((r) => r.method === 'POST' && r.url.startsWith(`${AUTH}/auth/v1/signup`)).length;
 
   // ── 1. Landing ───────────────────────────────────────────
   let sizes = 0;
@@ -57,7 +66,7 @@ async function keepScreenshot(target, name) {
   check('landing page renders', await page.locator('.hero-title').isVisible());
   check('landing does not download the lab (terminal) code', !chunk('LabPage'));
   check('landing does not download the diagram library', !chunk('mermaid'));
-  check('landing creates no guest account', api('POST', '/auth/guest').length === 0 && !(await token()));
+  check('landing creates no guest account', guestsMade() === 0 && !(await token()));
   check('landing asks for no personal data (no /progress call)', api('GET', '/progress').length === 0);
   check('navbar offers Lab Studio and no engine badge', (await page.getByRole('link', { name: /Lab Studio/ }).count()) > 0 && (await page.locator('.nav-telemetry-badge').count()) === 0);
   console.log(`        JavaScript downloaded for the landing page: ${(sizes / 1024).toFixed(0)} kB uncompressed`);
@@ -77,7 +86,7 @@ async function keepScreenshot(target, name) {
   await page.goto(`${APP}/dashboard`, { waitUntil: 'networkidle' });
   const cards = await page.locator('.lab-card').count();
   check('dashboard lists every unit from the API', cards === 19, `${cards} cards`);
-  check('dashboard creates exactly one guest identity', api('POST', '/auth/guest').length === 1 && Boolean(await token()));
+  check('dashboard creates exactly one guest identity', guestsMade() === 1 && Boolean(await token()));
   check('leaderboard and certificates are each fetched once on load', api('GET', '/progress/leaderboard').length === 1 && api('GET', '/certificates').length === 1,
     `leaderboard x${api('GET', '/progress/leaderboard').length}, certificates x${api('GET', '/certificates').length}`);
 
@@ -285,7 +294,7 @@ async function keepScreenshot(target, name) {
   await page.locator('.auth-submit').click();
   await page.waitForURL('**/dashboard');
   await page.waitForSelector('.leaderboard-list li.you');
-  check('registering keeps the XP earned as a guest', /\d+ XP/.test(await page.locator('.nav-progress').innerText()));
+  check('signing up keeps the XP earned as a guest', /\d+ XP/.test(await page.locator('.nav-progress').innerText()));
   check('the leaderboard shows the new name straight away', (await page.locator('.leaderboard-list li.you').innerText()).includes('Walk Through'), await page.locator('.leaderboard-list li.you').innerText());
   check('the unit card shows step progress', await page.locator('.lab-card', { hasText: 'Linux Fundamentals' }).locator('.unit-progress').isVisible());
   await page.locator('.nav-user button').click();

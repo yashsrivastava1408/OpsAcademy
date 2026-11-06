@@ -58,7 +58,6 @@ sysctl --system > /dev/null 2>&1 || true
 ENV_FILE="${ROOT_DIR}/.env.production"
 if [ ! -f "${ENV_FILE}" ]; then
   echo -e "${YELLOW}[3/6] Generating new .env.production with secure cryptographic secrets...${NC}"
-  JWT_SECRET=$(openssl rand -hex 48)
   CERT_SECRET=$(openssl rand -hex 32)
   AI_HUB_TOKEN=$(openssl rand -hex 24)
 
@@ -67,7 +66,6 @@ if [ ! -f "${ENV_FILE}" ]; then
 DOMAIN=localhost
 ACME_EMAIL=admin@localhost
 
-JWT_SECRET=${JWT_SECRET}
 CERT_SECRET=${CERT_SECRET}
 AI_HUB_TOKEN=${AI_HUB_TOKEN}
 # Verified email of the first platform admin (operator page /admin)
@@ -81,9 +79,8 @@ MIGRATION_DATABASE_URL=
 DATABASE_POOL_SIZE=10
 SUPABASE_URL=
 SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=
 
-RESEND_API_KEY=
-MAIL_FROM=OpsAcademy <noreply@opsacademy.in>
 APP_URL=http://localhost
 CLIENT_URL=http://localhost
 CORS_ORIGINS=http://localhost
@@ -103,7 +100,7 @@ CAMPUS_RATE_MULTIPLIER=15
 EOF
   chmod 600 "${ENV_FILE}"
   echo -e "${GREEN}Created ${ENV_FILE} (mode 600) with auto-generated secrets.${NC}"
-  echo -e "${YELLOW}[NOTICE] Edit ${ENV_FILE} to set your custom DOMAIN, ACME_EMAIL, and RESEND_API_KEY if desired.${NC}"
+  echo -e "${YELLOW}[NOTICE] Edit ${ENV_FILE} to set your custom DOMAIN, ACME_EMAIL, and the SUPABASE_ keys.${NC}"
 else
   echo -e "${GREEN}[3/6] Existing .env.production found.${NC}"
 fi

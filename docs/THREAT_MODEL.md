@@ -9,7 +9,7 @@ OpsAcademy hands a Linux shell to anyone who opens the site. This document says 
 | The host and its Docker daemon | Control of the host is control of every student's sandbox and the data store. |
 | Other students' sandboxes | A student must not read, type into or destroy someone else's session. |
 | Accounts, progress and certificates | Certificates are only worth something if they cannot be forged. |
-| Secrets (`JWT_SECRET`, `CERT_SECRET`, `AI_HUB_TOKEN`, LLM key) | They sign tokens and certificates and gate the AI hub. |
+| Secrets (`SUPABASE_SECRET_KEY`, `CERT_SECRET`, `AI_HUB_TOKEN`, LLM key) | The Supabase secret key can create and ban any account; the others sign certificates and gate the AI hub. |
 | Capacity | A free shell is an invitation to mine coins or exhaust the machine. |
 
 ## Who attacks
@@ -90,8 +90,8 @@ These are real and unfixed. Read them before putting this in front of untrusted 
 7. **Guest accounts are free.** Rate limits slow abuse; they do not stop a patient attacker with many IP addresses.
 8. **Load is tested only at the gateway's own limit.** `scripts/loadtest.js` ran 25 students for a minute on one laptop with no errors. Behaviour beyond that, on a small machine, or with students deliberately burning CPU in their sandboxes, is unmeasured.
 9. **Roles take effect within about five seconds, not instantly.** The gateway caches a user's memberships for 5 s per process, so a revoked admin can still act for that long. Admin actions, roster imports and role grants are in the append-only audit log (`audit_log`).
-10. **Reset and confirmation links are returned by the API outside production** when no mail provider is configured, so the flow can be tried locally. With `NODE_ENV=production` they are only logged. Never run a public server without `NODE_ENV=production`.
-11. **Email is optional and unverified.** Without `RESEND_API_KEY` a forgotten password cannot be recovered by the user. The Resend call has never been run against the real service. Email confirmation is recorded but nothing is withheld from unconfirmed accounts.
+10. **Sign-in is Supabase Auth's responsibility.** Passwords, email confirmation and reset links, session lifetimes and rate limits for sign-in itself are Supabase's; the gateway verifies access tokens locally and cannot revoke one before it expires (15 minutes). A disabled Lab ID is banned in Supabase (no new sessions) and refused a lab at once, but an access token it already holds still opens read-only pages until it expires.
+11. **Email deliverability is not tested here.** Confirmation and reset emails come from Supabase Auth; with its built-in sender the volume is very low, so a real SMTP sender must be set in the Supabase dashboard before a college rollout.
 12. **A student can fake simulator state.** The lab simulators keep their state in a file in the student's home (`~/.opsacademy/`). Editing it by hand would satisfy a check, in the same way gap 6 describes for file-based checks.
 13. **In PTY mode students share the host's network.** Each PTY shell gets its own block of lab ports (`$WEB_PORT` and friends), so the labs do not collide, but nothing stops one student from connecting to a port another student opened. Docker mode gives each sandbox its own loopback.
 14. **The LLM answer judge reads untrusted text.** A candidate's answer is sent to the model inside the prompt. The prompt tells the model to grade it and not follow instructions in it, the score is computed by the hub from the verdict rather than chosen by the model, and a malformed verdict falls back to the rules; but a crafted answer could still talk the model into marking points as covered. Nothing but XP and a practice score depends on it.

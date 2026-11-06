@@ -1,18 +1,17 @@
 /**
- * Browser checks for the account and extra pages: email confirmation,
- * password reset, public profile, case studies, the operator page, the
- * "sandbox is closing" warning, steps staying verified after a reload, and
- * the phone layout of the lab.
+ * Browser checks for the account and extra pages: signing up and logging in through Supabase Auth, the public
+ * profile, the forgot-password form, case studies, the operator page, the "sandbox is closing" warning, steps
+ * staying verified after a reload, and the phone layout of the lab.
  *
- * Needs the gateway started with PLATFORM_ADMIN_EMAILS=e2e-admin@example.com and no mail
- * provider (run.mjs does both), so reset and confirmation links are handed
- * back by the API instead of being emailed.
+ * Needs the gateway started with PLATFORM_ADMIN_EMAILS=e2e-admin@example.com and the fake Supabase Auth
+ * (run.mjs does both). The fake confirms addresses at once; the real emails (confirmation and reset links) are
+ * Supabase's job and are not exercised here.
  */
 import { chromium } from 'playwright';
 
 const APP = process.env.APP_URL || 'http://localhost:4173';
-const API = process.env.API_URL || 'http://localhost:5005';
 const ADMIN_EMAIL = 'e2e-admin@example.com';
+const AUTH = process.env.AUTH_URL || 'http://127.0.0.1:54399';
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `  -> ${detail}` : ''}`); };
 
@@ -25,42 +24,34 @@ async function keepScreenshot(target, name) {
 }
 let lastPage = null;
 
+let errors = [];
+let trouble = [];
 const browser = await chromium.launch();
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   lastPage = page;
-  const errors = [];
+  errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // Failed calls (a 401 before anyone has signed in is normal): printed only when a check cannot proceed.
+  page.on('requestfailed', (r) => { if (!/_vercel/.test(r.url())) trouble.push(`request failed: ${r.method()} ${r.url().slice(0, 90)} ${r.failure()?.errorText}`); });
+  page.on('response', (r) => { if (r.status() >= 400 && !/_vercel/.test(r.url())) trouble.push(`${r.status()} ${r.request().method()} ${r.url().slice(0, 90)}`); });
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
   const sleep = (ms) => page.waitForTimeout(ms);
   const visible = (locator) => locator.first().isVisible().catch(() => false);
 
   const email = `features-${Date.now()}@example.com`;
-  const oldPassword = 'first-password-123';
-  const newPassword = 'second-password-456';
+  const password = 'first-password-123';
 
-  // ── Sign up and confirm the email address ────────────────
+  // ── Sign up ──────────────────────────────────────────────
   await page.goto(`${APP}/login`, { waitUntil: 'networkidle' });
   await page.locator('input[type="text"]').fill('Priya Sharma');
   await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(oldPassword);
+  await page.locator('input[type="password"]').fill(password);
   await page.locator('.auth-submit').click();
   await page.waitForURL('**/dashboard');
   await page.waitForSelector('.account-tools');
-  check('a new account is told its email is not confirmed', await visible(page.getByText('Your email address is not confirmed yet.')));
-  await page.getByRole('button', { name: 'Send link again' }).click();
-  await page.getByRole('link', { name: 'Open the confirmation link' }).click();
-  await page.waitForSelector('.verify-card h1');
-  check('the confirmation link confirms the address', (await page.locator('.verify-card h1').innerText()) === 'Email confirmed' && (await page.locator('.verify-card').innerText()).includes(email));
-  const usedLink = page.url();
-  await page.getByRole('link', { name: 'Go to the dashboard' }).click();
-  await page.waitForSelector('.account-tools');
-  check('the dashboard no longer asks to confirm the email', !(await visible(page.getByText('Your email address is not confirmed yet.'))));
-  const second = await context.newPage();
-  await second.goto(usedLink, { waitUntil: 'networkidle' });
-  check('a confirmation link works only once', (await second.locator('.verify-card h1').innerText()) === 'Could not confirm');
-  await second.close();
+  check('signing up lands on the dashboard as a confirmed account', await visible(page.locator('.nav-user-name')) && !(await visible(page.getByText('Your email address is not confirmed yet.'))));
 
   // ── Lab of the day ───────────────────────────────────────
   check('the dashboard shows the lab of the day', await visible(page.locator('.daily-card')) && /\+15 XP/.test(await page.locator('.daily-card').innerText()));
@@ -74,17 +65,32 @@ try {
   check('sharing gives the profile an address built from the name', /^\/u\/priya-sharma-[0-9a-f]{6}$/.test(profilePath), profilePath);
   const visitorContext = await browser.newContext();
   const visitor = await visitorContext.newPage();
+  const visitorSignups = [];
+  visitor.on('request', (r) => { if (r.method() === 'POST' && r.url().startsWith(`${AUTH}/auth/v1/signup`)) visitorSignups.push(r.url()); });
   await visitor.goto(`${APP}${profilePath}`, { waitUntil: 'networkidle' });
   check('a signed-out visitor can open the shared profile', (await visitor.locator('.profile-header h1').innerText().catch(() => '')) === 'Priya Sharma');
   check('the profile shows achievements and no email address', (await visitor.locator('.profile-stat').count()) === 4 && !(await visitor.locator('body').innerText()).includes(email));
-  check('viewing a profile creates no account for the visitor', !(await visitor.evaluate(() => localStorage.getItem('opsacademy_token'))));
+  check('viewing a profile creates no account for the visitor', visitorSignups.length === 0);
   await page.getByRole('button', { name: 'Stop sharing' }).click();
   await page.waitForFunction(() => !document.querySelector('.account-row a[href^="/u/"]'));
   await visitor.reload({ waitUntil: 'networkidle' });
   check('after sharing is turned off the address shows "Profile not found"', await visible(visitor.getByText('Profile not found')));
   await visitorContext.close();
 
-  // ── Password reset ───────────────────────────────────────
+  // ── Log out and back in; forgot password ─────────────────
+  await page.locator('.nav-user button').click();
+  await page.waitForFunction(() => !document.querySelector('.nav-user'));
+  const tryLogin = async (pw) => {
+    await page.goto(`${APP}/login`, { waitUntil: 'networkidle' });
+    await page.locator('.auth-tab', { hasText: 'Log in' }).click();
+    await page.locator('input[type="email"]').fill(email);
+    await page.locator('input[type="password"]').fill(pw);
+    await page.locator('.auth-submit').click();
+    await Promise.race([page.waitForURL('**/dashboard'), page.waitForSelector('.auth-error')]);
+    return page.url().endsWith('/dashboard');
+  };
+  check('a wrong password is refused', (await tryLogin('not-the-password')) === false);
+  check('the right password logs in', (await tryLogin(password)) === true);
   await page.locator('.nav-user button').click();
   await page.waitForFunction(() => !document.querySelector('.nav-user'));
   await page.goto(`${APP}/login`, { waitUntil: 'networkidle' });
@@ -95,28 +101,11 @@ try {
   await page.locator('.auth-submit').click();
   await page.waitForSelector('.auth-notice');
   check('asking for a reset shows a neutral message', (await page.locator('.auth-notice').innerText()).includes('If an account uses that email address'));
-  await page.getByRole('link', { name: 'choose a new password' }).click();
-  await page.waitForSelector('.auth-title');
-  await page.locator('input[type="password"]').fill(newPassword);
-  await page.locator('.auth-submit').click();
-  await page.waitForURL('**/dashboard');
-  await page.waitForSelector('.nav-user-name');
-  check('the reset link sets a new password and signs in', (await page.locator('.nav-user-name').innerText()) === 'Priya Sharma');
-  await page.locator('.nav-user button').click();
-  await page.waitForFunction(() => !document.querySelector('.nav-user'));
-  const tryLogin = async (password) => {
-    await page.goto(`${APP}/login`, { waitUntil: 'networkidle' });
-    await page.locator('.auth-tab', { hasText: 'Log in' }).click();
-    await page.locator('input[type="email"]').fill(email);
-    await page.locator('input[type="password"]').fill(password);
-    await page.locator('.auth-submit').click();
-    await Promise.race([page.waitForURL('**/dashboard'), page.waitForSelector('.auth-error')]);
-    return page.url().endsWith('/dashboard');
-  };
-  check('the old password no longer works', (await tryLogin(oldPassword)) === false);
-  check('the new password works', (await tryLogin(newPassword)) === true);
   await page.goto(`${APP}/reset-password`, { waitUntil: 'networkidle' });
-  check('a reset page without a token says the link is incomplete', await visible(page.getByText('This link is incomplete')));
+  await page.locator('input[type="password"]').fill('another-password-789');
+  await page.locator('.auth-submit').click();
+  await page.waitForSelector('.auth-error');
+  check('a reset page opened without an emailed link says the link is not valid', (await page.locator('.auth-error').innerText()).includes('invalid or has expired'));
 
   // ── Case studies ─────────────────────────────────────────
   await page.goto(`${APP}/casestudies`, { waitUntil: 'networkidle' });
@@ -177,20 +166,21 @@ try {
   check('the operator page refuses anyone who is not a platform admin', (await guestAdmin.locator('.auth-error').innerText()).includes('platform administrators'));
   await guestAdmin.close();
 
-  // …and a verified platform admin gets in with their normal sign-in (no shared secret).
-  const post = (path, body) => fetch(`${API}/api${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
-  const adminAccount = await post('/auth/register', { name: 'Operator', email: ADMIN_EMAIL, password: 'operator-password-1' });
-  await post('/auth/verify-email', { token: new URL(adminAccount.devVerifyLink).searchParams.get('token') });
+  // …and a platform admin (a confirmed email listed in PLATFORM_ADMIN_EMAILS) gets in with their normal sign-in, no shared secret.
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await adminContext.addInitScript(([token, user]) => {
-    localStorage.setItem('opsacademy_token', token);
-    localStorage.setItem('opsacademy_user', JSON.stringify(user));
-  }, [adminAccount.token, adminAccount.user]);
+  const adminLogin = await adminContext.newPage();
+  await adminLogin.goto(`${APP}/login`, { waitUntil: 'networkidle' });
+  await adminLogin.locator('input[type="text"]').fill('Operator');
+  await adminLogin.locator('input[type="email"]').fill(ADMIN_EMAIL);
+  await adminLogin.locator('input[type="password"]').fill('operator-password-1');
+  await adminLogin.locator('.auth-submit').click();
+  await adminLogin.waitForURL('**/dashboard');
+  await adminLogin.close();
+  // A new page in the same context has no memory of the session, but the gateway's cookie restores it.
   const admin = await adminContext.newPage();
   await admin.goto(`${APP}/admin`, { waitUntil: 'networkidle' });
   await admin.waitForSelector('.admin-tiles');
   check('the operator page shows the overview tiles', (await admin.locator('.admin-tile').count()) === 6);
-  check('it reports email as not delivered on this stack', (await admin.locator('.admin-facts').innerText()).includes('links go to the server log'));
   await admin.waitForSelector('.admin-table tbody tr');
   check('it lists the running sandbox', (await admin.locator('.admin-table tbody tr').count()) === 1 && (await admin.locator('.admin-table tbody tr').innerText()).includes('linux-basics'));
   await admin.locator('.admin-table tbody tr button').click();
@@ -265,6 +255,7 @@ try {
   await phone.close();
 } catch (err) {
   console.error('FEATURE TEST CRASHED:', err);
+  console.error('Browser trouble before the crash:', trouble.slice(-8));
   results.push(false);
   await keepScreenshot(lastPage, 'features');
 } finally {

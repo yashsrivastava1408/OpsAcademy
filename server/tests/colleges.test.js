@@ -4,6 +4,7 @@
 const request = require('supertest');
 const { createApp } = require('../app');
 const { install } = require('./helpers');
+const auth = require('./auth');
 const { parseCsv } = require('../lib/csv');
 const { SharedRateLimitStore } = require('../lib/rateLimitStore');
 const { getRepos } = require('../repositories');
@@ -17,16 +18,11 @@ beforeEach(() => {
 });
 afterEach(async () => { await ctx.manager.shutdown(); });
 
-async function registered(overrides = {}) {
-  const body = { name: 'Asha Rao', email: `asha${Math.random().toString(36).slice(2)}@example.com`, password: 'correct-horse', ...overrides };
-  const res = await request(app).post('/api/auth/register').send(body);
-  return { ...body, user: res.body.user, devVerifyLink: res.body.devVerifyLink, auth: { Authorization: `Bearer ${res.body.token}` } };
-}
+/** A learner whose email is confirmed, unless told otherwise. */
+const registered = (overrides = {}) => auth.registered(app, overrides);
 
-async function verify(who) {
-  const token = new URL(who.devVerifyLink).searchParams.get('token');
-  await request(app).post('/api/auth/verify-email').send({ token });
-}
+/** Supabase confirmed the address: the same user signs in again, now verified. */
+const verify = (who) => auth.signIn(app, { sub: who.sub, name: who.name, email: who.email, emailVerified: true, anonymous: false });
 
 async function withRole(role, collegeId) {
   const who = await registered();
@@ -116,8 +112,8 @@ describe('tenant isolation', () => {
   test('guests and signed-out callers get nothing', async () => {
     const { a } = await twoColleges();
     expect((await request(app).get(`/api/colleges/${a.id}`)).status).toBe(401);
-    const guest = await request(app).post('/api/auth/guest');
-    expect((await request(app).get(`/api/colleges/${a.id}`).set({ Authorization: `Bearer ${guest.body.token}` })).status).toBe(404);
+    const guest = await auth.guest(app);
+    expect((await request(app).get(`/api/colleges/${a.id}`).set(guest.auth)).status).toBe(404);
   });
 
   test('the college leaderboard ranks only that college\'s members', async () => {
@@ -162,7 +158,7 @@ describe('roster import', () => {
     expect((await request(app).get(`/api/colleges/${a.id}/sections`).set(admin.auth)).body.data.map((s) => s.name)).toEqual(['CSE-A']);
 
     // Ada registers: an unverified account gets nothing yet…
-    const ada = await registered({ name: 'Ada', email: 'ada@example.com' });
+    const ada = await registered({ name: 'Ada', email: 'ada@example.com', emailVerified: false });
     expect(await getRepos().memberships.forUser(ada.user.id)).toEqual([]);
     // …until the address is confirmed.
     await verify(ada);
@@ -177,8 +173,7 @@ describe('roster import', () => {
   test('a person with a verified account is added at once, and re-importing changes nothing', async () => {
     const { a } = await twoColleges();
     const admin = await withRole('college_admin', a.id);
-    const ada = await registered({ name: 'Ada', email: 'ada@example.com' });
-    await verify(ada);
+    await registered({ name: 'Ada', email: 'ada@example.com' });
     const first = await request(app).post(`/api/colleges/${a.id}/roster`).set(admin.auth).send({ csv: 'Ada,ada@example.com,CSE-A' });
     expect(first.body.data).toMatchObject({ added: 1, invited: 0 });
     const again = await request(app).post(`/api/colleges/${a.id}/roster`).set(admin.auth).send({ csv: 'Ada,ada@example.com,CSE-A' });

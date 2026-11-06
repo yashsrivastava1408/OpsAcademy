@@ -1,6 +1,6 @@
 /**
- * The move to Supabase Auth (ADR 0003): LEGACY_AUTH=off, identity linking,
- * guest upgrade and the refresh-token cookie.
+ * Supabase Auth in the gateway (ADR 0003): linking Supabase users to app users, guest upgrade and the
+ * refresh-token cookie. Token verification is mocked here; tests/supabaseAuth.test.js covers the real thing.
  */
 const request = require('supertest');
 
@@ -13,13 +13,12 @@ jest.mock('../lib/supabaseAuth', () => ({
 
 const config = require('../config');
 const { createApp } = require('../app');
-const { signToken } = require('../middleware/auth');
 const { getRepos } = require('../repositories');
 const { fakeEngine, install } = require('./helpers');
 
 let app;
 let ctx;
-const savedAuth = { legacy: config.legacyAuth, url: config.supabaseUrl, key: config.supabasePublishableKey };
+const savedAuth = { url: config.supabaseUrl, key: config.supabasePublishableKey };
 
 beforeEach(() => {
   ctx = install({ engine: fakeEngine() });
@@ -28,7 +27,6 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await ctx.manager.shutdown();
-  config.legacyAuth = savedAuth.legacy;
   config.supabaseUrl = savedAuth.url;
   config.supabasePublishableKey = savedAuth.key;
   jest.restoreAllMocks();
@@ -37,19 +35,11 @@ afterEach(async () => {
 const bearer = (token) => ({ Authorization: `Bearer ${token}` });
 const supabaseUser = (sub, extra = {}) => ({ id: sub, name: 'Ada', email: 'ada@example.com', guest: false, emailVerified: true, supabase: true, ...extra });
 
-describe('LEGACY_AUTH=off', () => {
-  beforeEach(() => { config.legacyAuth = false; });
-
-  test('the old sign-in endpoints are gone', async () => {
+describe('who a request is', () => {
+  test('only Supabase sessions are accepted; the gateway has no sign-in endpoints of its own', async () => {
     for (const [path, body] of [['/guest'], ['/register', { name: 'A', email: 'a@x.com', password: 'longenough' }], ['/login', { email: 'a@x.com', password: 'x' }], ['/forgot', { email: 'a@x.com' }], ['/reset', { token: 'x', password: 'longenough' }], ['/verify-email', { token: 'x' }]]) {
       expect([path, (await request(app).post(`/api/auth${path}`).send(body)).status]).toEqual([path, 404]);
     }
-  });
-
-  test('our own tokens stop working; Supabase sessions do', async () => {
-    const old = await ctx.repos.users.create({ id: 'u_old', name: 'Old', email: 'old@example.com', guest: false, emailVerified: true, createdAt: new Date().toISOString() });
-    const legacy = signToken(old);
-    expect((await request(app).get('/api/auth/me').set(bearer(legacy))).status).toBe(401);
     mockTokens['sb-ok'] = supabaseUser('sb-1');
     expect((await request(app).post('/api/auth/session').set(bearer('sb-ok'))).status).toBe(200);
     expect((await request(app).get('/api/auth/me').set(bearer('sb-ok'))).body.user).toMatchObject({ id: 'sb-1', email: 'ada@example.com' });
@@ -57,7 +47,7 @@ describe('LEGACY_AUTH=off', () => {
 });
 
 describe('linking Supabase users to app users', () => {
-  test('an account from the old sign-in is claimed by the same confirmed email, keeping its id and progress', async () => {
+  test('an existing account is claimed by the same confirmed email, keeping its id and progress', async () => {
     await ctx.repos.users.create({ id: 'u_legacy', name: 'Ada', email: 'ada@example.com', guest: false, emailVerified: false, createdAt: '2026-01-01T00:00:00.000Z' });
     await ctx.repos.progress.mutate('u_legacy', (d) => { d.xp = 70; });
     mockTokens['sb-ada'] = supabaseUser('sb-uuid-1');
@@ -68,7 +58,7 @@ describe('linking Supabase users to app users', () => {
     expect(await ctx.repos.identities.getUserId('supabase', 'sb-uuid-1')).toBe('u_legacy');
     expect(await ctx.repos.users.getById('sb-uuid-1')).toBeNull();
 
-    // Later requests act as the legacy user.
+    // Later requests act as the existing user.
     expect((await request(app).get('/api/progress').set(bearer('sb-ada'))).body.data.xp).toBe(70);
   });
 
@@ -159,37 +149,5 @@ describe('refresh-token cookie', () => {
     } finally {
       config.authCookie.secure = savedSecure;
     }
-  });
-});
-
-describe('account migration', () => {
-  const { migrateAccounts } = require('../lib/authMigration');
-
-  test('creates Supabase users with the existing hash, links them, and is safe to repeat', async () => {
-    const repos = ctx.repos;
-    await repos.users.create({ id: 'u_a', name: 'Ada', email: 'ada@example.com', password: '$2a$10$abc', guest: false, emailVerified: true, createdAt: '2026-01-01T00:00:00.000Z' });
-    await repos.users.create({ id: 'u_b', name: 'Bob', email: 'bob@example.com', password: '$2a$10$def', guest: false, emailVerified: false, createdAt: '2026-01-02T00:00:00.000Z' });
-    await repos.users.create({ id: 'u_c', name: 'Cy', email: 'cy@example.com', password: '$2a$10$ghi', guest: false, emailVerified: false, createdAt: '2026-01-03T00:00:00.000Z' });
-    const sent = [];
-    const supabase = {
-      async createUser(u) {
-        sent.push(u);
-        if (u.email === 'bob@example.com') return { exists: true };
-        if (u.email === 'cy@example.com') throw new Error('Supabase answered 500');
-        return { id: 'sb-ada' };
-      },
-    };
-
-    const dry = await migrateAccounts({ repos, supabase, apply: false });
-    expect(dry).toMatchObject({ total: 3, created: 3 });
-    expect(sent).toEqual([]);
-
-    const done = await migrateAccounts({ repos, supabase, apply: true });
-    expect(done).toMatchObject({ total: 3, created: 1, alreadyInSupabase: ['bob@example.com'], failed: [{ email: 'cy@example.com', reason: 'Supabase answered 500' }] });
-    expect(sent[0]).toEqual({ email: 'ada@example.com', passwordHash: '$2a$10$abc', emailConfirmed: true, name: 'Ada' });
-    expect(await repos.identities.getUserId('supabase', 'sb-ada')).toBe('u_a');
-
-    const again = await migrateAccounts({ repos, supabase, apply: true });
-    expect(again.total).toBe(2); // Ada is linked and skipped
   });
 });

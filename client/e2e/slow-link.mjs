@@ -67,6 +67,8 @@ async function keepScreenshot(target, name) {
     });
   });
   const page = await context.newPage();
+  page.on('console', (m) => { if (m.type() === 'error') console.log(`        [browser] ${m.text().slice(0, 160)}`); });
+  page.on('requestfailed', (r) => console.log(`        [request failed] ${r.method()} ${r.url().slice(0, 100)} ${r.failure()?.errorText}`));
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   const sleep = (ms) => page.waitForTimeout(ms);

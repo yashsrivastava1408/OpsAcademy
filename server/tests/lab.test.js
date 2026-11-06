@@ -5,6 +5,7 @@ const request = require('supertest');
 const config = require('../config');
 const { createApp } = require('../app');
 const { install, fakeEngine } = require('./helpers');
+const auth = require('./auth');
 const { getRepos } = require('../repositories');
 const labAccountService = require('../services/labAccountService');
 const labService = require('../services/labService');
@@ -20,20 +21,12 @@ function setup(limits = {}) {
   ctx = install({ engine: fakeEngine(), limits: { maxPerUser: 3, ...limits } });
   app = createApp();
 }
-beforeEach(() => { config.labPolicy = 'open'; setup(); });
-afterEach(async () => { config.labPolicy = 'open'; await ctx.manager.shutdown(); });
+let supa;
+beforeEach(() => { config.labPolicy = 'open'; setup(); supa = auth.fakeSupabaseAdmin(); });
+afterEach(async () => { supa.restore(); config.labPolicy = 'open'; await ctx.manager.shutdown(); });
 
-const bearer = (token) => ({ Authorization: `Bearer ${token}` });
-
-async function registered() {
-  const email = `t${Math.random().toString(36).slice(2)}@example.com`;
-  const res = await request(app).post('/api/auth/register').send({ name: 'Theory Learner', email, password: 'correct-horse' });
-  return { user: res.body.user, auth: bearer(res.body.token) };
-}
-async function guest() {
-  const res = await request(app).post('/api/auth/guest');
-  return { user: res.body.user, auth: bearer(res.body.token) };
-}
+const registered = () => auth.registered(app, { name: 'Theory Learner' });
+const guest = () => auth.guest(app);
 async function admin() {
   const who = await registered();
   await getRepos().memberships.add({ userId: who.user.id, collegeId: null, role: 'platform_admin' });
@@ -42,8 +35,8 @@ async function admin() {
 /** Make a lab account and sign it in with its ID and password, like the Lab login screen. */
 async function labStudent(prefix = 'lab', extra = {}) {
   const [made] = await labAccountService.generate({ prefix, count: 1 });
-  const login = await request(app).post('/api/auth/login').send({ id: made.username, password: made.password });
-  return { ...made, user: login.body.user, auth: bearer(login.body.token), loginStatus: login.status, ...extra };
+  const login = await supa.signIn(app, made.username, made.password);
+  return { ...made, user: login.user, auth: login.auth, loginStatus: login.status, ...extra };
 }
 const start = (who, labId = 'linux-basics') => request(app).post('/api/sandbox/start').set(who.auth).send({ labId });
 
@@ -73,9 +66,10 @@ describe('lab accounts', () => {
     expect(res.body.data[0].password).toMatch(/^[A-HJ-KM-NP-Za-km-np-z2-9]{12}$/);
     expect(new Set(res.body.data.map((a) => a.password)).size).toBe(3);
 
+    // Supabase keeps the passwords; the app stores none.
     const stored = await getRepos().users.getByUsername('srm-cse-0001');
-    expect(stored.password).toMatch(/^\$2[aby]\$/);
-    expect(stored.password).not.toContain(res.body.data[0].password);
+    expect(JSON.stringify(stored)).not.toContain(res.body.data[0].password);
+    expect([...supa.accounts.values()].find((a) => a.email === 'srm-cse-0001@lab.opsacademy.invalid').password).toBe(res.body.data[0].password);
     const list = await request(app).get('/api/admin/lab-accounts').set(boss.auth);
     expect(list.body.data.total).toBe(3);
     expect(JSON.stringify(list.body)).not.toMatch(/password|\$2[aby]\$/);
@@ -100,32 +94,30 @@ describe('lab accounts', () => {
     expect((await post({ prefix: 'srm', names: 'nope' })).status).toBe(400);
   });
 
-  test('a lab account signs in with its ID, not an email; wrong passwords and unknown IDs get the same refusal', async () => {
+  test('a lab account signs in with its ID, not an email; wrong passwords and unknown IDs are both refused', async () => {
     const lab = await labStudent('srm');
     expect(lab.loginStatus).toBe(200);
-    expect(lab.user).toMatchObject({ username: lab.username, labAccess: true, guest: false, email: null });
-    const wrong = await request(app).post('/api/auth/login').send({ id: lab.username, password: 'not-the-password' });
-    const unknown = await request(app).post('/api/auth/login').send({ id: 'nobody-0001', password: lab.password });
-    expect([wrong.status, unknown.status]).toEqual([401, 401]);
-    expect(wrong.body.error).toBe(unknown.body.error);
-    expect((await request(app).post('/api/auth/login').send({ id: lab.username.toUpperCase(), password: lab.password })).status).toBe(200);
+    expect(lab.user).toMatchObject({ username: lab.username, labAccess: true, guest: false });
+    expect((await supa.signIn(app, lab.username, 'not-the-password')).status).toBe(401);
+    expect((await supa.signIn(app, 'nobody-0001', lab.password)).status).toBe(401);
+    expect((await supa.signIn(app, lab.username.toUpperCase(), lab.password)).status).toBe(200);
     expect((await request(app).get('/api/auth/me').set(lab.auth)).body.user.username).toBe(lab.username);
   });
 
-  test('resetting a password gives a new one once; the old one and old sessions stop working', async () => {
+  test('resetting a password gives a new one once; the old one stops working', async () => {
     const boss = await admin();
     const lab = await labStudent('srm');
     const reset = await request(app).post(`/api/admin/lab-accounts/${lab.user.id}/reset-password`).set(boss.auth);
     expect(reset.status).toBe(200);
+    expect(reset.headers['cache-control']).toBe('no-store');
     expect(reset.body.data.password).not.toBe(lab.password);
-    expect((await request(app).post('/api/auth/login').send({ id: lab.username, password: lab.password })).status).toBe(401);
-    expect((await request(app).post('/api/auth/login').send({ id: lab.username, password: reset.body.data.password })).status).toBe(200);
-    expect((await request(app).get('/api/auth/me').set(lab.auth)).status).toBe(401); // the old session is gone
+    expect((await supa.signIn(app, lab.username, lab.password)).status).toBe(401);
+    expect((await supa.signIn(app, lab.username, reset.body.data.password)).status).toBe(200);
     expect((await request(app).post('/api/admin/lab-accounts/nope/reset-password').set(boss.auth)).status).toBe(404);
     expect((await request(app).post(`/api/admin/lab-accounts/${(await registered()).user.id}/reset-password`).set(boss.auth)).status).toBe(404); // not a lab account
   });
 
-  test('disabling an account blocks sign-in, ends its session and sandboxes, and can be undone', async () => {
+  test('disabling an account blocks sign-in, ends its sandboxes and its queue place, and can be undone', async () => {
     const boss = await admin();
     const lab = await labStudent('srm');
     const sandbox = await start(lab);
@@ -133,12 +125,10 @@ describe('lab accounts', () => {
     const off = await request(app).post(`/api/admin/lab-accounts/${lab.user.id}/disable`).set(boss.auth);
     expect(off.body).toMatchObject({ success: true, sandboxesClosed: 1, data: { disabled: true } });
     expect(await ctx.manager.getSession(sandbox.body.data.sessionId)).toBeNull();
-    expect((await request(app).get('/api/auth/me').set(lab.auth)).status).toBe(401);
-    const again = await request(app).post('/api/auth/login').send({ id: lab.username, password: lab.password });
-    expect(again.status).toBe(403);
-    expect(again.body.error).toMatch(/disabled/);
+    expect((await supa.signIn(app, lab.username, lab.password)).status).toBe(403); // banned in Supabase: no new session
+    expect((await getRepos().users.getById(lab.user.id)).disabled).toBe(true);
     await request(app).post(`/api/admin/lab-accounts/${lab.user.id}/enable`).set(boss.auth);
-    expect((await request(app).post('/api/auth/login').send({ id: lab.username, password: lab.password })).status).toBe(200);
+    expect((await supa.signIn(app, lab.username, lab.password)).status).toBe(200);
   });
 
   test('generated passwords are random and unambiguous', () => {
@@ -393,6 +383,9 @@ describe('slots', () => {
   });
 
   test('a makeup slot is for students who missed their regular slot that day (or were added by a trainer)', async () => {
+    // Noon in India, so "earlier today" is the same calendar day whatever time this test really runs.
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-10T06:30:00Z').getTime());
+    try {
     const { college: c, section } = await college();
     const lab = await labStudent();
     await member(lab, c.id, section.id);
@@ -411,6 +404,9 @@ describe('slots', () => {
     const held = await getRepos().queue.reserve({ userId: attendee.user.id, slotId: regular.id, ttlMs: 1000 });
     await getRepos().queue.markStarted(held.id, 'old-session');
     expect(await slotService.eligibleSlots(attendee.user.id, { from: now, to: now + 60 * MIN, now })).toEqual([]);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 
@@ -540,49 +536,40 @@ describe('capacity plan, analytics and events', () => {
 });
 
 describe('Lab IDs on Supabase Auth', () => {
-  const labIdentity = require('../lib/labIdentity');
-  const calls = [];
-  const realFetch = global.fetch;
-  let legacy;
-  let url;
-  let secret;
-
-  beforeEach(() => {
-    legacy = config.legacyAuth; url = config.supabaseUrl; secret = config.supabaseSecretKey;
-    config.legacyAuth = false; config.supabaseUrl = 'https://x.supabase.test'; config.supabaseSecretKey = 'secret';
-    calls.length = 0;
-    global.fetch = async (u, init) => {
-      calls.push({ u, method: init.method, body: init.body ? JSON.parse(init.body) : null });
-      return { ok: true, status: 200, json: async () => ({ id: 'sub-1' }) };
-    };
-  });
-  afterEach(() => { global.fetch = realFetch; config.legacyAuth = legacy; config.supabaseUrl = url; config.supabaseSecretKey = secret; });
-
   test('the address matches what the browser builds', () => {
-    expect(labIdentity.labEmail(' SRM-CSE-0007 ')).toBe('srm-cse-0007@lab.opsacademy.invalid');
+    expect(require('../lib/labIdentity').labEmail(' SRM-CSE-0007 ')).toBe('srm-cse-0007@lab.opsacademy.invalid');
   });
 
-  test('generate creates the Supabase user, keeps no password hash and links the identity', async () => {
+  test('generate creates the Supabase user, keeps no password and links the identity', async () => {
     const [made] = await labAccountService.generate({ prefix: 'demo', count: 1 });
-    expect(calls[0].method).toBe('POST');
-    expect(calls[0].body).toMatchObject({ email: 'demo-0001@lab.opsacademy.invalid', password: made.password, email_confirm: true });
-    const stored = await getRepos().users.getById(made.id);
-    expect(stored.password).toBeFalsy();
-    expect(await getRepos().identities.getSubject('supabase', made.id)).toBe('sub-1');
+    expect(supa.calls[0]).toMatchObject({ method: 'POST', body: { email: 'demo-0001@lab.opsacademy.invalid', password: made.password, email_confirm: true } });
+    expect(JSON.stringify(await getRepos().users.getById(made.id))).not.toContain(made.password);
+    expect(await getRepos().identities.getSubject('supabase', made.id)).toBe([...supa.accounts.keys()][0]);
   });
 
   test('reset and disable go to Supabase', async () => {
     const [made] = await labAccountService.generate({ prefix: 'demo', count: 1 });
-    calls.length = 0;
+    supa.calls.length = 0;
     const reset = await labAccountService.resetPassword(made.id);
-    expect(calls[0]).toMatchObject({ method: 'PUT', body: { password: reset.password } });
+    expect(supa.calls[0]).toMatchObject({ method: 'PUT', id: [...supa.accounts.keys()][0], body: { password: reset.password } });
     await labAccountService.setDisabled(made.id, true);
-    expect(calls[1].body).toEqual({ ban_duration: '876000h' });
+    expect(supa.calls[1].body).toEqual({ ban_duration: '876000h' });
   });
 
   test('a failed Supabase call leaves no half-made account', async () => {
-    global.fetch = async () => ({ ok: false, status: 500, json: async () => ({}) });
+    supa.failWith(500);
     await expect(labAccountService.generate({ prefix: 'demo', count: 1 })).rejects.toThrow();
     expect(await getRepos().users.getByUsername('demo-0001')).toBeNull();
+  });
+
+  test('without Supabase settings Lab IDs cannot be made, and the answer says why', async () => {
+    supa.restore();
+    const saved = config.supabaseSecretKey;
+    config.supabaseSecretKey = null;
+    try {
+      await expect(labAccountService.generate({ prefix: 'demo', count: 1 })).rejects.toMatchObject({ statusCode: 503 });
+    } finally {
+      config.supabaseSecretKey = saved;
+    }
   });
 });

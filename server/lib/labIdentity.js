@@ -11,8 +11,8 @@ const config = require('../config');
 const LAB_EMAIL_DOMAIN = 'lab.opsacademy.invalid';
 const labEmail = (username) => `${String(username).trim().toLowerCase()}@${LAB_EMAIL_DOMAIN}`;
 
-/** Lab accounts live in Supabase when the gateway no longer signs people in itself and holds the secret key. */
-const enabled = () => !config.legacyAuth && Boolean(config.supabaseUrl && config.supabaseSecretKey);
+/** Lab accounts live in Supabase, so making them needs the project URL and the secret key. */
+const configured = () => Boolean(config.supabaseUrl && config.supabaseSecretKey);
 
 class LabIdentityError extends Error {
   constructor(message, statusCode = 502) {
@@ -44,4 +44,4 @@ const setPassword = (subject, password) => call('PUT', `/users/${encodeURICompon
 const setBanned = (subject, banned) => call('PUT', `/users/${encodeURIComponent(subject)}`, { ban_duration: banned ? '876000h' : 'none' });
 const deleteUser = (subject) => call('DELETE', `/users/${encodeURIComponent(subject)}`).catch(() => {});
 
-module.exports = { LAB_EMAIL_DOMAIN, labEmail, enabled, createUser, setPassword, setBanned, deleteUser, LabIdentityError };
+module.exports = { LAB_EMAIL_DOMAIN, labEmail, configured, createUser, setPassword, setBanned, deleteUser, LabIdentityError };

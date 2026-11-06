@@ -10,13 +10,11 @@ const config = require('../config');
 const { getManager } = require('../services/sandboxManager');
 const { getHubClient } = require('../services/aiHubClient');
 const { getRepos } = require('../repositories');
-const { getMailer } = require('../lib/mailer');
 const userService = require('../services/userService');
 const progressService = require('../services/progressService');
 const audit = require('../services/auditService');
 const labAccountService = require('../services/labAccountService');
 const labService = require('../services/labService');
-const { forgetUser } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -41,7 +39,6 @@ router.get('/overview', async (req, res, next) => {
           aiHub: await getHubClient().isHealthy(),
           storeDriver: getRepos().driver,
           storeWritable: await getRepos().ping().then(() => true, () => false),
-          emailDelivers: getMailer().delivers,
         },
         limits: {
           maxPerUser: config.sandbox.maxPerUser,
@@ -140,7 +137,6 @@ router.get('/lab-accounts', async (req, res, next) => {
 router.post('/lab-accounts/:id/reset-password', async (req, res, next) => {
   try {
     const result = await labAccountService.resetPassword(req.params.id);
-    forgetUser(result.id);
     await audit.record(req, 'lab_account.reset_password', { entityType: 'lab_account', entityId: result.id, meta: { username: result.username } });
     res.set('Cache-Control', 'no-store');
     res.json({ success: true, data: result });
@@ -154,7 +150,6 @@ for (const [action, disabled] of [['disable', true], ['enable', false]]) {
   router.post(`/lab-accounts/:id/${action}`, async (req, res, next) => {
     try {
       const account = await labAccountService.setDisabled(req.params.id, disabled);
-      forgetUser(account.id);
       let closed = 0;
       if (disabled) {
         // A switched-off account loses its running sandboxes too.

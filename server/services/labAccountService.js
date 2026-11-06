@@ -1,9 +1,8 @@
 /**
  * Lab accounts: an ID and a password issued by the platform admin, one per student, no email.
- * Passwords are shown once, when generated or reset; only a hash is stored.
+ * Passwords are shown once, when generated or reset. Supabase Auth keeps them; this service never stores one.
  */
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 const { getRepos } = require('../repositories');
 const labIdentity = require('../lib/labIdentity');
 
@@ -14,7 +13,6 @@ class LabAccountError extends Error {
   }
 }
 
-const BCRYPT_ROUNDS = 10;
 const MAX_PER_REQUEST = 100;
 const PASSWORD_LENGTH = 12;
 // No 0/O, 1/l/I: an ID and password read off a printed sheet must not be misread.
@@ -35,7 +33,7 @@ function generatePassword(length = PASSWORD_LENGTH) {
 
 const publicLab = (u) => ({
   id: u.id, username: u.username, name: u.name, disabled: Boolean(u.disabled), labAccess: Boolean(u.labAccess),
-  createdAt: u.createdAt, lastPasswordChangeAt: u.passwordChangedAt || null,
+  createdAt: u.createdAt,
 });
 
 /**
@@ -53,37 +51,34 @@ async function generate({ prefix, count, names }) {
   const total = list ? list.length : Number(count);
   if (!Number.isInteger(total) || total < 1 || total > MAX_PER_REQUEST) throw new LabAccountError(`Make between 1 and ${MAX_PER_REQUEST} accounts at a time`);
 
+  if (!labIdentity.configured()) throw new LabAccountError('Lab IDs need Supabase Auth: set SUPABASE_URL and SUPABASE_SECRET_KEY on the gateway', 503);
   const repos = getRepos();
   let next = (await repos.users.maxUsernameSequence(clean)) + 1;
   const made = [];
   for (let i = 0; i < total; i += 1) {
     const password = generatePassword();
-    // Supabase keeps the password; only the legacy sign-in needs a hash of its own.
-    const viaSupabase = labIdentity.enabled();
-    const hash = viaSupabase ? null : await bcrypt.hash(password, BCRYPT_ROUNDS);
     for (let attempt = 0; ; attempt += 1) {
       const username = `${clean}-${String(next).padStart(4, '0')}`;
       next += 1;
-      if (viaSupabase && await repos.users.getByUsername(username)) continue; // taken: try the next number
+      if (await repos.users.getByUsername(username)) continue; // taken: try the next number
       const name = list ? list[i] : username;
-      const subject = viaSupabase ? await labIdentity.createUser({ username, name, password }) : null;
+      const subject = await labIdentity.createUser({ username, name, password });
       try {
         const user = await repos.users.create({
           id: `u_${crypto.randomBytes(9).toString('base64url')}`,
           name,
           username,
-          password: hash,
           guest: false,
           emailVerified: false,
           labAccess: true,
           createdAt: new Date().toISOString(),
           registeredAt: new Date().toISOString(),
         });
-        if (subject) await repos.identities.link({ provider: 'supabase', subject, userId: user.id });
+        await repos.identities.link({ provider: 'supabase', subject, userId: user.id });
         made.push({ id: user.id, username, name: user.name, password });
         break;
       } catch (err) {
-        if (subject) await labIdentity.deleteUser(subject);
+        await labIdentity.deleteUser(subject);
         if (err.code !== 'username_taken' || attempt > 5) throw err; // another admin request took that number: try the next
       }
     }
@@ -103,28 +98,26 @@ async function labAccountOrThrow(id) {
   return user;
 }
 
-/** A new password, shown once. The old one stops working at once, and so does any signed-in session. */
+/** The Supabase user behind a Lab ID. */
+async function subjectOf(user) {
+  const subject = await getRepos().identities.getSubject('supabase', user.id);
+  if (!subject) throw new LabAccountError('This Lab ID has no sign-in account behind it', 409);
+  return subject;
+}
+
+/** A new password, shown once. The old one stops working at once. */
 async function resetPassword(id) {
   const user = await labAccountOrThrow(id);
   const password = generatePassword();
-  const subject = labIdentity.enabled() ? await getRepos().identities.getSubject('supabase', user.id) : null;
-  if (subject) {
-    await labIdentity.setPassword(subject, password);
-    await getRepos().users.update(user.id, { passwordChangedAt: Date.now() });
-  } else {
-    await getRepos().users.update(user.id, { password: await bcrypt.hash(password, BCRYPT_ROUNDS), passwordChangedAt: Date.now() });
-  }
+  await labIdentity.setPassword(await subjectOf(user), password);
   return { id: user.id, username: user.username, name: user.name, password };
 }
 
-/** Switch an account off or on. Switching off also ends its signed-in sessions (the caller ends its sandboxes). */
+/** Switch an account off or on. Switching off bans the Supabase user (no new sign-ins or refreshes); the caller ends its sandboxes. */
 async function setDisabled(id, disabled) {
   const user = await labAccountOrThrow(id);
-  const patch = { disabled: Boolean(disabled) };
-  if (disabled) patch.passwordChangedAt = Date.now();
-  const subject = labIdentity.enabled() ? await getRepos().identities.getSubject('supabase', user.id) : null;
-  if (subject) await labIdentity.setBanned(subject, Boolean(disabled));
-  return publicLab(await getRepos().users.update(user.id, patch));
+  await labIdentity.setBanned(await subjectOf(user), Boolean(disabled));
+  return publicLab(await getRepos().users.update(user.id, { disabled: Boolean(disabled) }));
 }
 
 module.exports = { LabAccountError, generate, list, resetPassword, setDisabled, generatePassword, MAX_PER_REQUEST };

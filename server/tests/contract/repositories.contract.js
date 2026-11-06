@@ -32,11 +32,11 @@ function runContract(label, setup) {
 
       test('update merges fields, upgrades a guest in place and reports unknown users', async () => {
         await repos.users.create(guest('g1'));
-        const upgraded = await repos.users.update('g1', { name: 'Ada', email: 'ada@example.com', password: 'hash', guest: false, registeredAt: '2026-02-01T00:00:00.000Z' });
-        expect(upgraded).toMatchObject({ id: 'g1', name: 'Ada', email: 'ada@example.com', password: 'hash', guest: false });
+        const upgraded = await repos.users.update('g1', { name: 'Ada', email: 'ada@example.com', guest: false, registeredAt: '2026-02-01T00:00:00.000Z' });
+        expect(upgraded).toMatchObject({ id: 'g1', name: 'Ada', email: 'ada@example.com', guest: false });
         expect(upgraded.createdAt).toBe('2026-01-01T00:00:00.000Z');
-        const changed = await repos.users.update('g1', { passwordChangedAt: 1_800_000_000_000, emailVerified: true });
-        expect(changed).toMatchObject({ passwordChangedAt: 1_800_000_000_000, emailVerified: true });
+        const changed = await repos.users.update('g1', { emailVerified: true });
+        expect(changed).toMatchObject({ emailVerified: true });
         expect(await repos.users.update('missing', { name: 'x' })).toBeNull();
         await repos.users.create(user('u2'));
         await expect(repos.users.update('u2', { email: 'ada@example.com' })).rejects.toMatchObject({ code: 'email_taken' });
@@ -68,49 +68,12 @@ function runContract(label, setup) {
         await repos.users.create(guest('new', '2026-06-01T00:00:00.000Z'));
         await repos.users.create(user('u1', { createdAt: '2020-01-01T00:00:00.000Z' }));
         await repos.progress.mutate('old', (doc) => { doc.xp = 10; });
-        await repos.tokens.issue({ hash: 'h1', userId: 'old', kind: 'verify', expiresAt: Date.now() + 60_000 });
         const removed = await repos.users.pruneGuests(Date.parse('2026-01-01T00:00:00.000Z'));
         expect(removed).toBe(1);
         expect(await repos.users.getById('old')).toBeNull();
         expect(await repos.progress.get('old')).toBeNull();
-        expect(await repos.tokens.redeem('h1', 'verify')).toBeNull();
         expect(await repos.users.getById('new')).not.toBeNull();
         expect(await repos.users.getById('u1')).not.toBeNull();
-      });
-    });
-
-    describe('tokens', () => {
-      beforeEach(() => repos.users.create(user('u1')));
-
-      test('a token works once, for its own kind only', async () => {
-        await repos.tokens.issue({ hash: 'a', userId: 'u1', kind: 'reset', expiresAt: Date.now() + 60_000 });
-        expect(await repos.tokens.redeem('a', 'verify')).toBeNull();
-        expect(await repos.tokens.redeem('a', 'reset')).toBe('u1');
-        expect(await repos.tokens.redeem('a', 'reset')).toBeNull();
-      });
-
-      test('an expired token is refused (and consumed)', async () => {
-        await repos.tokens.issue({ hash: 'a', userId: 'u1', kind: 'reset', expiresAt: 1000 });
-        expect(await repos.tokens.redeem('a', 'reset', 2000)).toBeNull();
-        expect(await repos.tokens.redeem('a', 'reset', 500)).toBeNull();
-      });
-
-      test('a newer token replaces older ones of the same kind only', async () => {
-        const exp = Date.now() + 60_000;
-        await repos.tokens.issue({ hash: 'r1', userId: 'u1', kind: 'reset', expiresAt: exp });
-        await repos.tokens.issue({ hash: 'v1', userId: 'u1', kind: 'verify', expiresAt: exp });
-        await repos.tokens.issue({ hash: 'r2', userId: 'u1', kind: 'reset', expiresAt: exp });
-        expect(await repos.tokens.redeem('r1', 'reset')).toBeNull();
-        expect(await repos.tokens.redeem('r2', 'reset')).toBe('u1');
-        expect(await repos.tokens.redeem('v1', 'verify')).toBe('u1');
-      });
-
-      test('pruneExpired removes only expired tokens; unknown users are refused', async () => {
-        await repos.tokens.issue({ hash: 'old', userId: 'u1', kind: 'reset', expiresAt: 1000 });
-        await repos.tokens.issue({ hash: 'fresh', userId: 'u1', kind: 'verify', expiresAt: Date.now() + 60_000 });
-        expect(await repos.tokens.pruneExpired(Date.now())).toBe(1);
-        expect(await repos.tokens.redeem('fresh', 'verify')).toBe('u1');
-        await expect(repos.tokens.issue({ hash: 'x', userId: 'ghost', kind: 'reset', expiresAt: 1 })).rejects.toBeInstanceOf(Error);
       });
     });
 
@@ -296,7 +259,7 @@ function runContract(label, setup) {
     });
 
     describe('lab accounts', () => {
-      const lab = (id, username, extra = {}) => ({ id, name: `Lab ${id}`, guest: false, emailVerified: false, createdAt: `2026-01-01T00:00:0${id.length % 9}.000Z`, username, labAccess: true, password: '$2a$10$hash', ...extra });
+      const lab = (id, username, extra = {}) => ({ id, name: `Lab ${id}`, guest: false, emailVerified: false, createdAt: `2026-01-01T00:00:0${id.length % 9}.000Z`, username, labAccess: true, ...extra });
 
       test('an account with a lab ID needs no email; lab IDs are unique and case-insensitive', async () => {
         await repos.users.create(lab('l1', 'srm-001'));
@@ -539,13 +502,12 @@ function runContract(label, setup) {
         await expect(repos.identities.link({ subject: 'sub-2', userId: 'nobody' })).rejects.toBeTruthy();
       });
 
-      test('lists the accounts that still need moving to Supabase', async () => {
-        await repos.users.create(user('with-pw', { password: '$2a$10$hash' }));
-        await repos.users.create(user('linked', { password: '$2a$10$hash2' }));
-        await repos.users.create(user('no-pw'));
-        await repos.users.create(guest('g1'));
+      test('finds the Supabase user behind an app user, and nothing for one that has none', async () => {
+        await repos.users.create(user('linked'));
+        await repos.users.create(user('plain'));
         await repos.identities.link({ subject: 'sub-x', userId: 'linked' });
-        expect((await repos.users.listForAuthMigration()).map((u) => u.id)).toEqual(['with-pw']);
+        expect(await repos.identities.getSubject('supabase', 'linked')).toBe('sub-x');
+        expect(await repos.identities.getSubject('supabase', 'plain')).toBeNull();
       });
     });
 

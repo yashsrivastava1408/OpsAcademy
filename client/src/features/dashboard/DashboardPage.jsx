@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { unitApi, progressApi, certificateApi, authApi, ensureIdentity, updateStoredUser } from '../../shared/services/api';
 import { EMPTY_PROGRESS } from '../../shared/services/progressService';
+import { resendConfirmation as resendConfirmationLink } from '../auth/supabaseIdentity';
 import useAuth from '../auth/useAuth';
 import useProgress from '../../shared/hooks/useProgress';
 import LabSlotCard from './LabSlotCard';
@@ -128,14 +129,8 @@ export default function DashboardPage() {
 
   const resendConfirmation = async () => {
     try {
-      const res = await authApi.resendVerification();
-      if (res.data.devVerifyLink) {
-        setAccountNote({ link: res.data.devVerifyLink.replace(/^https?:\/\/[^/]+/, '') });
-      } else if (res.data.emailConfigured === false) {
-        setAccountNote('This server is not set up to send email, so the link cannot reach you.');
-      } else {
-        setAccountNote('Confirmation link sent. Check your inbox.');
-      }
+      await resendConfirmationLink(user.email);
+      setAccountNote('Confirmation link sent. Check your inbox.');
     } catch {
       setAccountNote('Could not send the confirmation link. Please try again in a minute.');
     }
@@ -303,11 +298,7 @@ export default function DashboardPage() {
                   </div>
                 )}
                 {accountNote && (
-                  <p className="account-note" role="status">
-                    {accountNote.link
-                      ? <>Email is not set up on this development server. <Link to={accountNote.link}>Open the confirmation link</Link>.</>
-                      : accountNote}
-                  </p>
+                  <p className="account-note" role="status">{accountNote}</p>
                 )}
               </div>
             )}

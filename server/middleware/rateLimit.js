@@ -76,7 +76,6 @@ module.exports = {
   buildCampusList,
   api: () => limiter(config.rateLimit.apiPerWindow, 'Too many requests. Please slow down.'),
   auth: () => limiter(config.rateLimit.authPerWindow, 'Too many sign-in attempts. Please wait a minute.', { perUser: false, shared: 'auth' }),
-  guest: () => limiter(config.rateLimit.guestPerWindow, 'Too many new sessions from this network. Please wait a minute.', { perUser: false, shared: 'guest' }),
   sandboxStart: () => limiter(config.rateLimit.sandboxStartPerWindow, 'Too many sandboxes started. Please wait a minute.', { shared: 'sandbox' }),
   agent: () => limiter(config.rateLimit.agentPerWindow, 'Too many AI mentor requests. Please wait a minute.', { shared: 'agent' }),
 };

@@ -13,7 +13,7 @@ set -euo pipefail
 : "${SCRATCH_DATABASE_URL:?Set SCRATCH_DATABASE_URL to a throwaway database}"
 SOURCE="${SOURCE_DATABASE_URL:-}"
 IMAGE="${PG_IMAGE:-postgres:17-alpine}"
-TABLES="${DRILL_TABLES:-users identities one_time_tokens colleges sections memberships progress certificates sandbox_sessions lab_slots slot_assignments lab_queue ai_usage audit_log schema_migrations}"
+TABLES="${DRILL_TABLES:-users identities colleges sections memberships progress certificates sandbox_sessions lab_slots slot_assignments lab_queue ai_usage audit_log schema_migrations}"
 
 [ -f "$BACKUP_FILE" ] || { echo "No such file: $BACKUP_FILE" >&2; exit 2; }
 if [ -n "$SOURCE" ] && [ "$SOURCE" = "$SCRATCH_DATABASE_URL" ]; then

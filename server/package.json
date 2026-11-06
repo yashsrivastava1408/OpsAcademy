@@ -18,13 +18,12 @@
     "migrate": "node scripts/migrate.js",
     "migrate:status": "node scripts/migrate.js --status",
     "grant-role": "node scripts/grant-role.js",
-    "test:db": "jest tests/migrator.test.js tests/schema.test.js tests/repositories.postgres.test.js tests/legacyImport.test.js tests/twoGateways.test.js --runInBand --coverage=false",
-    "test:pg": "TEST_REPOS=postgres jest --runInBand --coverage=false --testPathIgnorePatterns migrator schema repositories.postgres legacyImport twoGateways",
-    "migrate:data": "node scripts/migrate-data.js"
+    "test:db": "jest tests/migrator.test.js tests/schema.test.js tests/repositories.postgres.test.js tests/twoGateways.test.js --runInBand --coverage=false",
+    "test:pg": "TEST_REPOS=postgres jest --runInBand --coverage=false --testPathIgnorePatterns migrator schema repositories.postgres twoGateways",
+    "auth": "node test-support/fakeSupabaseAuth.js"
   },
   "dependencies": {
     "axios": "^1.19.0",
-    "bcryptjs": "^2.4.3",
     "compression": "^1.8.2",
     "cors": "^2.8.5",
     "dockerode": "^4.0.4",
@@ -41,12 +40,12 @@
     "ws": "^8.18.1"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "jest": "^30.5.2",
     "nodemon": "^3.1.9",
     "oxlint": "^1.87.0",
     "pino-pretty": "^13.2.0",
-    "supertest": "^7.3.1",
-    "@supabase/supabase-js": "^2.118.0"
+    "supertest": "^7.3.1"
   },
   "jest": {
     "testEnvironment": "node",

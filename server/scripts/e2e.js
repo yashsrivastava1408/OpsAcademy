@@ -8,8 +8,12 @@
  * creates an account and checks the certificate publicly. Also checks that a
  * second user cannot touch the first user's sandbox.
  *
+ * Sign-in is Supabase Auth, so the gateway must be started with SUPABASE_URL pointing at a Supabase-compatible
+ * server. CI uses test-support/fakeSupabaseAuth.js; this script talks to the same server for sign-ups and logins.
+ *
  * Usage:
  *   node scripts/e2e.js [baseUrl]        default http://localhost:4000
+ *   AUTH_URL=http://127.0.0.1:54321      where the fake Supabase Auth is (default)
  *
  * Exits 1 if any check fails.
  */
@@ -19,6 +23,7 @@ const WebSocket = require('ws');
 const BASE = (process.argv[2] || process.env.E2E_BASE_URL || 'http://localhost:4000').replace(/\/$/, '');
 const WS_BASE = BASE.replace(/^http/, 'ws');
 const UNIT = 'linux-basics';
+const AUTH = (process.env.AUTH_URL || 'http://127.0.0.1:54321').replace(/\/$/, '');
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -39,6 +44,23 @@ async function api(method, path, { token, body } = {}) {
   let json = null;
   try { json = JSON.parse(text); } catch { /* metrics are plain text */ }
   return { status: res.status, json, text };
+}
+
+/** Talk to Supabase Auth the way the browser's supabase-js does. */
+async function auth(method, path, { token, body } = {}) {
+  const res = await fetch(`${AUTH}/auth/v1${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json', apikey: 'e2e', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { status: res.status, json: res.status === 204 ? null : await res.json().catch(() => null) };
+}
+
+/** A visitor: Supabase signs an anonymous user in, then the gateway opens the learner's record. */
+async function newGuest() {
+  const signup = (await auth('POST', '/signup', { body: {} })).json;
+  const session = (await api('POST', '/api/auth/session', { token: signup.access_token })).json;
+  return { token: signup.access_token, user: session.user };
 }
 
 function waitFor(predicate, timeoutMs = 10000) {
@@ -89,7 +111,7 @@ async function main() {
   check('gateway is ready and the AI hub is reachable', ready.json.status === 'ready', JSON.stringify(ready.json.checks));
 
   // ── Identity and sandbox ────────────────────────────────────
-  const guest = (await api('POST', '/api/auth/guest')).json;
+  const guest = await newGuest();
   const token = guest.token;
   check('visitor gets a guest identity', Boolean(token) && guest.user.guest === true);
 
@@ -107,7 +129,7 @@ async function main() {
   check('terminal WebSocket connects', await term.ready);
 
   // ── Isolation between users ─────────────────────────────────
-  const other = (await api('POST', '/api/auth/guest')).json.token;
+  const other = (await newGuest()).token;
   check("another user cannot read this sandbox's status", (await api('GET', `/api/sandbox/${session.sessionId}/status`, { token: other })).status === 404);
   check("another user cannot stop this sandbox", (await api('DELETE', `/api/sandbox/${session.sessionId}`, { token: other })).status === 404);
   const intruder = openTerminal(session.sessionId, other);
@@ -226,9 +248,12 @@ async function main() {
   check('a guest cannot be issued a certificate', guestCert.status === 403);
 
   const email = `e2e-${Date.now()}@example.com`;
-  const account = (await api('POST', '/api/auth/register', { token, body: { name: 'E2E Student', email, password: 'correct-horse-battery' } })).json;
-  check('registering keeps the guest account and its progress', account.user.id === guest.user.id && account.user.guest === false);
-  const userToken = account.token;
+  // Supabase turns the anonymous user into an account (same id) once an email and password are added.
+  await auth('PUT', '/user', { token, body: { email, password: 'correct-horse-battery', data: { name: 'E2E Student' } } });
+  const upgraded = (await auth('POST', '/token?grant_type=password', { body: { email, password: 'correct-horse-battery' } })).json;
+  const account = (await api('POST', '/api/auth/session', { token: upgraded.access_token })).json;
+  check('signing up keeps the guest account and its progress', account.user.id === guest.user.id && account.user.guest === false);
+  const userToken = upgraded.access_token;
 
   const cert = (await api('POST', '/api/certificates', { token: userToken, body: { unitId: UNIT, studentName: 'Someone Else' } })).json.data;
   check('a certificate is issued in the account holder\'s name', /^OPS-[0-9A-F]{12}$/.test(cert.id) && cert.studentName === 'E2E Student');
@@ -243,9 +268,9 @@ async function main() {
   const board = (await api('GET', '/api/progress/leaderboard', { token: userToken })).json.data;
   check('the leaderboard includes this learner', board.some((row) => row.you && row.name === 'E2E Student'));
 
-  const login = await api('POST', '/api/auth/login', { body: { email, password: 'correct-horse-battery' } });
-  check('the new account can log in', login.status === 200 && login.json.user.id === guest.user.id);
-  check('a wrong password is rejected', (await api('POST', '/api/auth/login', { body: { email, password: 'wrong' } })).status === 401);
+  const login = await auth('POST', '/token?grant_type=password', { body: { email, password: 'correct-horse-battery' } });
+  check('the new account can log in', login.status === 200 && (await api('GET', '/api/auth/me', { token: login.json.access_token })).json.user.id === guest.user.id);
+  check('a wrong password is rejected', (await auth('POST', '/token?grant_type=password', { body: { email, password: 'wrong' } })).status === 400);
 
   // ── Reset, stop, metrics ────────────────────────────────────
   await api('POST', `/api/sandbox/${session.sessionId}/reset`, { token });

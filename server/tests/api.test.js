@@ -4,6 +4,8 @@ const units = require('../lib/units');
 const pty = require('../services/ptyService');
 const { createApp } = require('../app');
 const { fakeEngine, install, tamperCertificate } = require('./helpers');
+const auth = require('./auth');
+const { accessToken, bearer, newId, signIn, trustTestKey, KID } = auth;
 
 let app;
 let ctx;
@@ -29,16 +31,8 @@ function setup(options = {}) {
   app = createApp();
 }
 
-async function guest() {
-  const res = await request(app).post('/api/auth/guest');
-  return { token: res.body.token, user: res.body.user, auth: { Authorization: `Bearer ${res.body.token}` } };
-}
-
-async function registered(overrides = {}) {
-  const body = { name: 'Asha Rao', email: `asha${Math.random().toString(36).slice(2)}@example.com`, password: 'correct-horse', ...overrides };
-  const res = await request(app).post('/api/auth/register').send(body);
-  return { ...body, token: res.body.token, user: res.body.user, auth: { Authorization: `Bearer ${res.body.token}` }, res };
-}
+const guest = (claims) => auth.guest(app, claims);
+const registered = (overrides) => auth.registered(app, overrides);
 
 async function startSandbox(who, labId = 'linux-basics') {
   const res = await request(app).post('/api/sandbox/start').set(who.auth).send({ labId });
@@ -99,7 +93,7 @@ describe('health and readiness', () => {
 });
 
 describe('auth', () => {
-  test('guest tokens identify a distinct user', async () => {
+  test('guest identities are distinct users', async () => {
     const a = await guest();
     const b = await guest();
     expect(a.user).toMatchObject({ guest: true, email: null });
@@ -109,69 +103,23 @@ describe('auth', () => {
     expect(me.body.user).toEqual(a.user);
   });
 
-  test('register returns a token and never returns the password hash', async () => {
+  test('a signed-in learner gets a record with a public shape and nothing secret', async () => {
     const user = await registered();
-    expect(user.res.status).toBe(201);
-    expect(user.user).toEqual({ id: expect.any(String), name: 'Asha Rao', email: user.email, guest: false, emailVerified: false, profileSlug: null, username: null, labAccess: false });
-    expect(JSON.stringify(user.res.body)).not.toMatch(/password|\$2[aby]\$/);
+    expect(user.user).toEqual({ id: expect.any(String), name: 'Asha Rao', email: user.email, guest: false, emailVerified: true, profileSlug: null, username: null, labAccess: false });
+    expect(JSON.stringify(user.user)).not.toMatch(/password|hash/i);
   });
 
-  test('passwords are stored hashed', async () => {
-    const user = await registered();
-    const stored = await ctx.repos.users.getById(user.user.id);
-    expect(stored.password).not.toBe(user.password);
-    expect(stored.password).toMatch(/^\$2[aby]\$/);
-  });
-
-  test('registering as a guest keeps the same account and its progress', async () => {
+  test('a guest who signs up keeps the same account and its progress', async () => {
     const visitor = await guest();
     const session = await startSandbox(visitor);
     await request(app).post('/api/labs/linux-basics/verify').set(visitor.auth).send({ sessionId: session.sessionId, stepNumber: 1 });
 
-    const res = await request(app).post('/api/auth/register').set(visitor.auth)
-      .send({ name: 'Asha', email: 'asha@example.com', password: 'correct-horse' });
+    // Supabase turns the anonymous user into an account with the same id once an email is added and confirmed.
+    const upgraded = await signIn(app, { sub: visitor.sub, name: 'Asha', email: 'asha@example.com', anonymous: false });
 
-    expect(res.body.user).toMatchObject({ id: visitor.user.id, guest: false, name: 'Asha' });
-    const progress = await request(app).get('/api/progress').set({ Authorization: `Bearer ${res.body.token}` });
+    expect(upgraded.user).toMatchObject({ id: visitor.user.id, guest: false, name: 'Asha', email: 'asha@example.com' });
+    const progress = await request(app).get('/api/progress').set(upgraded.auth);
     expect(progress.body.data.xp).toBe(20);
-  });
-
-  test.each([
-    [{ email: 'a@example.com', password: 'correct-horse' }, /Name/],
-    [{ name: 'A', email: 'not-an-email', password: 'correct-horse' }, /email/],
-    [{ name: 'A', email: 'a@example.com', password: 'short' }, /at least 8/],
-    [{ name: 'A', email: 'a@example.com' }, /Password/],
-    [{ name: { $gt: '' }, email: 'a@example.com', password: 'correct-horse' }, /Name/],
-  ])('register rejects %j', async (body, message) => {
-    const res = await request(app).post('/api/auth/register').send(body);
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(message);
-  });
-
-  test('register rejects a duplicate email, case-insensitively', async () => {
-    const user = await registered({ email: 'dup@example.com' });
-    expect(user.res.status).toBe(201);
-    const res = await request(app).post('/api/auth/register').send({ name: 'B', email: 'DUP@Example.com', password: 'correct-horse' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/already exists/);
-  });
-
-  test('login works with the right password and fails the same way for wrong password or unknown email', async () => {
-    const user = await registered();
-
-    const ok = await request(app).post('/api/auth/login').send({ email: user.email.toUpperCase(), password: user.password });
-    expect(ok.status).toBe(200);
-    expect(ok.body.user.id).toBe(user.user.id);
-
-    const wrong = await request(app).post('/api/auth/login').send({ email: user.email, password: 'wrong-password' });
-    const unknown = await request(app).post('/api/auth/login').send({ email: 'nobody@example.com', password: 'wrong-password' });
-    expect(wrong.status).toBe(401);
-    expect(unknown.status).toBe(401);
-    expect(wrong.body).toEqual(unknown.body);
-  });
-
-  test('login without credentials is a 400', async () => {
-    expect((await request(app).post('/api/auth/login').send({})).status).toBe(400);
   });
 
   test.each([
@@ -183,34 +131,53 @@ describe('auth', () => {
     expect(res.status).toBe(401);
   });
 
-  test('a token signed with another secret is rejected', async () => {
-    const forged = require('jsonwebtoken').sign({ id: 'u_admin', name: 'x' }, 'some-other-secret');
+  test('a token signed with another key is rejected', async () => {
+    const { privateKey: other } = require('crypto').generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const forged = require('jsonwebtoken').sign(
+      { iss: `${process.env.SUPABASE_URL}/auth/v1`, aud: 'authenticated', sub: 'u_admin' }, other, { algorithm: 'ES256', keyid: KID },
+    );
+    const res = await request(app).get('/api/progress').set({ Authorization: `Bearer ${forged}` });
+    expect(res.status).toBe(401);
+  });
+
+  test('a token made with a shared secret (HS256) is rejected, so a leaked secret cannot mint users', async () => {
+    const forged = require('jsonwebtoken').sign({ sub: 'u_admin', aud: 'authenticated' }, 'some-other-secret');
     const res = await request(app).get('/api/progress').set({ Authorization: `Bearer ${forged}` });
     expect(res.status).toBe(401);
   });
 
   test('an unsigned (alg none) token is rejected', async () => {
     const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
-    const token = `${b64({ alg: 'none', typ: 'JWT' })}.${b64({ id: 'u_admin' })}.`;
+    const token = `${b64({ alg: 'none', typ: 'JWT' })}.${b64({ sub: 'u_admin' })}.`;
     const res = await request(app).get('/api/progress').set({ Authorization: `Bearer ${token}` });
     expect(res.status).toBe(401);
   });
 
-  test('sign-in attempts are rate limited', async () => {
-    // Build a separate app in its own module registry so the low limit
-    // does not leak into the other tests.
+  test('an expired token, or one for another project or audience, is rejected', async () => {
+    const sub = newId();
+    const expired = accessToken({ sub, expiresInSeconds: -60 });
+    const otherProject = accessToken({ sub, extra: { iss: 'https://someone-else.supabase.co/auth/v1' } });
+    const otherAudience = accessToken({ sub, extra: { aud: 'service_role' } });
+    for (const token of [expired, otherProject, otherAudience]) {
+      expect((await request(app).get('/api/progress').set(bearer(token))).status).toBe(401);
+    }
+  });
+
+  test('the session endpoint is rate limited', async () => {
+    // Build a separate app in its own module registry so the low limit does not leak into the other tests.
     process.env.RATE_LIMIT_AUTH = '3';
     let limitedApp;
     jest.isolateModules(() => {
+      trustTestKey();
       limitedApp = require('../app').createApp();
     });
     delete process.env.RATE_LIMIT_AUTH;
 
     const statuses = [];
     for (let i = 0; i < 5; i += 1) {
-      statuses.push((await request(limitedApp).post('/api/auth/login').send({ email: 'a@example.com', password: 'x' })).status);
+      statuses.push((await request(limitedApp).post('/api/auth/session').set(bearer(accessToken({ sub: newId() })))).status);
     }
-    expect(statuses).toEqual([401, 401, 401, 429, 429]);
+    expect(statuses).toEqual([200, 200, 200, 429, 429]);
   });
 
   test('students sharing one address each get their own request budget, but sign-in attempts do not', async () => {
@@ -218,149 +185,32 @@ describe('auth', () => {
     process.env.RATE_LIMIT_AUTH = '3';
     let limitedApp;
     jest.isolateModules(() => {
+      trustTestKey();
       limitedApp = require('../app').createApp();
     });
     delete process.env.RATE_LIMIT_API;
     delete process.env.RATE_LIMIT_AUTH;
 
-    // Two guests behind the same address (creating them uses the shared, per-address budget).
+    // Two guests behind the same address.
     const tokens = [];
-    for (let i = 0; i < 2; i += 1) tokens.push((await request(limitedApp).post('/api/auth/guest')).body.token);
+    for (let i = 0; i < 2; i += 1) tokens.push((await signIn(limitedApp, { sub: newId() })).token);
     const hit = (token) => request(limitedApp).get('/api/progress').set(token ? { Authorization: `Bearer ${token}` } : {}).then((res) => res.status);
 
     const first = [];
     for (let i = 0; i < 5; i += 1) first.push(await hit(tokens[0]));
-    expect(first).toEqual([200, 200, 200, 200, 429]);
+    // (signing in used one request of this student's budget of 4)
+    expect(first).toEqual([200, 200, 200, 429, 429]);
     // The second student is not slowed down by the first.
     expect(await hit(tokens[1])).toBe(200);
     // A made-up token earns no budget of its own: it counts against the address.
     expect(await hit('not-a-real-token')).toBe(401);
 
-    // Sending a guest token with a sign-in attempt does not buy extra attempts.
+    // Sending a valid token with a sign-in attempt does not buy extra attempts.
     const attempts = [];
     for (let i = 0; i < 4; i += 1) {
-      const fresh = tokens[i % 2];
-      attempts.push((await request(limitedApp).post('/api/auth/login').set({ Authorization: `Bearer ${fresh}` }).send({ email: 'a@example.com', password: 'x' })).status);
+      attempts.push((await request(limitedApp).post('/api/auth/session').set(bearer(tokens[i % 2]))).status);
     }
     expect(attempts.filter((status) => status === 429).length).toBeGreaterThan(0);
-  });
-});
-
-describe('password reset and email confirmation', () => {
-  const tokenFrom = (message) => message.text.match(/token=([\w-]+)/)[1];
-  const lastMail = () => ctx.mailer.outbox[ctx.mailer.outbox.length - 1];
-
-  test('a reset link sets a new password, works once, and signs out older sessions', async () => {
-    const user = await registered();
-    const before = ctx.mailer.outbox.length;
-
-    const asked = await request(app).post('/api/auth/forgot').send({ email: user.email.toUpperCase() });
-    expect(asked.status).toBe(200);
-    expect(ctx.mailer.outbox).toHaveLength(before + 1);
-    expect(lastMail()).toMatchObject({ to: user.email, subject: expect.stringMatching(/reset/i) });
-    expect(lastMail().text).toContain(`${config.appUrl}/reset-password?token=`);
-    const token = tokenFrom(lastMail());
-
-    // Token issue times have one-second precision, so step past that second.
-    const now = Date.now();
-    jest.spyOn(Date, 'now').mockReturnValue(now + 2000);
-    let reset;
-    try {
-      reset = await request(app).post('/api/auth/reset').send({ token, password: 'a-brand-new-password' });
-    } finally {
-      Date.now.mockRestore();
-    }
-    expect(reset.status).toBe(200);
-    expect(reset.body.user).toMatchObject({ id: user.user.id, emailVerified: true });
-    expect(JSON.stringify(reset.body)).not.toMatch(/\$2[aby]\$/);
-
-    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: user.password })).status).toBe(401);
-    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: 'a-brand-new-password' })).status).toBe(200);
-
-    // The link cannot be used a second time.
-    expect((await request(app).post('/api/auth/reset').send({ token, password: 'another-password-1' })).status).toBe(400);
-
-    // A session from before the reset no longer works (a thief's token dies with it).
-    expect((await request(app).get('/api/progress').set(user.auth)).status).toBe(401);
-  });
-
-  test('asking for a reset answers the same whether or not the account exists', async () => {
-    const user = await registered();
-    const known = await request(app).post('/api/auth/forgot').send({ email: user.email });
-    const unknown = await request(app).post('/api/auth/forgot').send({ email: 'nobody@example.com' });
-    const strip = ({ devResetLink, ...rest }) => rest;
-    expect(strip(unknown.body)).toEqual(strip(known.body));
-    expect(unknown.status).toBe(known.status);
-    expect((await request(app).post('/api/auth/forgot').send({})).status).toBe(200);
-  });
-
-  test.each([
-    ['a made-up token', 'x'.repeat(43), 'long-enough-password', /invalid or has expired/],
-    ['no token', undefined, 'long-enough-password', /invalid or has expired/],
-    ['a short password', null, 'short', /at least 8/],
-  ])('reset is refused for %s', async (_name, token, password, message) => {
-    const user = await registered();
-    await request(app).post('/api/auth/forgot').send({ email: user.email });
-    const res = await request(app).post('/api/auth/reset').send({ token: token === null ? tokenFrom(lastMail()) : token, password });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(message);
-    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: user.password })).status).toBe(200);
-  });
-
-  test('a reset link expires after 30 minutes, and a newer link replaces an older one', async () => {
-    const user = await registered();
-    await request(app).post('/api/auth/forgot').send({ email: user.email });
-    const first = tokenFrom(lastMail());
-    await request(app).post('/api/auth/forgot').send({ email: user.email });
-    const second = tokenFrom(lastMail());
-    expect(second).not.toBe(first);
-    expect((await request(app).post('/api/auth/reset').send({ token: first, password: 'long-enough-password' })).status).toBe(400);
-
-    const now = Date.now();
-    jest.spyOn(Date, 'now').mockReturnValue(now + 31 * 60000);
-    try {
-      expect((await request(app).post('/api/auth/reset').send({ token: second, password: 'long-enough-password' })).status).toBe(400);
-    } finally {
-      Date.now.mockRestore();
-    }
-  });
-
-  test('registering sends a confirmation link that marks the email as confirmed', async () => {
-    const user = await registered();
-    expect(user.user.emailVerified).toBe(false);
-    expect(lastMail()).toMatchObject({ to: user.email, subject: expect.stringMatching(/confirm/i) });
-    const token = tokenFrom(lastMail());
-
-    // A reset token is not accepted as a confirmation token, and the reverse.
-    expect((await request(app).post('/api/auth/reset').send({ token, password: 'long-enough-password' })).status).toBe(400);
-
-    await request(app).post('/api/auth/resend-verification').set(user.auth);
-    const fresh = tokenFrom(lastMail());
-    const confirmed = await request(app).post('/api/auth/verify-email').send({ token: fresh });
-    expect(confirmed.status).toBe(200);
-    expect(confirmed.body.user.emailVerified).toBe(true);
-    expect((await request(app).get('/api/auth/me').set(user.auth)).body.user.emailVerified).toBe(true);
-    expect((await request(app).post('/api/auth/verify-email').send({ token: fresh })).status).toBe(400);
-    expect((await request(app).post('/api/auth/resend-verification').set(user.auth)).body.alreadyVerified).toBe(true);
-
-    const visitor = await guest();
-    expect((await request(app).post('/api/auth/resend-verification').set(visitor.auth)).status).toBe(403);
-  });
-
-  test('links are handed back only outside production, and only when no mail provider is set', async () => {
-    const user = await registered();
-    expect(user.res.body.devVerifyLink).toContain('/verify-email?token=');
-    const asked = await request(app).post('/api/auth/forgot').send({ email: user.email });
-    expect(asked.body).toMatchObject({ emailConfigured: false, devResetLink: expect.stringContaining('/reset-password?token=') });
-
-    config.isProd = true;
-    try {
-      const inProd = await request(app).post('/api/auth/forgot').send({ email: user.email });
-      expect(inProd.body.devResetLink).toBeUndefined();
-      expect(JSON.stringify(inProd.body)).not.toContain('token=');
-    } finally {
-      config.isProd = false;
-    }
   });
 });
 
@@ -684,7 +534,7 @@ describe('admin', () => {
   });
 
   test('a verified email in PLATFORM_ADMIN_EMAILS is a platform admin; an unverified one is not', async () => {
-    const who = await registered();
+    const who = await registered({ emailVerified: false });
     config.platformAdminEmails = [who.email];
     try {
       expect((await request(app).get('/api/admin/overview').set(who.auth)).status).toBe(403);
@@ -726,7 +576,7 @@ describe('admin', () => {
       progress: { learnersWithXp: 1, totalXp: 20 },
       certificates: 0,
       sandbox: { activeSessions: 1 },
-      services: { aiHub: true, storeDriver: ctx.repos.driver, storeWritable: true, emailDelivers: false },
+      services: { aiHub: true, storeDriver: ctx.repos.driver, storeWritable: true },
       limits: { maxPerUser: config.sandbox.maxPerUser },
     });
     expect(res.body.data.sandboxes.map((s) => s.sessionId)).toEqual([sessionId]);
@@ -865,9 +715,8 @@ describe('lab verification and progress', () => {
     await request(app).post('/api/labs/linux-basics/verify').set(learner.auth).send({ sessionId, stepNumber: 2 });
     expect((await board())[0].xp).toBe(40);
 
-    // Registering renames the guest; the cached ranking must not show the old name.
-    await request(app).post('/api/auth/register').set(learner.auth)
-      .send({ name: 'Meera Nair', email: `meera${Date.now()}@example.com`, password: 'correct-horse' });
+    // Signing up renames the guest; the cached ranking must not show the old name.
+    await signIn(app, { sub: learner.sub, name: 'Meera Nair', email: `meera${Date.now()}@example.com`, anonymous: false });
     expect((await board())[0].name).toBe('Meera Nair');
   });
 });

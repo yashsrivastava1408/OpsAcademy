@@ -62,10 +62,8 @@ const sectionRow = (r) => ({ id: r.id, collegeId: r.college_id, name: r.name, ac
 function userFromRow(r) {
   const u = { id: r.id, name: r.name, guest: r.guest, emailVerified: r.email_verified, createdAt: iso(r.created_at) };
   if (r.email) u.email = r.email;
-  if (r.password_hash) u.password = r.password_hash;
   if (r.profile_public) u.profilePublic = true;
   if (r.profile_slug) u.profileSlug = r.profile_slug;
-  if (r.password_changed_at) u.passwordChangedAt = r.password_changed_at.getTime();
   if (r.registered_at) u.registeredAt = iso(r.registered_at);
   if (r.username) u.username = r.username;
   if (r.lab_access) u.labAccess = true;
@@ -76,12 +74,10 @@ function userFromRow(r) {
 const USER_PATCH_COLUMNS = {
   name: ['name', (v) => v],
   email: ['email', (v) => v],
-  password: ['password_hash', (v) => v],
   guest: ['guest', Boolean],
   emailVerified: ['email_verified', Boolean],
   profilePublic: ['profile_public', Boolean],
   profileSlug: ['profile_slug', (v) => v],
-  passwordChangedAt: ['password_changed_at', (v) => (v == null ? null : toDate(v))],
   registeredAt: ['registered_at', (v) => (v == null ? null : new Date(v))],
   username: ['username', (v) => (v == null ? null : String(v).toLowerCase())],
   labAccess: ['lab_access', Boolean],
@@ -199,21 +195,20 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
     users: {
       async create(user) {
         const { rows } = await q(
-          `insert into users (id, name, email, password_hash, guest, email_verified, profile_public, profile_slug,
-                              password_changed_at, created_at, registered_at, auth_provider, username, lab_access, disabled)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,coalesce($10::timestamptz, now()),$11,$12,$13,$14,$15) returning *`,
-          [user.id, user.name, user.email || null, user.password || null, Boolean(user.guest), Boolean(user.emailVerified),
-            Boolean(user.profilePublic), user.profileSlug || null,
-            user.passwordChangedAt ? toDate(user.passwordChangedAt) : null, user.createdAt || null,
-            user.registeredAt || null, user.authProvider || 'local', user.username ? String(user.username).toLowerCase() : null,
+          `insert into users (id, name, email, guest, email_verified, profile_public, profile_slug,
+                              created_at, registered_at, username, lab_access, disabled)
+           values ($1,$2,$3,$4,$5,$6,$7,coalesce($8::timestamptz, now()),$9,$10,$11,$12) returning *`,
+          [user.id, user.name, user.email || null, Boolean(user.guest), Boolean(user.emailVerified),
+            Boolean(user.profilePublic), user.profileSlug || null, user.createdAt || null,
+            user.registeredAt || null, user.username ? String(user.username).toLowerCase() : null,
             Boolean(user.labAccess), Boolean(user.disabled)],
         );
         return userFromRow(rows[0]);
       },
       async createIfAbsent(user) {
         const { rows } = await q(
-          `insert into users (id, name, email, guest, email_verified, created_at, auth_provider)
-           values ($1,$2,$3,$4,$5,coalesce($6::timestamptz, now()),'supabase')
+          `insert into users (id, name, email, guest, email_verified, created_at)
+           values ($1,$2,$3,$4,$5,coalesce($6::timestamptz, now()))
            on conflict (id) do nothing returning *`,
           [user.id, user.name, user.email || null, Boolean(user.guest), Boolean(user.emailVerified), user.createdAt || null],
         );
@@ -261,13 +256,6 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
         const { rows } = await q(`update users set ${sets.join(', ')} where id = $1 returning *`, params);
         return rows[0] ? userFromRow(rows[0]) : null;
       },
-      async listForAuthMigration() {
-        const { rows } = await q(
-          `select * from users u where not u.guest and u.email is not null and u.password_hash is not null
-             and not exists (select 1 from identities i where i.user_id = u.id and i.provider = 'supabase') order by u.created_at`
-        );
-        return rows.map(userFromRow);
-      },
       async namesByIds(ids) {
         if (ids.length === 0) return {};
         const { rows } = await q('select id, name from users where id = any($1::text[])', [ids]);
@@ -279,26 +267,6 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
       },
       async pruneGuests(cutoffMs) {
         const { rowCount } = await q('delete from users where guest and created_at < $1', [toDate(cutoffMs)]);
-        return rowCount;
-      },
-    },
-
-    tokens: {
-      async issue({ hash, userId, kind, expiresAt }) {
-        await tx(async (c) => {
-          await c.query('delete from one_time_tokens where user_id = $1 and kind = $2', [userId, kind]);
-          await c.query('insert into one_time_tokens (hash, user_id, kind, expires_at) values ($1,$2,$3,$4)', [hash, userId, kind, toDate(expiresAt)]);
-        });
-      },
-      async redeem(hash, kind, now = Date.now()) {
-        const { rows } = await q(
-          'delete from one_time_tokens where hash = $1 and kind = $2 returning user_id, (extract(epoch from expires_at) * 1000)::float8 as exp',
-          [hash, kind],
-        );
-        return rows[0] && rows[0].exp > now ? rows[0].user_id : null;
-      },
-      async pruneExpired(now = Date.now()) {
-        const { rowCount } = await q('delete from one_time_tokens where expires_at <= $1', [toDate(now)]);
         return rowCount;
       },
     },

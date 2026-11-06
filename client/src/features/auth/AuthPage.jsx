@@ -1,16 +1,13 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { Loader, LogIn, UserPlus, FlaskConical } from 'lucide-react';
 import useAuth from './useAuth';
-import { authApi, errorMessage } from '../../shared/services/api';
-import { isSupabaseMode } from './authMode';
+import { errorMessage } from '../../shared/services/api';
 import { sendPasswordReset, signInWithProvider } from './supabaseIdentity';
 
 // College single sign-on: VITE_SSO_PROVIDERS=google,azure (Supabase provider ids). Needs each provider enabled in Supabase.
 const SSO_LABELS = { google: 'Google Workspace', azure: 'Microsoft' };
-const SSO_PROVIDERS = isSupabaseMode
-  ? (import.meta.env.VITE_SSO_PROVIDERS || '').split(',').map((p) => p.trim()).filter((p) => SSO_LABELS[p])
-  : [];
+const SSO_PROVIDERS = (import.meta.env.VITE_SSO_PROVIDERS || '').split(',').map((p) => p.trim()).filter((p) => SSO_LABELS[p]);
 import './AuthPage.css';
 
 export default function AuthPage() {
@@ -47,13 +44,8 @@ export default function AuthPage() {
     setError(null);
     try {
       if (mode === 'forgot') {
-        if (isSupabaseMode) {
-          await sendPasswordReset(form.email);
-          setResetNotice({ message: 'If an account uses that email address, a reset link is on its way.', emailConfigured: true });
-        } else {
-          const res = await authApi.forgotPassword(form.email);
-          setResetNotice(res.data);
-        }
+        await sendPasswordReset(form.email);
+        setResetNotice('If an account uses that email address, a reset link is on its way.');
         return;
       }
       if (mode === 'register') {
@@ -134,18 +126,7 @@ export default function AuthPage() {
         {error && <p className="auth-error" role="alert">{error}</p>}
 
         {mode === 'forgot' && resetNotice && (
-          <div className="auth-notice" role="status">
-            <p>{resetNotice.message}</p>
-            {!resetNotice.emailConfigured && !resetNotice.devResetLink && (
-              <p>This server is not set up to send email, so the link cannot reach you. Ask whoever runs it.</p>
-            )}
-            {resetNotice.devResetLink && (
-              <p>
-                Email is not set up on this development server, so here is the link it would have sent:{' '}
-                <Link to={resetNotice.devResetLink.replace(/^https?:\/\/[^/]+/, '')}>choose a new password</Link>
-              </p>
-            )}
-          </div>
+          <div className="auth-notice" role="status"><p>{resetNotice}</p></div>
         )}
 
         {(mode === 'register' || mode === 'login') && SSO_PROVIDERS.length > 0 && (

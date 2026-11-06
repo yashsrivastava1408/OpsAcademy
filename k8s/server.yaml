@@ -43,9 +43,12 @@ spec:
             - configMapRef:
                 name: opsacademy-config
           env:
-            - name: JWT_SECRET
+            - name: CERT_SECRET
               valueFrom:
-                secretKeyRef: { name: opsacademy-secrets, key: JWT_SECRET }
+                secretKeyRef: { name: opsacademy-secrets, key: CERT_SECRET }
+            - name: SUPABASE_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: opsacademy-secrets, key: SUPABASE_SECRET_KEY }
             - name: AI_HUB_TOKEN
               valueFrom:
                 secretKeyRef: { name: opsacademy-secrets, key: AI_HUB_TOKEN }

@@ -30,7 +30,6 @@ async function backdateUser(repos, id, days, now = Date.now()) {
 }
 const { createManager, setManager } = require('../services/sandboxManager');
 const { setHubClient } = require('../services/aiHubClient');
-const { createMailer, setMailer } = require('../lib/mailer');
 
 /** An in-memory sandbox engine that records what the manager asks of it. */
 function fakeEngine() {
@@ -127,9 +126,7 @@ function install({ engine, limits, pool = { enabled: false } } = {}) {
   setRepos(repos);
   setManager(manager);
   setHubClient(hub);
-  const mailer = createMailer({ driver: 'memory' });
-  setMailer(mailer);
-  return { repos, manager, hub, engine, mailer };
+  return { repos, manager, hub, engine };
 }
 
 function waitFor(predicate, { timeoutMs = 8000, intervalMs = 20 } = {}) {

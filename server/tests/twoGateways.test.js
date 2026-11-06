@@ -12,6 +12,7 @@ const { Pool } = require('pg');
 const { migrate } = require('../lib/migrator');
 const { createPostgresRepos } = require('../repositories/postgres');
 const { createAgent } = require('../lab-node/agent');
+const { startFakeSupabase } = require('../test-support/fakeSupabaseAuth');
 
 const url = process.env.TEST_DATABASE_URL;
 const describeDb = url ? describe : describe.skip;
@@ -61,6 +62,7 @@ describeDb('two gateway instances, one lab node (real processes)', () => {
   let agent;
   let engine;
   let beat;
+  let fakeAuth;
   const gateways = [];
 
   async function startGateway() {
@@ -70,9 +72,9 @@ describeDb('two gateway instances, one lab node (real processes)', () => {
       env: {
         ...process.env,
         NODE_ENV: 'development', PORT: String(port), LOG_LEVEL: 'warn', SERVICE_ROLE: 'all',
-        DATABASE_URL: url, DATABASE_POOL_SIZE: '3', JWT_SECRET: 'two-gateways-test-secret',
+        DATABASE_URL: url, DATABASE_POOL_SIZE: '3',
         SANDBOX_MODE: 'remote', NODE_TOKEN: TOKEN, AI_HUB_URL: 'http://127.0.0.1:1',
-        SUPABASE_URL: '', SUPABASE_PUBLISHABLE_KEY: '', PLATFORM_ADMIN_EMAILS: '', CORS_ORIGINS: '',
+        SUPABASE_URL: fakeAuth.url, SUPABASE_PUBLISHABLE_KEY: 'fake-publishable-key', PLATFORM_ADMIN_EMAILS: '', CORS_ORIGINS: '',
         SANDBOX_REAPER_INTERVAL_MS: '3600000', ENABLE_SANDBOX_POOL: 'false',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -94,6 +96,7 @@ describeDb('two gateway instances, one lab node (real processes)', () => {
   }
 
   beforeAll(async () => {
+    fakeAuth = await startFakeSupabase();
     pool = new Pool({ connectionString: url, max: 4 });
     await pool.query(fs.readFileSync(path.join(__dirname, '..', '..', 'supabase', 'tests', 'bootstrap.sql'), 'utf8'));
     await migrate(pool);
@@ -114,7 +117,15 @@ describeDb('two gateway instances, one lab node (real processes)', () => {
     await pool.query("delete from lab_nodes where node_id = 'two-gw-node'");
     await pool.query("delete from users where id in (select user_id from sandbox_sessions) or name like 'Guest-%'");
     await pool.end();
+    await fakeAuth.close();
   });
+
+  /** A guest, the way the browser gets one: Supabase signs an anonymous user in, then the gateway opens the learner's record. */
+  async function newGuest(gateway) {
+    const signup = await (await fetch(`${fakeAuth.url}/auth/v1/signup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).json();
+    const session = await call(gateway, signup.access_token, 'POST', '/api/auth/session');
+    return { status: session.status, token: signup.access_token, user: session.body.user };
+  }
 
   const call = (gateway, token, method, route, body) => fetch(`${gateway.base}${route}`, {
     method,
@@ -140,10 +151,10 @@ describeDb('two gateway instances, one lab node (real processes)', () => {
     const a = await startGateway();
     const b = await startGateway();
 
-    // one learner, one token, valid on both (same database, same secret)
-    const guest = await call(a, null, 'POST', '/api/auth/guest');
-    expect(guest.status).toBe(201);
-    const token = guest.body.token;
+    // one learner, one token, valid on both (same database, same signing keys)
+    const guest = await newGuest(a);
+    expect(guest.status).toBe(200);
+    const token = guest.token;
 
     const started = await call(a, token, 'POST', '/api/sandbox/start', { labId: 'linux-basics' });
     expect(started.status).toBe(201);
@@ -152,14 +163,14 @@ describeDb('two gateway instances, one lab node (real processes)', () => {
     expect(engine.boxes.size).toBe(1);
 
     // gateway B knows it, runs commands in it, and sees the same resume
-    expect((await call(b, token, 'GET', `/api/sandbox/${sessionId}/status`)).body.data).toMatchObject({ sessionId, userId: guest.body.user.id });
+    expect((await call(b, token, 'GET', `/api/sandbox/${sessionId}/status`)).body.data).toMatchObject({ sessionId, userId: guest.user.id });
     const file = await call(b, token, 'GET', `/api/sandbox/${sessionId}/file?path=notes.txt`);
     expect(file.status).toBe(200);
     expect(file.body.data.content).toContain('ran:');
     expect((await call(b, token, 'POST', '/api/sandbox/start', { labId: 'linux-basics' })).body.data).toMatchObject({ sessionId, resumed: true });
 
     // a stranger is refused on either gateway
-    const other = (await call(a, null, 'POST', '/api/auth/guest')).body.token;
+    const other = (await newGuest(a)).token;
     expect((await call(b, other, 'GET', `/api/sandbox/${sessionId}/status`)).status).toBe(404);
 
     // the terminal works through A; its command lands in the shared history

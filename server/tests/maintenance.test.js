@@ -12,13 +12,12 @@ describe('maintenance jobs (#78, #79)', () => {
   let repos;
   beforeEach(() => { repos = setRepos(createMemoryRepos()); });
 
-  test('pruneExpired removes old guests and expired tokens and reports the counts', async () => {
+  test('pruneExpired removes old guests and reports the count', async () => {
     await repos.users.create({ id: 'old', name: 'Old', guest: true, createdAt: new Date(Date.now() - 60 * DAY).toISOString() });
     await repos.users.create({ id: 'new', name: 'New', guest: true, createdAt: new Date().toISOString() });
-    await repos.tokens.issue({ hash: 'dead', userId: 'new', kind: 'reset', expiresAt: 1 });
-    expect(await pruneExpired()).toEqual({ guests: 1, tokens: 1 });
+    expect(await pruneExpired()).toEqual({ guests: 1 });
     expect(await repos.users.getById('old')).toBeNull();
-    expect(await pruneExpired()).toEqual({ guests: 0, tokens: 0 });
+    expect(await pruneExpired()).toEqual({ guests: 0 });
   });
 
   test('a failing job is logged and does not throw; a locked job is skipped', async () => {

@@ -1,11 +1,8 @@
 import axios from 'axios';
 import { normalizeApiBase, wsBase } from '../lib/apiBase';
-import { isSupabaseMode } from '../../features/auth/authMode';
 import * as supabaseIdentity from '../../features/auth/supabaseIdentity';
 
 const API_BASE_URL = normalizeApiBase(import.meta.env.VITE_API_URL);
-const TOKEN_KEY = 'opsacademy_token';
-const USER_KEY = 'opsacademy_user';
 
 // Longer than a cold start of a sleeping free-tier server, short enough that
 // a request to a dead one ends in an error the page can show.
@@ -20,79 +17,22 @@ const api = axios.create({
 });
 
 // ── Identity ─────────────────────────────────────────────────
-// Every visitor has an identity: a guest token is created on first use and
-// replaced by an account token on login or registration.
+// Every visitor has an identity: Supabase signs an anonymous guest in on first use, and the same user
+// becomes an account when they sign up or log in (see features/auth/supabaseIdentity.js).
 
-const identityListeners = new Set();
-
-export function getToken() {
-  return isSupabaseMode ? supabaseIdentity.getAccessToken() : localStorage.getItem(TOKEN_KEY);
-}
-
-export function getStoredUser() {
-  if (isSupabaseMode) return supabaseIdentity.getUser();
-  try {
-    return JSON.parse(localStorage.getItem(USER_KEY));
-  } catch {
-    return null;
-  }
-}
-
-export function setIdentity(token, user) {
-  if (isSupabaseMode) return supabaseIdentity.replaceUser(user);
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-  identityListeners.forEach((listener) => listener(user));
-}
-
-/** Replace the stored user record (same token), e.g. after confirming an email address. */
-export function updateStoredUser(user) {
-  if (isSupabaseMode) return supabaseIdentity.replaceUser(user);
-  const token = getToken();
-  if (token) setIdentity(token, user);
-}
-
-export function clearIdentity() {
-  if (isSupabaseMode) return supabaseIdentity.clearLocal();
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  identityListeners.forEach((listener) => listener(null));
-}
-
+export const getToken = supabaseIdentity.getAccessToken;
+export const getStoredUser = supabaseIdentity.getUser;
+/** Replace the stored user record (same session), e.g. after turning profile sharing on. */
+export const updateStoredUser = supabaseIdentity.replaceUser;
 /** Be told when the signed-in user changes. Returns an unsubscribe function. */
-export function onIdentityChange(listener) {
-  if (isSupabaseMode) return supabaseIdentity.onUserChange(listener);
-  identityListeners.add(listener);
-  return () => identityListeners.delete(listener);
-}
-
-let pendingGuest = null;
-
-/** Resolve with a token, creating a guest identity if there is none yet. */
-export function ensureIdentity() {
-  if (isSupabaseMode) return supabaseIdentity.ensureIdentity();
-  const token = getToken();
-  if (token) return Promise.resolve(token);
-
-  // Concurrent callers share one request so only one guest is created.
-  if (!pendingGuest) {
-    pendingGuest = axios
-      .post(`${API_BASE_URL}/api/auth/guest`)
-      .then((res) => {
-        setIdentity(res.data.token, res.data.user);
-        return res.data.token;
-      })
-      .finally(() => {
-        pendingGuest = null;
-      });
-  }
-  return pendingGuest;
-}
+export const onIdentityChange = supabaseIdentity.onUserChange;
+/** Resolve with a token, starting a guest session if there is none yet. */
+export const ensureIdentity = supabaseIdentity.ensureIdentity;
 
 // Requests made by someone who is signing in or recovering an account: they
 // never need a guest identity first, and a 401 from them is an answer, not a
 // stale token.
-const AUTH_ROUTES = ['/auth/login', '/auth/register', '/auth/forgot', '/auth/reset', '/auth/verify-email', '/auth/cookie', '/auth/refresh', '/auth/logout'];
+const AUTH_ROUTES = ['/auth/cookie', '/auth/refresh', '/auth/logout'];
 const isAuthRoute = (url = '') => AUTH_ROUTES.some((route) => url.startsWith(route));
 
 // Endpoints anyone may read. They are sent without a token, so they never
@@ -109,15 +49,14 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// An expired or revoked token: start over as a guest and retry the request once.
+// An expired or revoked token: get a new one (or start over as a guest) and retry the request once.
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
     if (error.response?.status === 401 && original && !original.retried && !isAuthRoute(original.url)) {
       original.retried = true;
-      if (isSupabaseMode) await supabaseIdentity.renew().catch(() => {});
-      else clearIdentity();
+      await supabaseIdentity.renew().catch(() => {});
       await ensureIdentity();
       return api(original);
     }
@@ -132,34 +71,12 @@ export function errorMessage(error, fallback = 'Something went wrong. Please try
 
 // ── Auth API ─────────────────────────────────────────────────
 export const authApi = {
-  register: (name, email, password) =>
-    api.post('/auth/register', { name, email, password }),
-
-  login: (email, password) =>
-    api.post('/auth/login', { email, password }),
-
-  // Lab accounts sign in with the ID an admin issued, not an email address.
-  loginWithLabId: (id, password) =>
-    api.post('/auth/login', { id, password }),
-
   me: () =>
     api.get('/auth/me'),
 
   // First call after a Supabase sign-in: creates the learner's record.
   session: () =>
     api.post('/auth/session'),
-
-  forgotPassword: (email) =>
-    api.post('/auth/forgot', { email }),
-
-  resetPassword: (token, password) =>
-    api.post('/auth/reset', { token, password }),
-
-  verifyEmail: (token) =>
-    api.post('/auth/verify-email', { token }),
-
-  resendVerification: () =>
-    api.post('/auth/resend-verification'),
 
   setProfilePublic: (isPublic) =>
     api.post('/auth/profile', { public: isPublic }),
