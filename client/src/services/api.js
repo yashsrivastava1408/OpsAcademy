@@ -89,8 +89,7 @@ const isAuthRoute = (url = '') => AUTH_ROUTES.some((route) => url.startsWith(rou
 
 // Endpoints anyone may read. They are sent without a token, so they never
 // wait for a guest identity and the browser needs no CORS preflight for them.
-// (The operator page authenticates with its own header, not a learner's token.)
-const PUBLIC_ROUTES = [/^\/units(\/|$)/, /^\/sandbox\/stats$/, /^\/certificates\/verify\//, /^\/profiles\//, /^\/admin\//, /^\/health$/];
+const PUBLIC_ROUTES = [/^\/units(\/|$)/, /^\/sandbox\/stats$/, /^\/certificates\/verify\//, /^\/profiles\//, /^\/health$/];
 const isPublicRoute = (url = '') => PUBLIC_ROUTES.some((pattern) => pattern.test(url));
 
 api.interceptors.request.use(async (config) => {
