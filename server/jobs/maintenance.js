@@ -28,6 +28,16 @@ async function pruneRateLimits() {
   return getRepos().rateLimits.prune();
 }
 
+/** Let go of unclaimed lab seats and stale waiters, then admit the queue into free seats. */
+async function admitLabQueue() {
+  return require('../services/labService').admitWaiting();
+}
+
+/** End sandboxes whose lab slot is over. */
+async function closeEndedSlots() {
+  return require('../services/labService').closeEndedSlots();
+}
+
 /** Drop expired terminal tickets. */
 async function pruneTickets() {
   return require('../services/ticketService').prune();
@@ -48,9 +58,11 @@ const JOBS = [
   { name: 'refresh-leaderboards', everyMs: MINUTE, run: refreshLeaderboards },
   { name: 'prune-rate-limits', everyMs: 10 * MINUTE, run: pruneRateLimits },
   { name: 'prune-tickets', everyMs: 5 * MINUTE, run: pruneTickets },
+  { name: 'admit-lab-queue', everyMs: 5 * 1000, run: admitLabQueue },
   // Only meaningful when sandboxes live on lab nodes; a gateway running its own sandboxes reaps them itself.
   ...(config.sandboxMode === 'remote' ? [
     { name: 'reap-sandboxes', everyMs: MINUTE, run: reapSandboxes },
+    { name: 'close-ended-slots', everyMs: MINUTE, run: closeEndedSlots },
     { name: 'reconcile-lab-nodes', everyMs: 2 * MINUTE, run: reconcileLabNodes },
   ] : []),
 ];
@@ -85,4 +97,4 @@ function startJobs(jobs = JOBS) {
   return () => timers.forEach((t) => clearInterval(t));
 }
 
-module.exports = { JOBS, pruneExpired, pruneRateLimits, pruneTickets, reapSandboxes, reconcileLabNodes, refreshLeaderboards, runJob, startJobs };
+module.exports = { JOBS, admitLabQueue, closeEndedSlots, pruneExpired, pruneRateLimits, pruneTickets, reapSandboxes, reconcileLabNodes, refreshLeaderboards, runJob, startJobs };

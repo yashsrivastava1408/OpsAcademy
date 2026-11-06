@@ -30,11 +30,25 @@ function createMemoryRepos() {
   const rateHits = new Map(); // key -> { hits, resetAt }
   const nodes = new Map(); // nodeId -> node
   const tickets = new Map(); // hash -> { sessionId, userId, expiresAt }
+  const templates = new Map(); // id -> slot template
+  const blackouts = new Map(); // id -> { id, collegeId, onDate, reason }
+  const slotRows = new Map(); // id -> slot
+  const assignments = []; // { slotId, userId, kind }
+  const queueRows = []; // lab queue entries, oldest first
+  const eventRows = []; // analytics events
+  let queueSeq = 0;
   let nextId = 1;
   const locks = new Map(); // userId -> tail promise (serialises progress.mutate)
 
+  const seatUsageNow = (slotId, now) => {
+    const held = (id) => queueRows.filter((q) => q.status === 'admitted' && q.expiresAt > now && (id === undefined || q.slotId === id)).length;
+    const running = (id) => [...sessions.values()].filter((x) => (id === undefined ? true : x.slotId === id)).length;
+    return { slot: slotId == null ? 0 : running(slotId) + held(slotId), cluster: running(undefined) + held(undefined) };
+  };
   const findByEmail = (email) => [...users.values()].find((u) => u.email === email);
   const findBySlug = (slug) => [...users.values()].find((u) => u.profileSlug === slug);
+  const findByUsername = (name) => [...users.values()].find((u) => u.username === String(name).toLowerCase());
+  const lowerName = (u) => (u && u.username ? { ...u, username: String(u.username).toLowerCase() } : u);
   const requireUser = (id) => {
     if (!users.has(id)) throw new RepoError('user_missing', `User ${id} does not exist`);
   };
@@ -44,6 +58,8 @@ function createMemoryRepos() {
     if (sameEmail && sameEmail.id !== user.id) throw new RepoError('email_taken', 'User with this email already exists');
     const sameSlug = user.profileSlug && findBySlug(user.profileSlug);
     if (sameSlug && sameSlug.id !== user.id) throw new RepoError('slug_taken', 'Profile address is taken');
+    const sameName = user.username && findByUsername(user.username);
+    if (sameName && sameName.id !== user.id) throw new RepoError('username_taken', 'That lab ID is taken');
   }
 
   function cascadeDelete(id) {
@@ -66,6 +82,7 @@ function createMemoryRepos() {
     users: {
       async create(user) {
         if (users.has(user.id)) throw new RepoError('user_exists', `User ${user.id} already exists`);
+        user = lowerName(user);
         checkUnique(user);
         users.set(user.id, clone(user));
         return clone(user);
@@ -81,11 +98,30 @@ function createMemoryRepos() {
       async getById(id) { return clone(users.get(id) || null); },
       async getByEmail(email) { return clone(findByEmail(email) || null); },
       async getBySlug(slug) { return clone(findBySlug(slug) || null); },
+      async getByUsername(username) { return clone(findByUsername(username) || null); },
+      /** Lab accounts (those with a lab ID), newest last. @returns { total, rows } */
+      async listLabAccounts({ search = '', limit = 50, offset = 0 } = {}) {
+        const term = search.toLowerCase();
+        const all = [...users.values()]
+          .filter((u) => u.username && (!term || u.username.includes(term) || (u.name || '').toLowerCase().includes(term)))
+          .sort((a, b) => (a.createdAt === b.createdAt ? a.username.localeCompare(b.username) : a.createdAt < b.createdAt ? -1 : 1));
+        return { total: all.length, rows: all.slice(offset, offset + limit).map(clone) };
+      },
+      /** The highest N among lab IDs shaped `prefix-N`, or 0. */
+      async maxUsernameSequence(prefix) {
+        const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`);
+        let max = 0;
+        for (const u of users.values()) {
+          const m = u.username && pattern.exec(u.username);
+          if (m) max = Math.max(max, Number(m[1]));
+        }
+        return max;
+      },
       /** Merge `patch` into the user. @returns the updated user, or null if unknown. */
       async update(id, patch) {
         const current = users.get(id);
         if (!current) return null;
-        const next = { ...current, ...clone(patch), id };
+        const next = lowerName({ ...current, ...clone(patch), id });
         checkUnique(next);
         users.set(id, next);
         return clone(next);
@@ -314,6 +350,183 @@ function createMemoryRepos() {
       },
     },
 
+    slots: {
+      async createTemplate(t) {
+        const row = { id: `tpl-${nextId++}`, collegeId: t.collegeId, sectionId: t.sectionId || null, weekday: t.weekday, startTime: t.startTime,
+          durationMinutes: t.durationMinutes, seats: t.seats, unitId: t.unitId || null, makeup: Boolean(t.makeup), active: true, createdBy: t.createdBy || null };
+        templates.set(row.id, row);
+        return clone(row);
+      },
+      async getTemplate(id) { return clone(templates.get(id) || null); },
+      async listTemplates(collegeId) { return [...templates.values()].filter((t) => t.collegeId === collegeId).map(clone); },
+      async updateTemplate(id, patch) {
+        const t = templates.get(id);
+        if (!t) return null;
+        Object.assign(t, clone(patch));
+        return clone(t);
+      },
+      async deleteTemplate(id) {
+        for (const s of slotRows.values()) if (s.templateId === id) s.templateId = null;
+        return templates.delete(id);
+      },
+      async addBlackout({ collegeId, onDate, reason = null }) {
+        const found = [...blackouts.values()].find((b) => b.collegeId === collegeId && b.onDate === onDate);
+        if (found) { found.reason = reason; return clone(found); }
+        const row = { id: `bo-${nextId++}`, collegeId, onDate, reason };
+        blackouts.set(row.id, row);
+        return clone(row);
+      },
+      async listBlackouts(collegeId) { return [...blackouts.values()].filter((b) => b.collegeId === collegeId).sort((a, b) => a.onDate.localeCompare(b.onDate)).map(clone); },
+      async removeBlackout(collegeId, id) {
+        const b = blackouts.get(id);
+        return b && b.collegeId === collegeId ? blackouts.delete(id) : false;
+      },
+      /** Insert slots, skipping any whose template and start already exist. @returns how many were new */
+      async createSlots(rows) {
+        let created = 0;
+        for (const r of rows) {
+          if (r.templateId && [...slotRows.values()].some((s) => s.templateId === r.templateId && s.startsAt === r.startsAt)) continue;
+          const row = { id: `slot-${nextId++}`, collegeId: r.collegeId, sectionId: r.sectionId || null, startsAt: r.startsAt, endsAt: r.endsAt,
+            capacity: r.capacity, unitId: r.unitId || null, makeup: Boolean(r.makeup), templateId: r.templateId || null, createdBy: r.createdBy || null };
+          slotRows.set(row.id, row);
+          created += 1;
+        }
+        return created;
+      },
+      async getSlot(id) { return clone(slotRows.get(id) || null); },
+      /** Slots overlapping [from, to) (epoch ms), optionally one college, by start time. */
+      async listSlots({ collegeId = null, from, to }) {
+        return [...slotRows.values()]
+          .filter((s) => (!collegeId || s.collegeId === collegeId) && s.endsAt > from && s.startsAt < to)
+          .sort((a, b) => a.startsAt - b.startsAt || a.id.localeCompare(b.id)).map(clone);
+      },
+      async updateSlot(id, patch) {
+        const s = slotRows.get(id);
+        if (!s) return null;
+        for (const key of Object.keys(patch)) if (!['sectionId', 'capacity', 'unitId'].includes(key)) throw new RepoError('bad_patch', `Cannot update slot field "${key}"`);
+        Object.assign(s, clone(patch));
+        return clone(s);
+      },
+      async deleteSlot(id) {
+        for (let i = assignments.length - 1; i >= 0; i -= 1) if (assignments[i].slotId === id) assignments.splice(i, 1);
+        return slotRows.delete(id);
+      },
+      async setAssignment({ slotId, userId, kind = 'add' }) {
+        const found = assignments.find((a) => a.slotId === slotId && a.userId === userId);
+        if (found) found.kind = kind;
+        else assignments.push({ slotId, userId, kind });
+      },
+      async removeAssignment(slotId, userId) {
+        const i = assignments.findIndex((a) => a.slotId === slotId && a.userId === userId);
+        if (i < 0) return false;
+        assignments.splice(i, 1);
+        return true;
+      },
+      async listAssignments(slotId) {
+        return assignments.filter((a) => a.slotId === slotId).map((a) => ({ ...a, name: users.get(a.userId)?.name || null }));
+      },
+      async assignmentsForUser(userId) { return assignments.filter((a) => a.userId === userId).map(clone); },
+    },
+
+    queue: {
+      /** Wait for a seat in `slotId` (null = anywhere). */
+      async enqueue({ userId, collegeId = null, slotId = null, unitId = null }) {
+        requireUser(userId);
+        if (queueRows.some((q) => q.userId === userId && (q.status === 'waiting' || q.status === 'admitted'))) throw new RepoError('already_queued', 'Already waiting for a lab seat');
+        const row = { id: ++queueSeq, userId, collegeId, slotId, unitId, status: 'waiting', enqueuedAt: Date.now(), lastSeenAt: Date.now(), admittedAt: null, expiresAt: null, sessionId: null };
+        queueRows.push(row);
+        return clone(row);
+      },
+      /** Take a seat at once (nobody is ahead): an entry that starts out admitted. */
+      async reserve({ userId, collegeId = null, slotId = null, unitId = null, ttlMs }) {
+        requireUser(userId);
+        if (queueRows.some((q) => q.userId === userId && (q.status === 'waiting' || q.status === 'admitted'))) throw new RepoError('already_queued', 'Already waiting for a lab seat');
+        const now = Date.now();
+        const row = { id: ++queueSeq, userId, collegeId, slotId, unitId, status: 'admitted', enqueuedAt: now, lastSeenAt: now, admittedAt: now, expiresAt: now + ttlMs, sessionId: null };
+        queueRows.push(row);
+        return clone(row);
+      },
+      async getOpen(userId) { return clone(queueRows.find((q) => q.userId === userId && (q.status === 'waiting' || q.status === 'admitted')) || null); },
+      async position(entry) { return queueRows.filter((q) => q.status === 'waiting' && q.slotId === entry.slotId && q.id <= entry.id).length; },
+      async waitingCount(slotId) { return queueRows.filter((q) => q.status === 'waiting' && q.slotId === slotId).length; },
+      async countHeldAll(now = Date.now()) { return queueRows.filter((q) => q.status === 'admitted' && q.expiresAt > now).length; },
+      async countHeld(slotId, now = Date.now()) { return queueRows.filter((q) => q.status === 'admitted' && q.slotId === slotId && q.expiresAt > now).length; },
+      async touch(id) { const q = queueRows.find((r) => r.id === id); if (q) q.lastSeenAt = Date.now(); },
+      async cancel(userId) {
+        const q = queueRows.find((r) => r.userId === userId && (r.status === 'waiting' || r.status === 'admitted'));
+        if (!q) return false;
+        q.status = 'cancelled';
+        return true;
+      },
+      /** Admit the longest-waiting entries of a scope, up to `limit`, each holding its seat for `ttlMs`. */
+      async admit({ slotId = null, limit, ttlMs }) {
+        const now = Date.now();
+        const chosen = queueRows.filter((q) => q.status === 'waiting' && q.slotId === slotId).slice(0, Math.max(0, limit));
+        for (const q of chosen) { q.status = 'admitted'; q.admittedAt = now; q.expiresAt = now + ttlMs; }
+        return chosen.map(clone);
+      },
+      /** Let go of seats nobody claimed, and of waiters who stopped checking in. @returns how many entries expired */
+      async expire({ now = Date.now(), waitingStaleMs }) {
+        let n = 0;
+        for (const q of queueRows) {
+          if ((q.status === 'admitted' && q.expiresAt <= now) || (q.status === 'waiting' && q.lastSeenAt < now - waitingStaleMs)) { q.status = 'expired'; n += 1; }
+        }
+        return n;
+      },
+      async markStarted(id, sessionId) {
+        const q = queueRows.find((r) => r.id === id);
+        if (q) { q.status = 'started'; q.sessionId = sessionId; }
+      },
+      /** Which of these slots has the user actually used? */
+      async attendedSlots(userId, slotIds) {
+        return [...new Set(queueRows.filter((q) => q.userId === userId && q.status === 'started' && slotIds.includes(q.slotId)).map((q) => q.slotId))];
+      },
+      /** Seats in use in a scope (running sessions plus seats held for admitted entries), and across the cluster. */
+      async seatUsage(slotId, now = Date.now()) { return seatUsageNow(slotId, now); },
+      // The next two do their counting and their writing in one synchronous step, so they cannot interleave.
+      /** Take a seat if the slot and the cluster both have one. @returns the admitted entry, or null when full */
+      async reserveSeat({ userId, collegeId = null, slotId = null, unitId = null, ttlMs, slotCapacity = null, clusterCapacity }) {
+        requireUser(userId);
+        const used = seatUsageNow(slotId, Date.now());
+        if (used.cluster >= clusterCapacity || (slotId != null && slotCapacity != null && used.slot >= slotCapacity)) return null;
+        if (queueRows.some((q) => q.userId === userId && (q.status === 'waiting' || q.status === 'admitted'))) throw new RepoError('already_queued', 'Already waiting for a lab seat');
+        const now = Date.now();
+        const row = { id: ++queueSeq, userId, collegeId, slotId, unitId, status: 'admitted', enqueuedAt: now, lastSeenAt: now, admittedAt: now, expiresAt: now + ttlMs, sessionId: null };
+        queueRows.push(row);
+        return clone(row);
+      },
+      /** Admit waiters of a scope, oldest first, as far as the slot and the cluster have seats. */
+      async admitSeats({ slotId = null, slotCapacity = null, clusterCapacity, ttlMs }) {
+        const used = seatUsageNow(slotId, Date.now());
+        let free = clusterCapacity - used.cluster;
+        if (slotId != null && slotCapacity != null) free = Math.min(free, slotCapacity - used.slot);
+        if (free <= 0) return [];
+        const now = Date.now();
+        const chosen = queueRows.filter((q) => q.status === 'waiting' && q.slotId === slotId).slice(0, free);
+        for (const q of chosen) { q.status = 'admitted'; q.admittedAt = now; q.expiresAt = now + ttlMs; }
+        return chosen.map(clone);
+      },
+      async scopesWaiting() { return [...new Set(queueRows.filter((q) => q.status === 'waiting').map((q) => q.slotId))]; },
+    },
+
+    events: {
+      async record({ name, userId = null, collegeId = null, props = {} }) {
+        eventRows.push({ id: eventRows.length + 1, at: Date.now(), name, userId, collegeId, props: clone(props) });
+      },
+      /** Counts per event name and step between two times: [{ name, step, ok, count }] */
+      async funnel({ from, to }) {
+        const out = new Map();
+        for (const e of eventRows) {
+          if (e.at < from || e.at >= to) continue;
+          const step = e.props.step === undefined ? null : String(e.props.step);
+          const ok = e.props.ok === undefined ? null : String(e.props.ok);
+          const key = `${e.name}|${step}|${ok}`;
+          out.set(key, { name: e.name, step, ok, count: (out.get(key)?.count || 0) + 1 });
+        }
+        return [...out.values()].sort((a, b) => a.name.localeCompare(b.name) || String(a.step).localeCompare(String(b.step)));
+      },
+    },
+
     audit: {
       async record({ actorId = null, actorRole = null, action, entityType = null, entityId = null, collegeId = null, ip = null, meta = {} }) {
         auditRows.push({ id: auditRows.length + 1, at: new Date().toISOString(), actorId, actorRole, action, entityType, entityId, collegeId, ip, meta: clone(meta) });
@@ -360,6 +573,7 @@ function createMemoryRepos() {
       },
       async all() { return [...sessions.values()].map(clone); },
       async get(sessionId) { return clone(sessions.get(sessionId) || null); },
+      async countBySlot(slotId) { return [...sessions.values()].filter((s) => s.slotId === slotId).length; },
       async listByUser(userId) { return [...sessions.values()].filter((s) => s.userId === userId).map(clone); },
       async count() { return sessions.size; },
       async countByUser(userId) { return [...sessions.values()].filter((s) => s.userId === userId).length; },

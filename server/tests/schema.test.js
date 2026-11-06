@@ -74,6 +74,10 @@ describeDb('schema constraints (real Postgres)', () => {
     await q("insert into lab_queue (user_id) values ('u1')");
     await rejects("insert into lab_queue (user_id) values ('u1')", [], /lab_queue_one_waiting_key/);
     await q("update lab_queue set status = 'admitted' where user_id = 'u1'");
+    // an admitted learner still holds their one open place; once they start (or give up) they can queue again
+    await rejects("insert into lab_queue (user_id) values ('u1')", [], /lab_queue_one_open_key/);
+    await rejects("update lab_queue set status = 'bogus' where user_id = 'u1'", [], /lab_queue_status_check/);
+    await q("update lab_queue set status = 'started' where user_id = 'u1'");
     await q("insert into lab_queue (user_id) values ('u1')");
     await rejects("insert into lab_slots (college_id, starts_at, ends_at, capacity) values ('c1', now(), now() - interval '1 hour', 10)", [], /lab_slots_ends_after_start/);
     await rejects("insert into lab_slots (college_id, starts_at, ends_at, capacity) values ('c1', now(), now() + interval '1 hour', 0)", [], /check/);

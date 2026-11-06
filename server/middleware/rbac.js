@@ -43,16 +43,18 @@ async function loadAccess(user) {
   const memberships = user.guest ? [] : await repos.memberships.forUser(user.id);
   const roles = new Set(memberships.map((m) => m.role));
 
-  if (!user.guest && config.platformAdminEmails.length > 0) {
-    // The stored record decides: a token's email claim is not enough, and legacy tokens carry none.
-    const stored = await repos.users.getById(user.id);
-    if (stored && stored.emailVerified && stored.email && config.platformAdminEmails.includes(stored.email.toLowerCase())) {
-      roles.add('platform_admin');
-    }
+  // The stored record decides: a token's claims are not enough, and legacy tokens carry none.
+  const stored = user.guest ? null : await repos.users.getById(user.id);
+  if (stored && config.platformAdminEmails.length > 0 && stored.emailVerified && stored.email
+    && config.platformAdminEmails.includes(stored.email.toLowerCase())) {
+    roles.add('platform_admin');
   }
 
   const collegeIds = [...new Set(memberships.map((m) => m.collegeId).filter(Boolean))];
-  const value = { memberships, roles: [...roles], collegeIds, collegeId: collegeIds[0] || null };
+  const value = {
+    memberships, roles: [...roles], collegeIds, collegeId: collegeIds[0] || null,
+    labAccess: Boolean(stored && stored.labAccess), disabled: Boolean(stored && stored.disabled), username: stored ? stored.username || null : null,
+  };
   if (map.size > 5000) map.clear();
   map.set(user.id, { value, at: Date.now() });
   return value;

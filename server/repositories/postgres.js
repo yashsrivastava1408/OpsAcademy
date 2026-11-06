@@ -16,6 +16,8 @@ function mapError(err) {
   if (err && err.code === '23505') {
     if (/users_email_key/.test(err.constraint || '')) return new RepoError('email_taken', 'User with this email already exists');
     if (/users_profile_slug_key/.test(err.constraint || '')) return new RepoError('slug_taken', 'Profile address is taken');
+    if (/users_username_key/.test(err.constraint || '')) return new RepoError('username_taken', 'That lab ID is taken');
+    if (/lab_queue_one_(waiting|open)_key/.test(err.constraint || '')) return new RepoError('already_queued', 'Already waiting for a lab seat');
     if (/users_pkey/.test(err.constraint || '')) return new RepoError('user_exists', 'User already exists');
   }
   if (err && err.code === '23503' && /user_id_fkey/.test(err.constraint || '')) {
@@ -36,6 +38,24 @@ async function nodeRows(q, tail, params = []) {
   }));
 }
 
+const templateRow = (r) => ({
+  id: r.id, collegeId: r.college_id, sectionId: r.section_id, weekday: r.weekday, startTime: String(r.start_time).slice(0, 5),
+  durationMinutes: r.duration_minutes, seats: r.seats, unitId: r.unit_id, makeup: r.makeup, active: r.active, createdBy: r.created_by,
+});
+const slotRow = (r) => ({
+  id: r.id, collegeId: r.college_id, sectionId: r.section_id, startsAt: r.starts_ms, endsAt: r.ends_ms, capacity: r.capacity,
+  unitId: r.unit_id, makeup: r.makeup, templateId: r.template_id, createdBy: r.created_by,
+});
+const SLOT_COLUMNS = `id, college_id, section_id, capacity, unit_id, makeup, template_id, created_by,
+  (extract(epoch from starts_at) * 1000)::float8 as starts_ms, (extract(epoch from ends_at) * 1000)::float8 as ends_ms`;
+const queueRow = (r) => ({
+  id: Number(r.id), userId: r.user_id, collegeId: r.college_id, slotId: r.slot_id, unitId: r.unit_id, status: r.status,
+  enqueuedAt: r.enq_ms, lastSeenAt: r.seen_ms, admittedAt: r.adm_ms, expiresAt: r.exp_ms, sessionId: r.session_id,
+});
+const QUEUE_COLUMNS = `id, user_id, college_id, slot_id, unit_id, status, session_id,
+  (extract(epoch from enqueued_at) * 1000)::float8 as enq_ms, (extract(epoch from last_seen_at) * 1000)::float8 as seen_ms,
+  (extract(epoch from admitted_at) * 1000)::float8 as adm_ms, (extract(epoch from expires_at) * 1000)::float8 as exp_ms`;
+
 const collegeRow = (r) => ({ id: r.id, name: r.name, slug: r.slug, timezone: r.timezone, active: r.active, createdAt: r.created_at.toISOString() });
 const sectionRow = (r) => ({ id: r.id, collegeId: r.college_id, name: r.name, academicYear: r.academic_year });
 
@@ -47,6 +67,9 @@ function userFromRow(r) {
   if (r.profile_slug) u.profileSlug = r.profile_slug;
   if (r.password_changed_at) u.passwordChangedAt = r.password_changed_at.getTime();
   if (r.registered_at) u.registeredAt = iso(r.registered_at);
+  if (r.username) u.username = r.username;
+  if (r.lab_access) u.labAccess = true;
+  if (r.disabled) u.disabled = true;
   return u;
 }
 
@@ -60,6 +83,9 @@ const USER_PATCH_COLUMNS = {
   profileSlug: ['profile_slug', (v) => v],
   passwordChangedAt: ['password_changed_at', (v) => (v == null ? null : toDate(v))],
   registeredAt: ['registered_at', (v) => (v == null ? null : new Date(v))],
+  username: ['username', (v) => (v == null ? null : String(v).toLowerCase())],
+  labAccess: ['lab_access', Boolean],
+  disabled: ['disabled', Boolean],
 };
 
 function progressFromRow(r) {
@@ -81,7 +107,7 @@ function certFromRow(r) {
 
 async function sessionRows(q, where, params = []) {
   const { rows } = await q(
-    `select session_id, engine_id, user_id, lab_id, node_id, from_pool, claim_ms, history, strikes,
+    `select session_id, engine_id, user_id, lab_id, node_id, slot_id, from_pool, claim_ms, history, strikes,
             (extract(epoch from created_at) * 1000)::float8 as created_ms,
             (extract(epoch from last_active_at) * 1000)::float8 as active_ms
        from sandbox_sessions ${where}`, params);
@@ -90,7 +116,7 @@ async function sessionRows(q, where, params = []) {
 
 function sessionFromRow(r) {
   return {
-    sessionId: r.session_id, engineId: r.engine_id, userId: r.user_id, labId: r.lab_id, nodeId: r.node_id || undefined,
+    sessionId: r.session_id, engineId: r.engine_id, userId: r.user_id, labId: r.lab_id, nodeId: r.node_id || undefined, slotId: r.slot_id || undefined,
     createdAt: r.created_ms, lastActiveAt: r.active_ms, fromPool: r.from_pool,
     claimMs: r.claim_ms === null ? undefined : Number(r.claim_ms), history: r.history, strikes: r.strikes,
   };
@@ -124,6 +150,32 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
     }
   }
 
+  /** One transaction under a cluster-wide lock, so counting seats and taking one cannot interleave between gateways. */
+  async function seatTransaction(fn) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query("select pg_advisory_xact_lock(hashtext('opsacademy:lab-seats'))");
+      const out = await fn(client);
+      await client.query('commit');
+      return out;
+    } catch (err) {
+      await client.query('rollback').catch(() => {});
+      throw mapError(err);
+    } finally {
+      client.release();
+    }
+  }
+  async function seatUsageOn(client, slotId) {
+    const { rows } = await client.query(
+      `select
+         (select count(*)::int from sandbox_sessions where slot_id = $1) + (select count(*)::int from lab_queue where status = 'admitted' and slot_id = $1 and expires_at > now()) as slot_used,
+         (select count(*)::int from sandbox_sessions) + (select count(*)::int from lab_queue where status = 'admitted' and expires_at > now()) as cluster_used`,
+      [slotId]
+    );
+    return { slot: slotId == null ? 0 : rows[0].slot_used, cluster: rows[0].cluster_used };
+  }
+
   const q = async (sql, params) => {
     try {
       return await pool.query(sql, params);
@@ -148,12 +200,13 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
       async create(user) {
         const { rows } = await q(
           `insert into users (id, name, email, password_hash, guest, email_verified, profile_public, profile_slug,
-                              password_changed_at, created_at, registered_at, auth_provider)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,coalesce($10::timestamptz, now()),$11,$12) returning *`,
+                              password_changed_at, created_at, registered_at, auth_provider, username, lab_access, disabled)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,coalesce($10::timestamptz, now()),$11,$12,$13,$14,$15) returning *`,
           [user.id, user.name, user.email || null, user.password || null, Boolean(user.guest), Boolean(user.emailVerified),
             Boolean(user.profilePublic), user.profileSlug || null,
             user.passwordChangedAt ? toDate(user.passwordChangedAt) : null, user.createdAt || null,
-            user.registeredAt || null, user.authProvider || 'local'],
+            user.registeredAt || null, user.authProvider || 'local', user.username ? String(user.username).toLowerCase() : null,
+            Boolean(user.labAccess), Boolean(user.disabled)],
         );
         return userFromRow(rows[0]);
       },
@@ -178,6 +231,22 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
       async getBySlug(slug) {
         const { rows } = await q('select * from users where profile_slug = $1', [slug]);
         return rows[0] ? userFromRow(rows[0]) : null;
+      },
+      async getByUsername(username) {
+        const { rows } = await q('select * from users where username = $1', [String(username).toLowerCase()]);
+        return rows[0] ? userFromRow(rows[0]) : null;
+      },
+      async listLabAccounts({ search = '', limit = 50, offset = 0 } = {}) {
+        const like = `%${search.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        const where = "username is not null and ($1 = '%%' or username like $1 or lower(name) like $1)";
+        const total = await q(`select count(*)::int as n from users where ${where}`, [like]);
+        const { rows } = await q(`select * from users where ${where} order by created_at, username limit $2 offset $3`, [like, limit, offset]);
+        return { total: total.rows[0].n, rows: rows.map(userFromRow) };
+      },
+      async maxUsernameSequence(prefix) {
+        const { rows } = await q("select coalesce(max(substring(username from '-([0-9]+)$')::bigint), 0)::float8 as n from users where username like $1 and username ~ $2",
+          [`${prefix.replace(/[\\%_]/g, (c) => `\\${c}`)}-%`, `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-[0-9]+$`]);
+        return Number(rows[0].n);
       },
       async update(id, patch) {
         const sets = [];
@@ -444,6 +513,248 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
       },
     },
 
+    slots: {
+      async createTemplate(t) {
+        const { rows } = await q(
+          `insert into slot_templates (college_id, section_id, weekday, start_time, duration_minutes, seats, unit_id, makeup, created_by)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
+          [t.collegeId, t.sectionId || null, t.weekday, t.startTime, t.durationMinutes, t.seats, t.unitId || null, Boolean(t.makeup), t.createdBy || null]
+        );
+        return templateRow(rows[0]);
+      },
+      async getTemplate(id) {
+        const { rows } = await q('select * from slot_templates where id = $1', [id]);
+        return rows[0] ? templateRow(rows[0]) : null;
+      },
+      async listTemplates(collegeId) {
+        const { rows } = await q('select * from slot_templates where college_id = $1 order by weekday, start_time, id', [collegeId]);
+        return rows.map(templateRow);
+      },
+      async updateTemplate(id, patch) {
+        const columns = { active: 'active', seats: 'seats', durationMinutes: 'duration_minutes', startTime: 'start_time', weekday: 'weekday', makeup: 'makeup', unitId: 'unit_id' };
+        const sets = [];
+        const params = [id];
+        for (const [key, value] of Object.entries(patch)) {
+          if (!columns[key]) throw new RepoError('bad_patch', `Cannot update template field "${key}"`);
+          params.push(value);
+          sets.push(`${columns[key]} = $${params.length}`);
+        }
+        if (!sets.length) return this.getTemplate(id);
+        const { rows } = await q(`update slot_templates set ${sets.join(', ')} where id = $1 returning *`, params);
+        return rows[0] ? templateRow(rows[0]) : null;
+      },
+      async deleteTemplate(id) {
+        const { rowCount } = await q('delete from slot_templates where id = $1', [id]);
+        return rowCount > 0;
+      },
+      async addBlackout({ collegeId, onDate, reason = null }) {
+        const { rows } = await q(
+          `insert into blackout_dates (college_id, on_date, reason) values ($1,$2,$3)
+           on conflict (college_id, on_date) do update set reason = excluded.reason returning id, college_id, to_char(on_date, 'YYYY-MM-DD') as on_date, reason`,
+          [collegeId, onDate, reason]
+        );
+        return { id: rows[0].id, collegeId: rows[0].college_id, onDate: rows[0].on_date, reason: rows[0].reason };
+      },
+      async listBlackouts(collegeId) {
+        const { rows } = await q("select id, college_id, to_char(on_date, 'YYYY-MM-DD') as on_date, reason from blackout_dates where college_id = $1 order by on_date", [collegeId]);
+        return rows.map((r) => ({ id: r.id, collegeId: r.college_id, onDate: r.on_date, reason: r.reason }));
+      },
+      async removeBlackout(collegeId, id) {
+        const { rowCount } = await q('delete from blackout_dates where id = $1 and college_id = $2', [id, collegeId]);
+        return rowCount > 0;
+      },
+      async createSlots(rows) {
+        let created = 0;
+        for (const r of rows) {
+          const { rowCount } = await q(
+            `insert into lab_slots (college_id, section_id, starts_at, ends_at, capacity, unit_id, makeup, template_id, created_by)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict (template_id, starts_at) where template_id is not null do nothing`,
+            [r.collegeId, r.sectionId || null, toDate(r.startsAt), toDate(r.endsAt), r.capacity, r.unitId || null, Boolean(r.makeup), r.templateId || null, r.createdBy || null]
+          );
+          created += rowCount;
+        }
+        return created;
+      },
+      async getSlot(id) {
+        const { rows } = await q(`select ${SLOT_COLUMNS} from lab_slots where id = $1`, [id]);
+        return rows[0] ? slotRow(rows[0]) : null;
+      },
+      async listSlots({ collegeId = null, from, to }) {
+        const { rows } = await q(
+          `select ${SLOT_COLUMNS} from lab_slots where ($1::text is null or college_id = $1) and ends_at > $2 and starts_at < $3 order by starts_at, id`,
+          [collegeId, toDate(from), toDate(to)]
+        );
+        return rows.map(slotRow);
+      },
+      async updateSlot(id, patch) {
+        const columns = { sectionId: 'section_id', capacity: 'capacity', unitId: 'unit_id' };
+        const sets = [];
+        const params = [id];
+        for (const [key, value] of Object.entries(patch)) {
+          if (!columns[key]) throw new RepoError('bad_patch', `Cannot update slot field "${key}"`);
+          params.push(value);
+          sets.push(`${columns[key]} = $${params.length}`);
+        }
+        if (!sets.length) return this.getSlot(id);
+        await q(`update lab_slots set ${sets.join(', ')} where id = $1`, params);
+        return this.getSlot(id);
+      },
+      async deleteSlot(id) {
+        const { rowCount } = await q('delete from lab_slots where id = $1', [id]);
+        return rowCount > 0;
+      },
+      async setAssignment({ slotId, userId, kind = 'add' }) {
+        await q(
+          `insert into slot_assignments (slot_id, user_id, kind) values ($1,$2,$3)
+           on conflict (slot_id, user_id) do update set kind = excluded.kind`,
+          [slotId, userId, kind]
+        );
+      },
+      async removeAssignment(slotId, userId) {
+        const { rowCount } = await q('delete from slot_assignments where slot_id = $1 and user_id = $2', [slotId, userId]);
+        return rowCount > 0;
+      },
+      async listAssignments(slotId) {
+        const { rows } = await q(
+          'select a.slot_id, a.user_id, a.kind, u.name from slot_assignments a join users u on u.id = a.user_id where a.slot_id = $1 order by u.name, a.user_id', [slotId]);
+        return rows.map((r) => ({ slotId: r.slot_id, userId: r.user_id, kind: r.kind, name: r.name }));
+      },
+      async assignmentsForUser(userId) {
+        const { rows } = await q('select slot_id, user_id, kind from slot_assignments where user_id = $1', [userId]);
+        return rows.map((r) => ({ slotId: r.slot_id, userId: r.user_id, kind: r.kind }));
+      },
+    },
+
+    queue: {
+      async enqueue({ userId, collegeId = null, slotId = null, unitId = null }) {
+        const { rows } = await q(
+          `insert into lab_queue (user_id, college_id, slot_id, unit_id) values ($1,$2,$3,$4) returning ${QUEUE_COLUMNS}`,
+          [userId, collegeId, slotId, unitId]
+        );
+        return queueRow(rows[0]);
+      },
+      async reserve({ userId, collegeId = null, slotId = null, unitId = null, ttlMs }) {
+        const { rows } = await q(
+          `insert into lab_queue (user_id, college_id, slot_id, unit_id, status, admitted_at, expires_at)
+           values ($1,$2,$3,$4,'admitted', now(), now() + ($5 || ' milliseconds')::interval) returning ${QUEUE_COLUMNS}`,
+          [userId, collegeId, slotId, unitId, String(ttlMs)]
+        );
+        return queueRow(rows[0]);
+      },
+      async getOpen(userId) {
+        const { rows } = await q(`select ${QUEUE_COLUMNS} from lab_queue where user_id = $1 and status in ('waiting','admitted')`, [userId]);
+        return rows[0] ? queueRow(rows[0]) : null;
+      },
+      async position(entry) {
+        const { rows } = await q("select count(*)::int as n from lab_queue where status = 'waiting' and slot_id is not distinct from $1 and id <= $2", [entry.slotId, entry.id]);
+        return rows[0].n;
+      },
+      async waitingCount(slotId) {
+        const { rows } = await q("select count(*)::int as n from lab_queue where status = 'waiting' and slot_id is not distinct from $1", [slotId]);
+        return rows[0].n;
+      },
+      async countHeldAll() {
+        const { rows } = await q("select count(*)::int as n from lab_queue where status = 'admitted' and expires_at > now()");
+        return rows[0].n;
+      },
+      async countHeld(slotId) {
+        const { rows } = await q("select count(*)::int as n from lab_queue where status = 'admitted' and slot_id is not distinct from $1 and expires_at > now()", [slotId]);
+        return rows[0].n;
+      },
+      async touch(id) { await q('update lab_queue set last_seen_at = now() where id = $1', [id]); },
+      async cancel(userId) {
+        const { rowCount } = await q("update lab_queue set status = 'cancelled' where user_id = $1 and status in ('waiting','admitted')", [userId]);
+        return rowCount > 0;
+      },
+      async admit({ slotId = null, limit, ttlMs }) {
+        // One statement: rows another worker has locked are skipped, so two workers never admit the same person.
+        const { rows } = await q(
+          `with next as (
+             select id from lab_queue where status = 'waiting' and slot_id is not distinct from $1 order by id limit $2 for update skip locked)
+           update lab_queue q set status = 'admitted', admitted_at = now(), expires_at = now() + ($3 || ' milliseconds')::interval
+             from next where q.id = next.id returning q.id, q.user_id, q.college_id, q.slot_id, q.unit_id, q.status, q.session_id,
+             (extract(epoch from q.enqueued_at) * 1000)::float8 as enq_ms, (extract(epoch from q.last_seen_at) * 1000)::float8 as seen_ms,
+             (extract(epoch from q.admitted_at) * 1000)::float8 as adm_ms, (extract(epoch from q.expires_at) * 1000)::float8 as exp_ms`,
+          [slotId, Math.max(0, limit), String(ttlMs)]
+        );
+        return rows.map(queueRow).sort((a, b) => a.id - b.id);
+      },
+      async expire({ now = Date.now(), waitingStaleMs }) {
+        const { rowCount } = await q(
+          `update lab_queue set status = 'expired'
+            where (status = 'admitted' and expires_at <= $1) or (status = 'waiting' and last_seen_at < $2)`,
+          [toDate(now), toDate(now - waitingStaleMs)]
+        );
+        return rowCount;
+      },
+      async markStarted(id, sessionId) {
+        await q("update lab_queue set status = 'started', session_id = $2 where id = $1", [id, sessionId]);
+      },
+      async attendedSlots(userId, slotIds) {
+        if (!slotIds.length) return [];
+        const { rows } = await q("select distinct slot_id from lab_queue where user_id = $1 and status = 'started' and slot_id = any($2::text[])", [userId, slotIds]);
+        return rows.map((r) => r.slot_id);
+      },
+      /** Seats in use: running sessions plus seats held for admitted entries, in a slot and across the cluster. */
+      async seatUsage(slotId) {
+        const { rows } = await q(
+          `select
+             (select count(*)::int from sandbox_sessions where slot_id = $1) + (select count(*)::int from lab_queue where status = 'admitted' and slot_id = $1 and expires_at > now()) as slot_used,
+             (select count(*)::int from sandbox_sessions) + (select count(*)::int from lab_queue where status = 'admitted' and expires_at > now()) as cluster_used`,
+          [slotId]
+        );
+        return { slot: slotId == null ? 0 : rows[0].slot_used, cluster: rows[0].cluster_used };
+      },
+      async reserveSeat({ userId, collegeId = null, slotId = null, unitId = null, ttlMs, slotCapacity = null, clusterCapacity }) {
+        return seatTransaction(async (client) => {
+          const used = await seatUsageOn(client, slotId);
+          if (used.cluster >= clusterCapacity || (slotId != null && slotCapacity != null && used.slot >= slotCapacity)) return null;
+          const { rows } = await client.query(
+            `insert into lab_queue (user_id, college_id, slot_id, unit_id, status, admitted_at, expires_at)
+             values ($1,$2,$3,$4,'admitted', now(), now() + ($5 || ' milliseconds')::interval) returning ${QUEUE_COLUMNS}`,
+            [userId, collegeId, slotId, unitId, String(ttlMs)]
+          );
+          return queueRow(rows[0]);
+        });
+      },
+      async admitSeats({ slotId = null, slotCapacity = null, clusterCapacity, ttlMs }) {
+        return seatTransaction(async (client) => {
+          const used = await seatUsageOn(client, slotId);
+          let free = clusterCapacity - used.cluster;
+          if (slotId != null && slotCapacity != null) free = Math.min(free, slotCapacity - used.slot);
+          if (free <= 0) return [];
+          const { rows } = await client.query(
+            `with next as (
+               select id from lab_queue where status = 'waiting' and slot_id is not distinct from $1 order by id limit $2 for update skip locked)
+             update lab_queue q set status = 'admitted', admitted_at = now(), expires_at = now() + ($3 || ' milliseconds')::interval
+               from next where q.id = next.id returning q.id, q.user_id, q.college_id, q.slot_id, q.unit_id, q.status, q.session_id,
+               (extract(epoch from q.enqueued_at) * 1000)::float8 as enq_ms, (extract(epoch from q.last_seen_at) * 1000)::float8 as seen_ms,
+               (extract(epoch from q.admitted_at) * 1000)::float8 as adm_ms, (extract(epoch from q.expires_at) * 1000)::float8 as exp_ms`,
+            [slotId, free, String(ttlMs)]
+          );
+          return rows.map(queueRow).sort((a, b) => a.id - b.id);
+        });
+      },
+      async scopesWaiting() {
+        const { rows } = await q("select distinct slot_id from lab_queue where status = 'waiting'");
+        return rows.map((r) => r.slot_id);
+      },
+    },
+
+    events: {
+      async record({ name, userId = null, collegeId = null, props = {} }) {
+        await q('insert into analytics_events (name, user_id, college_id, props) values ($1,$2,$3,$4)', [name, userId, collegeId, JSON.stringify(props)]);
+      },
+      async funnel({ from, to }) {
+        const { rows } = await q(
+          `select name, props->>'step' as step, props->>'ok' as ok, count(*)::int as count from analytics_events
+            where at >= $1 and at < $2 group by 1, 2, 3 order by name, step`,
+          [toDate(from), toDate(to)]
+        );
+        return rows.map((r) => ({ name: r.name, step: r.step, ok: r.ok, count: r.count }));
+      },
+    },
+
     audit: {
       async record({ actorId = null, actorRole = null, action, entityType = null, entityId = null, collegeId = null, ip = null, meta = {} }) {
         await q(
@@ -495,12 +806,12 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
     sessions: {
       async upsert(s) {
         await q(
-          `insert into sandbox_sessions (session_id, engine_id, user_id, lab_id, node_id, from_pool, claim_ms, history, strikes, created_at, last_active_at)
-           values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)
+          `insert into sandbox_sessions (session_id, engine_id, user_id, lab_id, node_id, slot_id, from_pool, claim_ms, history, strikes, created_at, last_active_at)
+           values ($1,$2,$3,$4,$5,$12,$6,$7,$8::jsonb,$9,$10,$11)
            on conflict (session_id) do update set last_active_at = greatest(sandbox_sessions.last_active_at, excluded.last_active_at),
              history = excluded.history, strikes = greatest(sandbox_sessions.strikes, excluded.strikes)`,
           [s.sessionId, s.engineId, s.userId, s.labId || null, s.nodeId || null, Boolean(s.fromPool), s.claimMs ?? null,
-            JSON.stringify(s.history || []), s.strikes || 0, toDate(s.createdAt), toDate(s.lastActiveAt)],
+            JSON.stringify(s.history || []), s.strikes || 0, toDate(s.createdAt), toDate(s.lastActiveAt), s.slotId || null],
         );
       },
       async delete(sessionId) {
@@ -509,6 +820,10 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
       },
       async all() { return sessionRows(q, ''); },
       async get(sessionId) { return (await sessionRows(q, 'where session_id = $1', [sessionId]))[0] || null; },
+      async countBySlot(slotId) {
+        const { rows } = await q('select count(*)::int as n from sandbox_sessions where slot_id = $1', [slotId]);
+        return rows[0].n;
+      },
       async listByUser(userId) { return sessionRows(q, 'where user_id = $1 order by created_at', [userId]); },
       async count() {
         const { rows } = await q('select count(*)::int as n from sandbox_sessions');

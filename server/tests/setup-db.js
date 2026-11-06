@@ -32,7 +32,7 @@ if (process.env.TEST_REPOS === 'postgres') {
     await ready;
   });
   beforeEach(async () => {
-    await pool.query('truncate users, colleges, lab_nodes, rate_limit_hits cascade');
+    await pool.query('truncate users, colleges, lab_nodes, rate_limit_hits, analytics_events cascade');
   });
   afterAll(async () => {
     await pool.end();
