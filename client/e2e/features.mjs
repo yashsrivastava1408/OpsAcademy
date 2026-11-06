@@ -65,7 +65,7 @@ try {
   // ── Lab of the day ───────────────────────────────────────
   check('the dashboard shows the lab of the day', await visible(page.locator('.daily-card')) && /\+15 XP/.test(await page.locator('.daily-card').innerText()));
   const dailyHref = await page.locator('.daily-card a').getAttribute('href');
-  check('the lab of the day links to a practice lab', /^\/unit\/[a-z0-9-]+\/practice$/.test(dailyHref || ''), dailyHref);
+  check('the lab of the day links to its lab in Lab Studio', /^\/lab\/[a-z0-9-]+$/.test(dailyHref || ''), dailyHref);
 
   // ── Public profile ───────────────────────────────────────
   await page.getByRole('button', { name: 'Share my profile' }).click();
@@ -131,7 +131,7 @@ try {
   check('a unit without a case study says so', await visible(page.getByText('This unit has no case study')));
 
   // ── Lab: verified steps survive a reload; closing warning ─
-  await page.goto(`${APP}/unit/linux-basics/practice`, { waitUntil: 'networkidle' });
+  await page.goto(`${APP}/lab/linux-basics`, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: /Start Lab/ }).first().click();
   await page.waitForSelector('.terminal-status.connected');
   await page.locator('.terminal-body').click();
@@ -209,7 +209,7 @@ try {
   lastPage = mobile;
   const phoneErrors = [];
   mobile.on('pageerror', (e) => phoneErrors.push(e.message));
-  await mobile.goto(`${APP}/unit/git-basics/practice`, { waitUntil: 'domcontentloaded' });
+  await mobile.goto(`${APP}/lab/git-basics`, { waitUntil: 'domcontentloaded' });
   await mobile.waitForSelector('.instruction-item', { timeout: 30000 });
   const box = async (selector) => mobile.locator(selector).first().boundingBox();
   check('phone: the panel switch is shown', await mobile.locator('.lab-panel-tabs').isVisible());

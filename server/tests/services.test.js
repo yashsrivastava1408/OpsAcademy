@@ -406,18 +406,28 @@ describe('config', () => {
     expect(isolated.aiHubUrl).toBe('http://localhost:5005');
   });
 
-  test('production refuses to start with the default JWT secret', () => {
-    const saved = { NODE_ENV: process.env.NODE_ENV, JWT_SECRET: process.env.JWT_SECRET };
-    process.env.NODE_ENV = 'production';
-    delete process.env.JWT_SECRET;
-    try {
+  test('production refuses to start without a certificate secret or without Supabase', () => {
+    const keys = ['NODE_ENV', 'CERT_SECRET', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'LEGACY_AUTH'];
+    const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    const load = (env) => {
+      for (const k of keys) delete process.env[k];
+      Object.assign(process.env, { NODE_ENV: 'production' }, env);
+      let error = null;
       jest.isolateModules(() => {
         // Keep the real .env out of this test.
         jest.doMock('dotenv', () => ({ config: () => ({}) }));
-        expect(() => require('../config')).toThrow(/JWT_SECRET must be set/);
+        try { require('../config'); } catch (err) { error = err; }
       });
+      return error;
+    };
+    try {
+      for (const k of keys) delete process.env[k];
+      expect(load({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'k' })).toEqual(expect.objectContaining({ message: expect.stringMatching(/CERT_SECRET must be set/) }));
+      expect(load({ CERT_SECRET: 'c' })).toEqual(expect.objectContaining({ message: expect.stringMatching(/needs SUPABASE_URL/) }));
+      expect(load({ CERT_SECRET: 'c', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'k' })).toBeNull();
+      expect(load({ CERT_SECRET: 'c', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'k', LEGACY_AUTH: 'on' })).toEqual(expect.objectContaining({ message: expect.stringMatching(/not allowed in production/) }));
     } finally {
-      Object.assign(process.env, saved);
+      for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
     }
   });
 });

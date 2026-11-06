@@ -12,12 +12,11 @@ COPY . .
 # Content-Security-Policy, so it must be given at build time.
 ARG VITE_API_URL=http://localhost:4000
 ENV VITE_API_URL=${VITE_API_URL}
-# Supabase sign-in (docs/runbooks/auth-cutover.md). Empty VITE_AUTH_MODE keeps the gateway's own sign-in.
-ARG VITE_AUTH_MODE=
+# Supabase sign-in (docs/runbooks/auth-cutover.md): a build given these settings signs in through Supabase.
 ARG VITE_SUPABASE_URL=
 ARG VITE_SUPABASE_ANON_KEY=
 ARG VITE_SSO_PROVIDERS=
-ENV VITE_AUTH_MODE=${VITE_AUTH_MODE} VITE_SUPABASE_URL=${VITE_SUPABASE_URL} VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY} VITE_SSO_PROVIDERS=${VITE_SSO_PROVIDERS}
+ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL} VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY} VITE_SSO_PROVIDERS=${VITE_SSO_PROVIDERS}
 RUN npm run build
 
 # Stage 2: Serve static files with Nginx

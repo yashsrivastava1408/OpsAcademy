@@ -78,7 +78,7 @@ async function keepScreenshot(target, name) {
   const median = (xs) => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
   const session = async (delay) => {
-    await page.goto(`${APP}/unit/linux-basics/practice`, { waitUntil: 'networkidle' });
+    await page.goto(`${APP}/lab/linux-basics`, { waitUntil: 'networkidle' });
     await page.evaluate((d) => { window.__delay = d; }, delay);
     // The terminal's web font changes the width of a character, and so the
     // number of columns. Have it loaded before the terminal is used, so both

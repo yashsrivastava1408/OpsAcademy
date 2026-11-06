@@ -59,7 +59,7 @@ async function keepScreenshot(target, name) {
   check('landing does not download the diagram library', !chunk('mermaid'));
   check('landing creates no guest account', api('POST', '/auth/guest').length === 0 && !(await token()));
   check('landing asks for no personal data (no /progress call)', api('GET', '/progress').length === 0);
-  check('navbar shows live engine stats from the gateway', /Engine: \d+\/\d+ warm|Engine: pty/.test(await page.locator('.nav-telemetry-badge').innerText()), await page.locator('.nav-telemetry-badge').innerText());
+  check('navbar offers Lab Studio and no engine badge', (await page.getByRole('link', { name: /Lab Studio/ }).count()) > 0 && (await page.locator('.nav-telemetry-badge').count()) === 0);
   console.log(`        JavaScript downloaded for the landing page: ${(sizes / 1024).toFixed(0)} kB uncompressed`);
   const firstTab = await page.locator('.terminal-tab-btn.active').innerText();
   await sleep(3800);

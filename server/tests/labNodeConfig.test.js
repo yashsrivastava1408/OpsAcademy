@@ -17,10 +17,10 @@ test('a lab node agent starts in production without the gateway\'s secrets', () 
   expect(agent.ok).toBe(true);
 });
 
-test('the gateway still refuses to start in production without JWT_SECRET', () => {
+test('the gateway still refuses to start in production without its secrets', () => {
   const gateway = loadConfig({});
   expect(gateway.ok).toBe(false);
-  expect(gateway.out).toMatch(/JWT_SECRET must be set/);
+  expect(gateway.out).toMatch(/CERT_SECRET must be set/);
 });
 
 test('a lab node still needs its own token in production', () => {

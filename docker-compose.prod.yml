@@ -46,8 +46,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${PUBLIC_API_URL-}  # empty = same origin, via Caddy
-        # Supabase sign-in. Set VITE_AUTH_MODE=supabase in .env.production at the cutover; empty = the gateway's own sign-in.
-        VITE_AUTH_MODE: ${VITE_AUTH_MODE:-}
+        # Supabase sign-in: the browser build is given the project URL and publishable key below.
         VITE_SUPABASE_URL: ${SUPABASE_URL:-}
         VITE_SUPABASE_ANON_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
         VITE_SSO_PROVIDERS: ${VITE_SSO_PROVIDERS:-}
@@ -81,9 +80,6 @@ services:
       - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY:-}
       # Server-only: creates and manages Lab ID accounts in Supabase Auth. Never reaches the browser build.
       - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
-      # Cutover switch (docs/runbooks/auth-cutover.md): empty = the gateway's own sign-in, off = Supabase only.
-      - LEGACY_AUTH=${LEGACY_AUTH:-}
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - CERT_SECRET=${CERT_SECRET:-}
       - PLATFORM_ADMIN_EMAILS=${PLATFORM_ADMIN_EMAILS:-}
       - METRICS_TOKEN=${METRICS_TOKEN:-}
@@ -151,7 +147,6 @@ services:
       disable: true
     environment:
       - NODE_ENV=production
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
       # The worker holds advisory locks, which need a session-mode connection (the session pooler
       # or direct string), never the transaction pooler the gateway uses. worker.js switches to this.

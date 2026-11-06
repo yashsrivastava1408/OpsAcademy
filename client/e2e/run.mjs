@@ -22,7 +22,7 @@ const root = path.join(client, '..');
 const PORTS = { hub: 5105, gateway: 4100, app: 4173 };
 const API_URL = `http://localhost:${PORTS.gateway}`;
 const APP_URL = `http://localhost:${PORTS.app}`;
-const TESTS = ['walkthrough.mjs', 'slow-link.mjs', 'features.mjs'].filter((file) => !process.argv[2] || file.includes(process.argv[2]));
+const TESTS = ['walkthrough.mjs', 'slow-link.mjs', 'features.mjs', 'lab-studio.mjs'].filter((file) => !process.argv[2] || file.includes(process.argv[2]));
 
 // e.g. E2E_STORE_DRIVER=sqlite runs the same tests on the SQLite store.
 const extraGatewayEnv = process.env.E2E_STORE_DRIVER ? { STORE_DRIVER: process.env.E2E_STORE_DRIVER } : {};
@@ -62,7 +62,9 @@ async function waitFor(url, accept, seconds = 60) {
 let failed = false;
 try {
   console.log('Building the client...');
-  const build = spawnSync('npx', ['vite', 'build'], { cwd: client, env: { ...process.env, VITE_API_URL: API_URL }, encoding: 'utf8' });
+  // Blank Supabase settings: the browser tests use the gateway's own development sign-in, never a real project.
+  const buildEnv = { ...process.env, VITE_API_URL: API_URL, VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' };
+  const build = spawnSync('npx', ['vite', 'build'], { cwd: client, env: buildEnv, encoding: 'utf8' });
   if (build.status !== 0) throw new Error(`client build failed\n${build.stdout}${build.stderr}`);
 
   start('ai-hub', process.env.PYTHON || 'python3', ['app.py'], { cwd: path.join(root, 'ai-hub'), env: { ...process.env, PORT: String(PORTS.hub) } });
