@@ -68,8 +68,15 @@ function attachTerminalWebSocket(server, manager = getManager()) {
     if (!user) return rejectUpgrade(socket, 401, 'Unauthorized');
 
     const sessionId = url.searchParams.get('sessionId');
-    if (!sessionId || !manager.getSession(sessionId)) return rejectUpgrade(socket, 404, 'Sandbox not found');
-    if (!manager.isOwner(sessionId, user.id)) return rejectUpgrade(socket, 403, 'Forbidden');
+    let session;
+    try {
+      session = sessionId ? await manager.getSession(sessionId) : null;
+    } catch (err) {
+      logger.error({ err: err.message }, '[Terminal] session lookup failed');
+      return rejectUpgrade(socket, 503, 'Service unavailable');
+    }
+    if (!session) return rejectUpgrade(socket, 404, 'Sandbox not found');
+    if (session.userId !== user.id) return rejectUpgrade(socket, 403, 'Forbidden');
 
     wss.handleUpgrade(request, socket, head, (ws) => {
       handleConnection(ws, sessionId, manager).catch((err) => {

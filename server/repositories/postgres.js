@@ -69,9 +69,18 @@ function certFromRow(r) {
   };
 }
 
+async function sessionRows(q, where, params = []) {
+  const { rows } = await q(
+    `select session_id, engine_id, user_id, lab_id, node_id, from_pool, claim_ms, history, strikes,
+            (extract(epoch from created_at) * 1000)::float8 as created_ms,
+            (extract(epoch from last_active_at) * 1000)::float8 as active_ms
+       from sandbox_sessions ${where}`, params);
+  return rows.map(sessionFromRow);
+}
+
 function sessionFromRow(r) {
   return {
-    sessionId: r.session_id, engineId: r.engine_id, userId: r.user_id, labId: r.lab_id,
+    sessionId: r.session_id, engineId: r.engine_id, userId: r.user_id, labId: r.lab_id, nodeId: r.node_id || undefined,
     createdAt: r.created_ms, lastActiveAt: r.active_ms, fromPool: r.from_pool,
     claimMs: r.claim_ms === null ? undefined : Number(r.claim_ms), history: r.history, strikes: r.strikes,
   };
@@ -435,11 +444,11 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
     sessions: {
       async upsert(s) {
         await q(
-          `insert into sandbox_sessions (session_id, engine_id, user_id, lab_id, from_pool, claim_ms, history, strikes, created_at, last_active_at)
-           values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)
-           on conflict (session_id) do update set last_active_at = excluded.last_active_at, history = excluded.history,
-             strikes = excluded.strikes`,
-          [s.sessionId, s.engineId, s.userId, s.labId || null, Boolean(s.fromPool), s.claimMs ?? null,
+          `insert into sandbox_sessions (session_id, engine_id, user_id, lab_id, node_id, from_pool, claim_ms, history, strikes, created_at, last_active_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)
+           on conflict (session_id) do update set last_active_at = greatest(sandbox_sessions.last_active_at, excluded.last_active_at),
+             history = excluded.history, strikes = greatest(sandbox_sessions.strikes, excluded.strikes)`,
+          [s.sessionId, s.engineId, s.userId, s.labId || null, s.nodeId || null, Boolean(s.fromPool), s.claimMs ?? null,
             JSON.stringify(s.history || []), s.strikes || 0, toDate(s.createdAt), toDate(s.lastActiveAt)],
         );
       },
@@ -447,13 +456,41 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
         const { rowCount } = await q('delete from sandbox_sessions where session_id = $1', [sessionId]);
         return rowCount > 0;
       },
-      async all() {
-        const { rows } = await q(
-          `select session_id, engine_id, user_id, lab_id, from_pool, claim_ms, history, strikes,
-                  (extract(epoch from created_at) * 1000)::float8 as created_ms,
-                  (extract(epoch from last_active_at) * 1000)::float8 as active_ms
-           from sandbox_sessions`);
-        return rows.map(sessionFromRow);
+      async all() { return sessionRows(q, ''); },
+      async get(sessionId) { return (await sessionRows(q, 'where session_id = $1', [sessionId]))[0] || null; },
+      async listByUser(userId) { return sessionRows(q, 'where user_id = $1 order by created_at', [userId]); },
+      async count() {
+        const { rows } = await q('select count(*)::int as n from sandbox_sessions');
+        return rows[0].n;
+      },
+      async countByUser(userId) {
+        const { rows } = await q('select count(*)::int as n from sandbox_sessions where user_id = $1', [userId]);
+        return rows[0].n;
+      },
+      async listByNode(nodeId) { return sessionRows(q, 'where node_id = $1', [nodeId]); },
+      async touch(sessionId, atMs = Date.now()) {
+        await q('update sandbox_sessions set last_active_at = greatest(last_active_at, $2) where session_id = $1', [sessionId, toDate(atMs)]);
+      },
+      async appendCommand(sessionId, entry, cap) {
+        // One statement: append, then keep only the newest `cap` entries.
+        await q(
+          `update sandbox_sessions set history = coalesce((
+             select jsonb_agg(e order by ord) from (
+               select e, ord from jsonb_array_elements(history || $2::jsonb) with ordinality as t(e, ord)
+               order by ord desc limit $3) newest), '[]'::jsonb)
+           where session_id = $1`,
+          [sessionId, JSON.stringify([entry]), cap]
+        );
+      },
+      async clearHistory(sessionId) {
+        await q("update sandbox_sessions set history = '[]'::jsonb where session_id = $1", [sessionId]);
+      },
+      async addStrike(sessionId) {
+        const { rows } = await q('update sandbox_sessions set strikes = strikes + 1 where session_id = $1 returning strikes', [sessionId]);
+        return rows[0] ? rows[0].strikes : 0;
+      },
+      async listExpired({ createdBefore, activeBefore }) {
+        return sessionRows(q, 'where created_at < $1 or last_active_at < $2', [toDate(createdBefore), toDate(activeBefore)]);
       },
     },
 

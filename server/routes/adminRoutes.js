@@ -29,8 +29,8 @@ router.get('/overview', async (req, res, next) => {
       success: true,
       data: {
         uptimeSeconds: Math.round(process.uptime()),
-        sandbox: manager.stats(),
-        sandboxes: manager.listSessions(),
+        sandbox: await manager.stats(),
+        sandboxes: await manager.listSessions(),
         users: await userService.counts(),
         progress: await progressService.totals(),
         certificates: await getRepos().certificates.count(),
@@ -57,9 +57,13 @@ router.get('/overview', async (req, res, next) => {
  * GET /api/admin/sandboxes
  * Every active session, with owners and ids
  */
-router.get('/sandboxes', (req, res) => {
-  const sandboxes = getManager().listSessions();
-  res.json({ success: true, data: sandboxes, count: sandboxes.length, stats: getManager().stats() });
+router.get('/sandboxes', async (req, res, next) => {
+  try {
+    const sandboxes = await getManager().listSessions();
+    res.json({ success: true, data: sandboxes, count: sandboxes.length, stats: await getManager().stats() });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -84,7 +88,7 @@ router.post('/pool/refill', async (req, res, next) => {
   try {
     await getManager().replenishPool();
     await audit.record(req, 'pool.refill');
-    res.json({ success: true, stats: getManager().stats() });
+    res.json({ success: true, stats: await getManager().stats() });
   } catch (err) {
     next(err);
   }

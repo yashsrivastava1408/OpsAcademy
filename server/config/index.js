@@ -56,6 +56,9 @@ const config = {
   // 'all' = HTTP API + WebSocket terminal | 'api' = HTTP API only | 'terminal' = WebSocket terminal only
   serviceRole: (process.env.SERVICE_ROLE || 'all').toLowerCase(),
 
+  // Which lab node this process's sandboxes run on. One gateway running its own sandboxes is one node.
+  nodeId: process.env.NODE_ID || 'local',
+
   // 'pty' = local shell via node-pty | 'docker' = Docker containers via dockerode
   sandboxMode: process.env.SANDBOX_MODE || 'pty',
 

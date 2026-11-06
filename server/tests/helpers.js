@@ -135,10 +135,10 @@ function install({ engine, limits, pool = { enabled: false } } = {}) {
 function waitFor(predicate, { timeoutMs = 8000, intervalMs = 20 } = {}) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
-    const tick = () => {
+    const tick = async () => {
       let value;
       try {
-        value = predicate();
+        value = await predicate();
       } catch (err) {
         return reject(err);
       }

@@ -310,10 +310,47 @@ function createMemoryRepos() {
     sessions: {
       async upsert(session) {
         requireUser(session.userId);
-        sessions.set(session.sessionId, clone(session));
+        const before = sessions.get(session.sessionId);
+        const next = clone(session);
+        if (before) { // like the database: a stale writer cannot move activity or strikes backwards
+          next.lastActiveAt = Math.max(before.lastActiveAt, next.lastActiveAt);
+          next.strikes = Math.max(before.strikes || 0, next.strikes || 0);
+        }
+        sessions.set(session.sessionId, next);
       },
       async delete(sessionId) { return sessions.delete(sessionId); },
       async all() { return [...sessions.values()].map(clone); },
+      async get(sessionId) { return clone(sessions.get(sessionId) || null); },
+      async listByUser(userId) { return [...sessions.values()].filter((s) => s.userId === userId).map(clone); },
+      async count() { return sessions.size; },
+      async countByUser(userId) { return [...sessions.values()].filter((s) => s.userId === userId).length; },
+      async listByNode(nodeId) { return [...sessions.values()].filter((s) => s.nodeId === nodeId).map(clone); },
+      /** Record activity; never moves the clock backwards. */
+      async touch(sessionId, atMs = Date.now()) {
+        const s = sessions.get(sessionId);
+        if (s && atMs > s.lastActiveAt) s.lastActiveAt = atMs;
+      },
+      /** Append to the capped command history (oldest dropped). */
+      async appendCommand(sessionId, entry, cap) {
+        const s = sessions.get(sessionId);
+        if (!s) return;
+        s.history = [...(s.history || []), entry].slice(-cap);
+      },
+      async clearHistory(sessionId) {
+        const s = sessions.get(sessionId);
+        if (s) s.history = [];
+      },
+      /** @returns the new strike count, or 0 when the session is gone */
+      async addStrike(sessionId) {
+        const s = sessions.get(sessionId);
+        if (!s) return 0;
+        s.strikes = (s.strikes || 0) + 1;
+        return s.strikes;
+      },
+      /** Sessions created before `createdBefore` or idle since before `activeBefore` (epoch ms). */
+      async listExpired({ createdBefore, activeBefore }) {
+        return [...sessions.values()].filter((s) => s.createdAt < createdBefore || s.lastActiveAt < activeBefore).map(clone);
+      },
     },
 
     jobs: {

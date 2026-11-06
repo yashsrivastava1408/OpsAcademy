@@ -17,19 +17,27 @@ const router = express.Router();
 const MAX_FILE_PREVIEW_BYTES = 20 * 1024;
 const SAFE_RELATIVE_PATH = /^[A-Za-z0-9_.-][A-Za-z0-9_./ -]{0,255}$/;
 
-function requireOwnedSession(req, res, next) {
-  if (!getManager().isOwner(req.params.sessionId, req.user.id)) {
-    return res.status(404).json({ success: false, error: 'Sandbox session not found' });
+async function requireOwnedSession(req, res, next) {
+  try {
+    if (!(await getManager().isOwner(req.params.sessionId, req.user.id))) {
+      return res.status(404).json({ success: false, error: 'Sandbox session not found' });
+    }
+    next();
+  } catch (err) {
+    next(err);
   }
-  next();
 }
 
 /**
  * GET /api/sandbox/stats
  * Public aggregate numbers: mode, pool level and measured claim latency
  */
-router.get('/stats', (req, res) => {
-  res.json({ success: true, data: getManager().stats() });
+router.get('/stats', async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await getManager().stats() });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -44,7 +52,7 @@ router.post('/start', requireAuth, rateLimit.sandboxStart(), async (req, res, ne
     const labId = units.isValidUnitId(requested) ? requested : 'sandbox';
 
     const manager = getManager();
-    const running = labId === 'sandbox' ? null : manager.findSession(req.user.id, labId);
+    const running = labId === 'sandbox' ? null : await manager.findSession(req.user.id, labId);
     const sandbox = running || await manager.createSession(req.user.id, labId);
 
     res.status(running ? 200 : 201).json({
@@ -60,9 +68,13 @@ router.post('/start', requireAuth, rateLimit.sandboxStart(), async (req, res, ne
  * GET /api/sandbox
  * List the caller's own sandboxes
  */
-router.get('/', requireAuth, (req, res) => {
-  const sandboxes = getManager().listSessions().filter((s) => s.userId === req.user.id);
-  res.json({ success: true, data: sandboxes, count: sandboxes.length, mode: getManager().getMode() });
+router.get('/', requireAuth, async (req, res, next) => {
+  try {
+    const sandboxes = (await getManager().listSessions()).filter((s) => s.userId === req.user.id);
+    res.json({ success: true, data: sandboxes, count: sandboxes.length, mode: getManager().getMode() });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -82,8 +94,12 @@ router.delete('/:sessionId', requireAuth, requireOwnedSession, async (req, res, 
  * GET /api/sandbox/:sessionId/status
  * Get sandbox session info
  */
-router.get('/:sessionId/status', requireAuth, requireOwnedSession, (req, res) => {
-  res.json({ success: true, data: getManager().getSession(req.params.sessionId) });
+router.get('/:sessionId/status', requireAuth, requireOwnedSession, async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await getManager().getSession(req.params.sessionId) });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -103,27 +119,36 @@ router.get('/:sessionId/telemetry', requireAuth, requireOwnedSession, async (req
  * GET /api/sandbox/:sessionId/history
  * Commands entered in this session's terminal, oldest first
  */
-router.get('/:sessionId/history', requireAuth, requireOwnedSession, (req, res) => {
-  const manager = getManager();
-  const { expiresAt, idleExpiresAt } = manager.getSession(req.params.sessionId);
-  res.json({
-    success: true,
-    data: manager.getHistory(req.params.sessionId),
-    // The page polls this, so it also learns when the sandbox will be closed
-    // and can warn the student first. Reading it does not count as activity.
-    session: { expiresAt, idleExpiresAt, serverTime: Date.now() },
-  });
+router.get('/:sessionId/history', requireAuth, requireOwnedSession, async (req, res, next) => {
+  try {
+    const session = await getManager().getSession(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, error: 'Sandbox session not found' });
+    res.json({
+      success: true,
+      data: await getManager().getHistory(req.params.sessionId),
+      // The page polls this, so it also learns when the sandbox will be closed
+      // and can warn the student first. Reading it does not count as activity.
+      session: { expiresAt: session.expiresAt, idleExpiresAt: session.idleExpiresAt, serverTime: Date.now() },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
  * POST /api/sandbox/:sessionId/keepalive
  * "I'm still here": restart the idle countdown (the maximum age still applies)
  */
-router.post('/:sessionId/keepalive', requireAuth, requireOwnedSession, (req, res) => {
-  const manager = getManager();
-  manager.touch(req.params.sessionId);
-  const { expiresAt, idleExpiresAt } = manager.getSession(req.params.sessionId);
-  res.json({ success: true, session: { expiresAt, idleExpiresAt, serverTime: Date.now() } });
+router.post('/:sessionId/keepalive', requireAuth, requireOwnedSession, async (req, res, next) => {
+  try {
+    const manager = getManager();
+    await manager.touch(req.params.sessionId, { force: true });
+    const session = await manager.getSession(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, error: 'Sandbox session not found' });
+    res.json({ success: true, session: { expiresAt: session.expiresAt, idleExpiresAt: session.idleExpiresAt, serverTime: Date.now() } });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**

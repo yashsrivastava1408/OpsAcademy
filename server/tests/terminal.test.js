@@ -23,7 +23,9 @@ const alice = { id: 'u_alice', name: 'Alice' };
 const bob = { id: 'u_bob', name: 'Bob' };
 
 beforeEach(async () => {
-  ctx = install({ engine: pty });
+  // Activity is normally written to the registry at most every 30 s; the tests want every touch visible.
+  ctx = install({ engine: pty, limits: { persistIntervalMs: 0 } });
+  for (const who of [alice, bob]) await ctx.repos.users.create({ id: who.id, name: who.name, guest: true, createdAt: new Date().toISOString() });
   server = http.createServer(createApp());
   wss = attachTerminalWebSocket(server, ctx.manager);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -144,8 +146,8 @@ describe('terminal streaming', () => {
     term.type('mkdir webapp\r');
     term.type('cd webapp\r');
     term.type('   \r');
-    await waitFor(() => ctx.manager.getHistory(sessionId).length === 2);
-    expect(ctx.manager.getHistory(sessionId).map((h) => h.command)).toEqual(['mkdir webapp', 'cd webapp']);
+    await waitFor(async () => (await ctx.manager.getHistory(sessionId)).length === 2);
+    expect((await ctx.manager.getHistory(sessionId)).map((h) => h.command)).toEqual(['mkdir webapp', 'cd webapp']);
 
     const res = await request(server).get(`/api/sandbox/${sessionId}/history`).set('Authorization', `Bearer ${signToken(alice)}`);
     expect(res.body.data.map((h) => h.command)).toEqual(['mkdir webapp', 'cd webapp']);
@@ -200,7 +202,7 @@ describe('terminal streaming', () => {
     term.ws.close();
     await waitFor(() => term.closed);
 
-    expect(ctx.manager.getSession(sessionId)).not.toBeNull();
+    expect(await ctx.manager.getSession(sessionId)).not.toBeNull();
     const again = connect({ sessionId, token: signToken(alice) });
     await again.opened;
     again.type('echo $MARK\r');
@@ -209,10 +211,10 @@ describe('terminal streaming', () => {
 
   test('typing keeps the session from going idle', async () => {
     const { term, sessionId } = await openTerminal();
-    const before = ctx.manager.getSession(sessionId).lastActiveAt;
+    const before = (await ctx.manager.getSession(sessionId)).lastActiveAt;
     await new Promise((resolve) => setTimeout(resolve, 15));
     term.type('x');
-    await waitFor(() => ctx.manager.getSession(sessionId).lastActiveAt > before);
+    await waitFor(async () => (await ctx.manager.getSession(sessionId)).lastActiveAt > before);
   });
 });
 
@@ -228,7 +230,7 @@ describe('abuse tripwire', () => {
     const files = (await ctx.manager.exec(sessionId, 'ls')).stdout;
     expect(files).toContain('before.txt');
     expect(files).not.toContain('canary.txt');
-    expect(ctx.manager.getHistory(sessionId).map((h) => h.command)).toEqual(['touch before.txt', 'echo after-$((6+1))']);
+    expect((await ctx.manager.getHistory(sessionId)).map((h) => h.command)).toEqual(['touch before.txt', 'echo after-$((6+1))']);
   });
 
   test('three strikes destroy the sandbox and close the terminal', async () => {
@@ -238,7 +240,7 @@ describe('abuse tripwire', () => {
     await term.sees('Sandbox terminated after repeated blocked commands.');
     await waitFor(() => term.closed);
     expect(term.closed.code).toBe(4000);
-    expect(ctx.manager.getSession(sessionId)).toBeNull();
+    expect(await ctx.manager.getSession(sessionId)).toBeNull();
   });
 
   test('a flood of messages closes the connection', async () => {
@@ -275,6 +277,7 @@ describe('messages sent while the shell is still attaching', () => {
     wss.close();
     await new Promise((resolve) => server.close(resolve));
     ctx = install({ engine });
+    await ctx.repos.users.createIfAbsent({ id: alice.id, name: alice.name, guest: true, createdAt: new Date().toISOString() });
     server = http.createServer(createApp());
     wss = attachTerminalWebSocket(server, ctx.manager);
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

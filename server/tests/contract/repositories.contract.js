@@ -344,6 +344,46 @@ function runContract(label, setup) {
         expect(all[0].history).toHaveLength(2);
       });
 
+      test('the registry answers by id, owner, node and count', async () => {
+        await repos.users.create(user('u2'));
+        await repos.sessions.upsert(session('s1', { nodeId: 'node-a' }));
+        await repos.sessions.upsert(session('s2', { nodeId: 'node-b', createdAt: 1_800_000_000_500 }));
+        await repos.sessions.upsert(session('s3', { userId: 'u2' }));
+        expect(await repos.sessions.get('s1')).toMatchObject({ sessionId: 's1', engineId: 'eng-s1', nodeId: 'node-a', userId: 'u1' });
+        expect(await repos.sessions.get('nope')).toBeNull();
+        expect((await repos.sessions.listByUser('u1')).map((s) => s.sessionId).sort()).toEqual(['s1', 's2']);
+        expect((await repos.sessions.listByNode('node-b')).map((s) => s.sessionId)).toEqual(['s2']);
+        expect(await repos.sessions.count()).toBe(3);
+        expect(await repos.sessions.countByUser('u1')).toBe(2);
+        expect(await repos.sessions.countByUser('ghost')).toBe(0);
+      });
+
+      test('activity moves forward only; commands append to a capped list; strikes count atomically', async () => {
+        await repos.sessions.upsert(session('s1', { history: [], strikes: 0 }));
+        await repos.sessions.touch('s1', 1_800_000_005_000);
+        await repos.sessions.touch('s1', 1_800_000_002_000);
+        expect((await repos.sessions.get('s1')).lastActiveAt).toBe(1_800_000_005_000);
+
+        for (const c of ['a', 'b', 'c', 'd']) await repos.sessions.appendCommand('s1', { command: c, at: 1 }, 3);
+        expect((await repos.sessions.get('s1')).history.map((h) => h.command)).toEqual(['b', 'c', 'd']);
+        await repos.sessions.clearHistory('s1');
+        expect((await repos.sessions.get('s1')).history).toEqual([]);
+
+        expect(await Promise.all([repos.sessions.addStrike('s1'), repos.sessions.addStrike('s1')]).then((r) => r.sort())).toEqual([1, 2]);
+        expect(await repos.sessions.addStrike('nope')).toBe(0);
+        // an upsert from a stale writer cannot lower activity or strikes
+        await repos.sessions.upsert(session('s1', { lastActiveAt: 1_800_000_000_001, strikes: 0, history: [] }));
+        expect(await repos.sessions.get('s1')).toMatchObject({ lastActiveAt: 1_800_000_005_000, strikes: 2 });
+      });
+
+      test('lists sessions past their age or idle limit', async () => {
+        await repos.sessions.upsert(session('old', { createdAt: 1000, lastActiveAt: 1_800_000_900_000 }));
+        await repos.sessions.upsert(session('idle', { createdAt: 1_800_000_000_000, lastActiveAt: 2000 }));
+        await repos.sessions.upsert(session('fresh', { createdAt: 1_800_000_000_000, lastActiveAt: 1_800_000_900_000 }));
+        const expired = await repos.sessions.listExpired({ createdBefore: 5000, activeBefore: 5000 });
+        expect(expired.map((s) => s.sessionId).sort()).toEqual(['idle', 'old']);
+      });
+
       test('delete reports whether a session existed; unknown users are refused', async () => {
         await repos.sessions.upsert(session('s1'));
         expect(await repos.sessions.delete('s1')).toBe(true);

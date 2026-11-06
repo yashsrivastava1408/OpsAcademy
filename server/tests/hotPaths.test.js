@@ -56,50 +56,79 @@ describe('leaderboard cache (#54)', () => {
   });
 });
 
-describe('sandbox session persistence (#53)', () => {
+describe('session registry on the hot path (#53)', () => {
   const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-  test('typing 1,000 keystrokes causes at most a few store writes', async () => {
-    const { counts } = await spyRepos();
+  /** Count registry calls the terminal makes on every keystroke. */
+  function spyRegistry(repos) {
+    const counts = { touch: 0, appendCommand: 0 };
+    for (const name of Object.keys(counts)) {
+      const original = repos.sessions[name].bind(repos.sessions);
+      repos.sessions[name] = (...args) => {
+        counts[name] += 1;
+        return original(...args);
+      };
+    }
+    return counts;
+  }
+
+  test('typing 1,000 keystrokes causes at most one activity write; every command is kept', async () => {
+    const { repos } = await spyRepos();
+    const counts = spyRegistry(repos);
     const manager = createManager({ engine: fakeEngine(), pool: { enabled: false } });
     const { sessionId } = await manager.createSession('u1', 'linux-basics');
-    const afterCreate = counts.upserts;
-    expect(afterCreate).toBe(1);
 
     for (let i = 0; i < 1000; i += 1) manager.touch(sessionId);
     for (let i = 0; i < 20; i += 1) manager.recordCommand(sessionId, `echo ${i}`);
-    expect(counts.upserts).toBe(afterCreate);
+    await settle();
+    expect(counts.touch).toBe(0); // the create already stamped the activity time; the throttle holds the rest back
+    expect(counts.appendCommand).toBe(20);
+    expect((await manager.getHistory(sessionId))).toHaveLength(20);
     await manager.shutdown();
   });
 
-  test('persists again once the interval has passed, with the latest history', async () => {
+  test('activity is written again once the interval has passed', async () => {
+    const { repos } = await spyRepos();
+    const counts = spyRegistry(repos);
+    const manager = createManager({ engine: fakeEngine(), pool: { enabled: false }, limits: { persistIntervalMs: 0 } });
+    const { sessionId } = await manager.createSession('u1', 'linux-basics');
+    await manager.touch(sessionId);
+    await manager.touch(sessionId);
+    expect(counts.touch).toBe(2);
+    await manager.shutdown();
+  });
+
+  test('a failing activity or history write never breaks the lab', async () => {
     const { repos } = await spyRepos();
     const manager = createManager({ engine: fakeEngine(), pool: { enabled: false }, limits: { persistIntervalMs: 0 } });
     const { sessionId } = await manager.createSession('u1', 'linux-basics');
+    repos.sessions.touch = () => Promise.reject(new Error('database down'));
+    repos.sessions.appendCommand = () => Promise.reject(new Error('database down'));
+    await manager.touch(sessionId);
     manager.recordCommand(sessionId, 'ls');
     await settle();
-    const stored = (await repos.sessions.all()).find((s) => s.sessionId === sessionId);
-    expect(stored.history.map((h) => h.command)).toEqual(['ls']);
+    expect(await manager.getSession(sessionId)).toBeTruthy();
     await manager.shutdown();
   });
 
-  test('a failing database write never breaks the lab', async () => {
+  test('if the session cannot be recorded the start fails and no sandbox is left running', async () => {
     const { repos } = await spyRepos();
     repos.sessions.upsert = () => Promise.reject(new Error('database down'));
-    const manager = createManager({ engine: fakeEngine(), pool: { enabled: false } });
-    const { sessionId } = await manager.createSession('u1', 'linux-basics');
-    manager.touch(sessionId);
-    await settle();
-    expect(manager.getSession(sessionId)).toBeTruthy();
+    const engine = fakeEngine();
+    const manager = createManager({ engine, pool: { enabled: false } });
+    await expect(manager.createSession('u1', 'linux-basics')).rejects.toThrow('database down');
+    expect(engine.alive.size).toBe(0);
     await manager.shutdown();
   });
 
-  test('idle reaping uses the in-memory timestamp, not the throttled stored one', async () => {
+  test('idle reaping reads the registry, so any instance can do it', async () => {
     await spyRepos();
-    const manager = createManager({ engine: fakeEngine(), pool: { enabled: false }, limits: { maxIdleMs: 50 } });
-    const { sessionId } = await manager.createSession('u1', 'linux-basics');
-    manager.touch(sessionId);
-    expect(manager.getSession(sessionId)).toBeTruthy();
-    await manager.shutdown();
+    const engine = fakeEngine();
+    const a = createManager({ engine, pool: { enabled: false }, limits: { maxIdleMs: 50 } });
+    const b = createManager({ engine, pool: { enabled: false }, limits: { maxIdleMs: 50 } });
+    const { sessionId } = await a.createSession('u1', 'linux-basics');
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(await b.sweep()).toEqual([{ sessionId, reason: 'idle' }]);
+    expect(await a.getSession(sessionId)).toBeNull();
   });
 });

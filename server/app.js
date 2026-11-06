@@ -84,7 +84,7 @@ function createApp() {
     res.status(ready ? 200 : 503).json({
       status: ready ? (checks.aiHub ? 'ready' : 'degraded') : 'not_ready',
       checks,
-      sandbox: getManager().stats(),
+      sandbox: await getManager().stats(),
     });
   });
 

@@ -5,6 +5,15 @@ const { createMemoryRepos, setRepos } = require('../repositories');
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
+// The session registry lives in the repositories and every session belongs to a stored user.
+let repos;
+beforeEach(async () => {
+  repos = setRepos(createMemoryRepos());
+  for (const id of ['user-1', 'user-2', 'user-3', 'user-restored']) {
+    await repos.users.create({ id, name: id, guest: true, createdAt: new Date().toISOString() });
+  }
+});
+
 function managerWith(engine, { limits, pool = { enabled: false } } = {}) {
   return createManager({ engine, limits, pool });
 }
@@ -16,13 +25,13 @@ describe('pool claims', () => {
     const engine = fakeEngine();
     const manager = managerWith(engine, { pool: { enabled: true, size: 2 } });
     await manager.init();
-    expect(manager.stats().pool.available).toBe(2);
+    expect((await manager.stats()).pool.available).toBe(2);
 
     const session = await manager.createSession('user-1', 'linux-basics');
 
     expect(session.fromPool).toBe(true);
-    expect(manager.getSession(session.sessionId)).toMatchObject({ userId: 'user-1', labId: 'linux-basics' });
-    expect(manager.isOwner(session.sessionId, 'user-1')).toBe(true);
+    expect(await manager.getSession(session.sessionId)).toMatchObject({ userId: 'user-1', labId: 'linux-basics' });
+    expect(await manager.isOwner(session.sessionId, 'user-1')).toBe(true);
     await expect(manager.exec(session.sessionId, 'pwd')).resolves.toMatchObject({ exitCode: 0 });
     await expect(manager.attach(session.sessionId)).resolves.not.toBeNull();
   });
@@ -32,7 +41,7 @@ describe('pool claims', () => {
     const manager = managerWith(engine, { pool: { enabled: true, size: 2 } });
     await manager.init();
     await manager.createSession('user-1');
-    await waitFor(() => manager.stats().pool.available === 2);
+    await waitFor(async () => (await manager.stats()).pool.available === 2);
     expect(engine.created).toHaveLength(3);
   });
 
@@ -41,11 +50,11 @@ describe('pool claims', () => {
     const manager = managerWith(engine, { pool: { enabled: true, size: 3 } });
     await manager.init();
 
-    expect(manager.listSessions()).toEqual([]);
-    expect(manager.stats().activeSessions).toBe(0);
+    expect(await manager.listSessions()).toEqual([]);
+    expect((await manager.stats()).activeSessions).toBe(0);
     expect(await manager.sweep(Date.now() + 365 * 24 * 3600 * 1000)).toEqual([]);
     expect(engine.destroyed).toEqual([]);
-    expect(manager.stats().pool.available).toBe(3);
+    expect((await manager.stats()).pool.available).toBe(3);
   });
 
   test('a standby sandbox that died while waiting is discarded, not handed out', async () => {
@@ -66,7 +75,7 @@ describe('pool claims', () => {
     const manager = managerWith(fakeEngine());
     const session = await manager.createSession('user-1');
     expect(session.fromPool).toBe(false);
-    expect(manager.stats().pool).toMatchObject({ enabled: false, available: 0 });
+    expect((await manager.stats()).pool).toMatchObject({ enabled: false, available: 0 });
   });
 
   test('pre-warming stops quietly when the engine is unavailable', async () => {
@@ -118,7 +127,7 @@ describe('limits', () => {
     const manager = managerWith(fakeEngine(), { limits: { maxPerUser: 2 } });
     const results = await Promise.allSettled(Array.from({ length: 6 }, () => manager.createSession('user-1')));
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
-    expect(manager.listSessions()).toHaveLength(2);
+    expect(await manager.listSessions()).toHaveLength(2);
   });
 
   test('returns 503 when the host is full', async () => {
@@ -142,8 +151,8 @@ describe('session lifecycle', () => {
   test('ownership is per user', async () => {
     const manager = managerWith(fakeEngine());
     const session = await manager.createSession('user-1');
-    expect(manager.isOwner(session.sessionId, 'user-2')).toBe(false);
-    expect(manager.isOwner('no-such-session', 'user-1')).toBe(false);
+    expect(await manager.isOwner(session.sessionId, 'user-2')).toBe(false);
+    expect(await manager.isOwner('no-such-session', 'user-1')).toBe(false);
   });
 
   test('destroy removes the session, destroys the sandbox and notifies listeners', async () => {
@@ -155,7 +164,7 @@ describe('session lifecycle', () => {
 
     expect(await manager.destroySession(session.sessionId, 'stopped')).toBe(true);
     expect(await manager.destroySession(session.sessionId)).toBe(false);
-    expect(manager.getSession(session.sessionId)).toBeNull();
+    expect(await manager.getSession(session.sessionId)).toBeNull();
     expect(engine.alive.size).toBe(0);
     expect(reasons).toEqual(['stopped']);
     await expect(manager.exec(session.sessionId, 'pwd')).rejects.toMatchObject({ statusCode: 404 });
@@ -180,21 +189,21 @@ describe('session lifecycle', () => {
     engine.exit(engine.created[0]);
     await settle();
 
-    expect(manager.getSession(session.sessionId)).toBeNull();
+    expect(await manager.getSession(session.sessionId)).toBeNull();
     expect(reasons).toEqual(['exited']);
   });
 
   test('exec with touch: false leaves the idle timer alone; a normal exec resets it', async () => {
     const manager = managerWith(fakeEngine());
     const session = await manager.createSession('user-1');
-    const startedAt = manager.getSession(session.sessionId).lastActiveAt;
+    const startedAt = (await manager.getSession(session.sessionId)).lastActiveAt;
 
     jest.spyOn(Date, 'now').mockReturnValue(startedAt + 60000);
     try {
       await manager.exec(session.sessionId, 'ls', { touch: false });
-      expect(manager.getSession(session.sessionId).lastActiveAt).toBe(startedAt);
+      expect((await manager.getSession(session.sessionId)).lastActiveAt).toBe(startedAt);
       await manager.exec(session.sessionId, 'ls');
-      expect(manager.getSession(session.sessionId).lastActiveAt).toBe(startedAt + 60000);
+      expect((await manager.getSession(session.sessionId)).lastActiveAt).toBe(startedAt + 60000);
     } finally {
       Date.now.mockRestore();
     }
@@ -219,11 +228,11 @@ describe('session lifecycle', () => {
     const linux = await manager.createSession('user-1', 'linux-basics');
     await manager.createSession('user-1', 'git-basics');
 
-    expect(manager.findSession('user-1', 'linux-basics').sessionId).toBe(linux.sessionId);
-    expect(manager.findSession('user-2', 'linux-basics')).toBeNull();
-    expect(manager.findSession('user-1', 'docker-basics')).toBeNull();
+    expect((await manager.findSession('user-1', 'linux-basics')).sessionId).toBe(linux.sessionId);
+    expect(await manager.findSession('user-2', 'linux-basics')).toBeNull();
+    expect(await manager.findSession('user-1', 'docker-basics')).toBeNull();
     await manager.destroySession(linux.sessionId);
-    expect(manager.findSession('user-1', 'linux-basics')).toBeNull();
+    expect(await manager.findSession('user-1', 'linux-basics')).toBeNull();
   });
 
   test('sweep reaps sessions past max age or idle time and leaves fresh ones', async () => {
@@ -240,19 +249,19 @@ describe('session lifecycle', () => {
     Date.now.mockRestore();
 
     expect(await manager.sweep(now + 16 * 60000)).toEqual([{ sessionId: idle.sessionId, reason: 'idle' }]);
-    expect(manager.getSession(busy.sessionId)).not.toBeNull();
+    expect(await manager.getSession(busy.sessionId)).not.toBeNull();
 
     // Activity does not extend a session past its maximum age.
     expect(await manager.sweep(now + 31 * 60000)).toEqual([{ sessionId: busy.sessionId, reason: 'max_age' }]);
-    expect(manager.listSessions()).toEqual([]);
+    expect(await manager.listSessions()).toEqual([]);
   });
 
   test('command history is kept per session and capped', async () => {
     const manager = managerWith(fakeEngine(), { limits: { historyLimit: 3 } });
     const session = await manager.createSession('user-1');
     for (const command of ['a', 'b', 'c', 'd']) manager.recordCommand(session.sessionId, command);
-    expect(manager.getHistory(session.sessionId).map((h) => h.command)).toEqual(['b', 'c', 'd']);
-    expect(manager.getHistory('no-such-session')).toEqual([]);
+    expect((await manager.getHistory(session.sessionId)).map((h) => h.command)).toEqual(['b', 'c', 'd']);
+    expect(await manager.getHistory('no-such-session')).toEqual([]);
   });
 
   test('reset clears history and resets the sandbox', async () => {
@@ -261,7 +270,7 @@ describe('session lifecycle', () => {
     const session = await manager.createSession('user-1');
     manager.recordCommand(session.sessionId, 'ls');
     await manager.reset(session.sessionId);
-    expect(manager.getHistory(session.sessionId)).toEqual([]);
+    expect(await manager.getHistory(session.sessionId)).toEqual([]);
     expect(engine.resets).toEqual([engine.created[0]]);
   });
 
@@ -278,26 +287,24 @@ describe('session lifecycle', () => {
     const manager = managerWith(engine, { pool: { enabled: true, size: 2 } });
     await manager.init();
     await manager.createSession('user-1');
-    await waitFor(() => manager.stats().pool.available === 2);
+    await waitFor(async () => (await manager.stats()).pool.available === 2);
     await manager.shutdown();
     expect(engine.alive.size).toBe(0);
-    expect(manager.listSessions()).toEqual([]);
+    expect(await manager.listSessions()).toEqual([]);
   });
 
   test('stats report claim latency by source without exposing session ids', async () => {
     const manager = managerWith(fakeEngine(), { pool: { enabled: true, size: 1 } });
     await manager.init();
     const session = await manager.createSession('user-1');
-    const stats = manager.stats();
+    const stats = await manager.stats();
     expect(stats.claimLatencyMs.pool.samples).toBe(1);
     expect(stats.claimLatencyMs.pool.p50).toEqual(expect.any(Number));
     expect(stats.claimLatencyMs.cold).toEqual({ samples: 0, p50: null, p95: null });
     expect(JSON.stringify(stats)).not.toContain(session.sessionId);
   });
 
-  test('init restores active unexpired sessions from the store', async () => {
-    const repos = setRepos(createMemoryRepos());
-    await repos.users.create({ id: 'user-restored', name: 'R', guest: true, createdAt: new Date().toISOString() });
+  test('init keeps active unexpired sessions that are in the registry', async () => {
     const engine = fakeEngine();
     const manager1 = managerWith(engine);
     await manager1.init();
@@ -308,11 +315,48 @@ describe('session lifecycle', () => {
     const manager2 = managerWith(engine);
     await manager2.init();
 
-    expect(manager2.getSession(session.sessionId)).toMatchObject({
+    expect(await manager2.getSession(session.sessionId)).toMatchObject({
       sessionId: session.sessionId,
       userId: 'user-restored',
       labId: 'k8s',
     });
-    expect(manager2.isOwner(session.sessionId, 'user-restored')).toBe(true);
+    expect(await manager2.isOwner(session.sessionId, 'user-restored')).toBe(true);
+  });
+
+  test('a second instance sharing the registry can answer for, use and end a session it did not start', async () => {
+    const engine = fakeEngine();
+    const a = managerWith(engine);
+    const b = managerWith(engine);
+    const session = await a.createSession('user-1', 'linux-basics');
+
+    expect(await b.isOwner(session.sessionId, 'user-1')).toBe(true);
+    expect(await b.isOwner(session.sessionId, 'user-2')).toBe(false);
+    expect(await b.getSession(session.sessionId)).toMatchObject({ userId: 'user-1', labId: 'linux-basics', nodeId: 'local' });
+    expect((await b.findSession('user-1', 'linux-basics')).sessionId).toBe(session.sessionId);
+    expect((await b.stats()).activeSessions).toBe(1);
+
+    // limits count sessions started anywhere
+    const small = managerWith(engine, { limits: { maxPerUser: 1 } });
+    await expect(small.createSession('user-1')).rejects.toMatchObject({ statusCode: 429 });
+
+    b.recordCommand(session.sessionId, 'ls');
+    expect((await a.getHistory(session.sessionId)).map((h) => h.command)).toEqual(['ls']);
+    expect((await b.exec(session.sessionId, 'pwd')).exitCode).toBe(0);
+
+    expect(await b.destroySession(session.sessionId, 'stopped')).toBe(true);
+    expect(await a.getSession(session.sessionId)).toBeNull();
+    expect(await a.destroySession(session.sessionId)).toBe(false); // already ended: only one instance wins
+  });
+
+  test('a session on another node is visible but not operable from here', async () => {
+    const engine = fakeEngine();
+    const away = createManager({ engine, pool: { enabled: false }, nodeId: 'node-b' });
+    const here = createManager({ engine, pool: { enabled: false }, nodeId: 'node-a' });
+    const session = await away.createSession('user-1');
+    expect(await here.isOwner(session.sessionId, 'user-1')).toBe(true);
+    await expect(here.exec(session.sessionId, 'pwd')).rejects.toMatchObject({ statusCode: 503 });
+    await expect(here.destroySession(session.sessionId)).rejects.toMatchObject({ statusCode: 503 });
+    expect(await here.attach(session.sessionId)).toBeNull();
+    expect(await here.sweep(Date.now() + 365 * 24 * 3600 * 1000)).toEqual([]); // not its to reap
   });
 });
