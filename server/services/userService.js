@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const { getRepos } = require('../repositories');
 const { forgetIdentity } = require('../middleware/auth');
+const labIdentity = require('../lib/labIdentity');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // A guest who has not been seen for this long (and has no account) is removed with their progress.
@@ -47,9 +48,18 @@ async function ensureSupabaseUser(identity) {
 
   let user = await repos.users.getById(identity.id);
 
+  // The token cannot be trusted to say the address is confirmed (see labIdentity.emailConfirmed), so unless the
+  // stored record already says so, Supabase is asked once; the answer is stored, so later requests do not ask.
+  let verified = Boolean(identity.emailVerified);
+  // (A Lab ID's made-up address has no inbox and no stored email, so there is nothing to confirm.)
+  if (!verified && email && !identity.guest && !email.endsWith(`@${labIdentity.LAB_EMAIL_DOMAIN}`)) {
+    if (user && user.emailVerified && user.email === email) verified = true;
+    else if (labIdentity.configured()) verified = await labIdentity.emailConfirmed(identity.subject || identity.id);
+  }
+
   // The same confirmed address already has an account here (its Supabase user was re-created, say): same person,
   // so the new Supabase identity is linked to the existing account instead of starting an empty one.
-  if (!user && identity.emailVerified && email) {
+  if (!user && verified && email) {
     const existing = await repos.users.getByEmail(email);
     if (existing && !existing.guest) {
       await repos.identities.link({ provider: 'supabase', subject: identity.id, userId: existing.id });
@@ -64,15 +74,15 @@ async function ensureSupabaseUser(identity) {
       name: identity.name,
       email,
       guest: Boolean(identity.guest),
-      emailVerified: Boolean(identity.emailVerified),
+      emailVerified: verified,
       createdAt: new Date().toISOString(),
     });
   } else if (user.guest && !identity.guest && email && !linked) {
     // A guest (anonymous Supabase user) who has added and confirmed an email: same id, so progress carries over.
     user = await repos.users.update(user.id, {
-      guest: false, name: identity.name, email, emailVerified: Boolean(identity.emailVerified), registeredAt: new Date().toISOString(),
+      guest: false, name: identity.name, email, emailVerified: verified, registeredAt: new Date().toISOString(),
     });
-  } else if (!user.emailVerified && identity.emailVerified && email && user.email === email) {
+  } else if (!user.emailVerified && verified && email && user.email === email) {
     user = await repos.users.update(user.id, { emailVerified: true });
   }
   await claimInvites(user);

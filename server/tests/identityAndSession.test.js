@@ -15,6 +15,7 @@ const config = require('../config');
 const { createApp } = require('../app');
 const { getRepos } = require('../repositories');
 const { fakeEngine, install } = require('./helpers');
+const { fakeSupabaseAdmin } = require('./fakeSupabaseAdmin');
 
 let app;
 let ctx;
@@ -148,6 +149,59 @@ describe('refresh-token cookie', () => {
       expect(res.headers['set-cookie'][0]).toMatch(/; Secure/);
     } finally {
       config.authCookie.secure = savedSecure;
+    }
+  });
+});
+
+describe('is the email confirmed? (the token does not say)', () => {
+  // A real Supabase access token has the email but not `email_confirmed_at`, so the gateway asks Supabase itself.
+  let supa;
+  beforeEach(() => { supa = fakeSupabaseAdmin(); });
+  afterEach(() => supa.restore());
+  const token = (name, sub, who) => { mockTokens[name] = supabaseUser(sub, { emailVerified: false, ...who }); return bearer(name); };
+
+  test('a confirmed address is recorded as verified, and the answer is kept so Supabase is not asked again', async () => {
+    supa.setEmailConfirmed('sb-yes', true);
+    const first = await request(app).post('/api/auth/session').set(token('t1', 'sb-yes'));
+    expect(first.body.user).toMatchObject({ email: 'ada@example.com', emailVerified: true });
+    const asked = supa.calls.length;
+    expect(asked).toBe(1);
+    await request(app).post('/api/auth/session').set(bearer('t1'));
+    expect(supa.calls.length).toBe(asked); // stored: no second question
+  });
+
+  test('an address Supabase has not confirmed stays unverified (and is asked again next time)', async () => {
+    supa.setEmailConfirmed('sb-no', false);
+    const res = await request(app).post('/api/auth/session').set(token('t2', 'sb-no'));
+    expect(res.body.user.emailVerified).toBe(false);
+    await request(app).post('/api/auth/session').set(bearer('t2'));
+    expect(supa.calls.length).toBe(2);
+  });
+
+  test('when Supabase cannot be reached the address is treated as unconfirmed, never as confirmed', async () => {
+    supa.failWith(500);
+    const res = await request(app).post('/api/auth/session').set(token('t3', 'sb-down'));
+    expect(res.status).toBe(200);
+    expect(res.body.user.emailVerified).toBe(false);
+  });
+
+  test('guests and Lab IDs are never looked up', async () => {
+    await request(app).post('/api/auth/session').set(token('g', 'sb-guest', { email: null, guest: true }));
+    await request(app).post('/api/auth/session').set(token('lab', 'sb-lab', { email: 'srm-0001@lab.opsacademy.invalid' }));
+    expect(supa.calls).toHaveLength(0);
+  });
+
+  test('a confirmed address makes the platform admin from PLATFORM_ADMIN_EMAILS work with a real-shaped token', async () => {
+    supa.setEmailConfirmed('sb-admin', true);
+    config.platformAdminEmails = ['ada@example.com'];
+    try {
+      const res = await request(app).get('/api/admin/overview').set(token('adm', 'sb-admin'));
+      expect(res.status).toBe(403); // not yet: the record does not exist until /session has run
+      await request(app).post('/api/auth/session').set(bearer('adm'));
+      require('../middleware/rbac').forgetAccess('sb-admin'); // roles are cached for a few seconds
+      expect((await request(app).get('/api/admin/overview').set(bearer('adm'))).status).toBe(200);
+    } finally {
+      config.platformAdminEmails = [];
     }
   });
 });

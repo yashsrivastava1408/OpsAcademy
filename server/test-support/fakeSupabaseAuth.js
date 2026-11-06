@@ -8,7 +8,7 @@
  *   GET  /auth/v1/user, PUT /auth/v1/user      the signed-in user; adding an email and password to a guest
  *   POST /auth/v1/logout, /recover, /resend
  *   GET  /auth/v1/.well-known/jwks.json        the key the gateway verifies access tokens with (ES256)
- *   POST/PUT/DELETE /auth/v1/admin/users[/:id] what the gateway calls to make, reset and ban Lab ID accounts
+ *   GET/POST/PUT/DELETE /auth/v1/admin/users[/:id] what the gateway calls to read a user, and to make, reset and ban Lab ID accounts
  *
  *   npm run auth                                       run it by hand (port 54321, or `node test-support/fakeSupabaseAuth.js <port>`)
  *   HOST=0.0.0.0                                       listen on every interface (the Docker development stack does)
@@ -37,7 +37,9 @@ function startFakeSupabase({ port = 0, host = '127.0.0.1' } = {}) {
   function session(user) {
     const accessToken = jwt.sign({
       iss: issuer(), aud: 'authenticated', sub: user.id, role: 'authenticated', is_anonymous: user.anonymous,
-      email: user.email || undefined, email_confirmed_at: user.email ? '2026-01-01T00:00:00Z' : undefined, user_metadata: user.metadata,
+      // Like the real service: the access token carries the email but NOT email_confirmed_at. Whether the address is
+      // confirmed is only in the user record (GET /admin/users/:id), which is what the gateway asks.
+      email: user.email || undefined, user_metadata: user.metadata,
     }, privateKey, { algorithm: 'ES256', keyid: KID, expiresIn: EXPIRES_IN });
     const refreshToken = crypto.randomBytes(16).toString('hex');
     refreshTokens.set(refreshToken, user.id);
@@ -126,6 +128,7 @@ function startFakeSupabase({ port = 0, host = '127.0.0.1' } = {}) {
       }
       const user = users.get(admin[1]);
       if (!user) return fail(404, 'user_not_found', 'User not found');
+      if (method === 'GET') return { status: 200, body: publicUser(user) };
       if (method === 'PUT') {
         if (body.password) user.password = body.password;
         if (body.ban_duration) user.banned = body.ban_duration !== 'none';
