@@ -39,11 +39,13 @@ function normaliseUrl(raw, defaultPort) {
 const legacyAuth = process.env.LEGACY_AUTH !== 'off';
 
 const jwtSecret = process.env.JWT_SECRET || DEV_JWT_SECRET;
-if (isProd && jwtSecret === DEV_JWT_SECRET && (legacyAuth || !process.env.CERT_SECRET)) {
+// A lab node agent signs nothing and holds no secrets of the gateway's, so it needs neither.
+const isLabNode = process.env.LAB_NODE === 'on';
+if (isProd && !isLabNode && jwtSecret === DEV_JWT_SECRET && (legacyAuth || !process.env.CERT_SECRET)) {
   // Signing tokens and certificates with a public default would let anyone forge them.
   throw new Error(legacyAuth ? 'JWT_SECRET must be set when NODE_ENV=production' : 'CERT_SECRET must be set when NODE_ENV=production');
 }
-if (isProd && !legacyAuth && !(process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY)) {
+if (isProd && !isLabNode && !legacyAuth && !(process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY)) {
   throw new Error('LEGACY_AUTH=off needs SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (nothing else can sign users in)');
 }
 
