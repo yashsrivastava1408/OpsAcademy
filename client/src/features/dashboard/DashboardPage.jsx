@@ -9,6 +9,7 @@ import {
   BarChart3,
   BookOpen,
   Sparkles,
+  Compass,
   Award,
   Flame,
   Trophy,
@@ -194,6 +195,18 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* ── Where else to go (these used to live in the top bar) ── */}
+        <nav className="dash-explore animate-fade-in" aria-label="Explore">
+          <Link to="/roadmap" className="dash-explore-link">
+            <Compass size={18} />
+            <span><strong>DevOps Roadmap</strong><small>The 13-week pathway, stage by stage</small></span>
+          </Link>
+          <Link to="/casestudies" className="dash-explore-link">
+            <Sparkles size={18} />
+            <span><strong>Case Studies</strong><small>Real production incidents and post-mortems</small></span>
+          </Link>
+        </nav>
 
         {/* ── Lab of the day ─────────────────────────────── */}
         {daily && (

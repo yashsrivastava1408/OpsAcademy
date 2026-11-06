@@ -620,3 +620,16 @@
     align-items: flex-start;
   }
 }
+
+/* Shortcuts to the pages that no longer have a place in the top bar. */
+.dash-explore { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 0 0 24px; }
+.dash-explore-link {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px; border-radius: 16px;
+  background: #ffffff; border: 1.5px solid var(--border-light); color: var(--primary-blue);
+  text-decoration: none; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.dash-explore-link:hover { transform: translateY(-2px); border-color: var(--primary-blue); box-shadow: 0 10px 24px -8px rgba(37, 99, 235, 0.18); }
+.dash-explore-link span { display: flex; flex-direction: column; gap: 2px; }
+.dash-explore-link strong { color: #0f172a; font-size: 0.95rem; }
+.dash-explore-link small { color: var(--text-slate); font-size: 0.8rem; }

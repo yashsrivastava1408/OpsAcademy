@@ -10,7 +10,7 @@ import {
   Loader,
   MessageSquare,
   Sparkles,
-  Terminal,
+  FlaskConical,
   XCircle,
 } from 'lucide-react';
 import { unitApi, progressApi, interviewApi, errorMessage } from '../../shared/services/api';
@@ -285,7 +285,7 @@ export default function PreparePage() {
               <BookOpen size={14} /> Theory
             </Link>
             <Link to={`/lab/${unitId}`} className="btn btn-primary btn-sm">
-              <Terminal size={14} /> Practice Lab
+              <FlaskConical size={14} /> Open lab
             </Link>
           </div>
         </div>

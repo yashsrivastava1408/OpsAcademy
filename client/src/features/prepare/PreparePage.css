@@ -113,6 +113,10 @@
 }
 
 .deck-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   font-size: 0.82rem;
   font-weight: 700;
   color: #2563EB;

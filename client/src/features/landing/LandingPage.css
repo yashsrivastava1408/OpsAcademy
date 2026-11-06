@@ -293,7 +293,7 @@
 }
 
 .hero-btn-single {
-  padding: 15px 36px;
+  padding: 15px 32px;
   font-size: 1.05rem;
   letter-spacing: -0.01em;
 }
@@ -1118,6 +1118,8 @@
 }
 
 .lab-terminal-screen {
+  /* The screen is dark: every line inherits a light colour, so output never falls back to the page's dark text. */
+  color: #cbd5e1;
   padding: 18px 22px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   font-size: 0.82rem;
@@ -1147,6 +1149,7 @@
 
 .code-output {
   margin-left: 2px;
+  color: #94a3b8;
 }
 
 /* Step Verified Banner */
@@ -2477,3 +2480,12 @@
 .footer-bottom-link:hover {
   color: #94a3b8;
 }
+
+/* The closing banner offers the same two ways in as the hero. */
+.ready-banner-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.ready-banner-btn.is-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+}
+.ready-banner-btn.is-secondary:hover { background: rgba(255, 255, 255, 0.2); }
