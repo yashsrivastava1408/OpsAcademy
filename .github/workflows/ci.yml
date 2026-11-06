@@ -370,7 +370,7 @@ jobs:
         run: |
           (cd server && node test-support/fakeSupabaseAuth.js 54321 > ../auth.log 2>&1 &)
           (cd ai-hub && PORT=5005 gunicorn --bind 127.0.0.1:5005 --workers 1 --threads 8 --keep-alive 15 app:app > ../hub.log 2>&1 &)
-          (cd server && SANDBOX_MODE=docker PORT=4000 AI_HUB_URL=http://127.0.0.1:5005 SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_PUBLISHABLE_KEY=ci node server.js > ../gateway.log 2>&1 &)
+          (cd server && SANDBOX_MODE=docker PORT=4000 AI_HUB_URL=http://127.0.0.1:5005 SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_PUBLISHABLE_KEY=ci SUPABASE_SECRET_KEY=ci node server.js > ../gateway.log 2>&1 &)
           for _ in $(seq 1 30); do
             curl -sf http://127.0.0.1:4000/api/ready | grep -q '"status":"ready"' && exit 0
             sleep 2

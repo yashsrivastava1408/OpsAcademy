@@ -1,4 +1,7 @@
 /**
+ * The gateway's server-side calls to Supabase Auth (they use the secret key, which never leaves the server):
+ * making, resetting and banning Lab ID accounts, and asking whether someone's email address is confirmed.
+ *
  * Lab IDs on Supabase Auth (ADR 0003: one identity system).
  *
  * A Lab ID has no email, but Supabase signs people in by email. So each Lab ID gets a made-up address
@@ -39,9 +42,23 @@ async function createUser({ username, name, password }) {
   return made.id;
 }
 
+/**
+ * Has Supabase confirmed this user's email address? A Supabase access token does not say (it has no
+ * `email_confirmed_at`, and `user_metadata` can be edited by the user), so this asks Supabase directly.
+ * @returns {Promise<boolean>} false when it cannot tell
+ */
+async function emailConfirmed(subject) {
+  try {
+    const user = await call('GET', `/users/${encodeURIComponent(subject)}`);
+    return Boolean(user && user.email_confirmed_at);
+  } catch {
+    return false;
+  }
+}
+
 const setPassword = (subject, password) => call('PUT', `/users/${encodeURIComponent(subject)}`, { password });
 /** A banned user cannot sign in or refresh a session; "none" lifts it. */
 const setBanned = (subject, banned) => call('PUT', `/users/${encodeURIComponent(subject)}`, { ban_duration: banned ? '876000h' : 'none' });
 const deleteUser = (subject) => call('DELETE', `/users/${encodeURIComponent(subject)}`).catch(() => {});
 
-module.exports = { LAB_EMAIL_DOMAIN, labEmail, configured, createUser, setPassword, setBanned, deleteUser, LabIdentityError };
+module.exports = { LAB_EMAIL_DOMAIN, labEmail, configured, emailConfirmed, createUser, setPassword, setBanned, deleteUser, LabIdentityError };
