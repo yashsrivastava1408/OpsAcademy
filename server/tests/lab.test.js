@@ -12,6 +12,7 @@ const slotService = require('../services/slotService');
 const { dropCached } = require('../routes/labPortalRoutes');
 
 const MIN = 60000;
+const DAY_MS = 24 * 60 * MIN;
 let app;
 let ctx;
 
@@ -498,7 +499,8 @@ describe('capacity plan, analytics and events', () => {
     const boss = await admin();
     const { college: a } = await college('Alpha', 'aa');
     const { college: b } = await college('Beta', 'bb');
-    const base = Date.now() + 2 * 24 * 60 * MIN;
+    // 04:00 UTC two days out: all three slots fall on one calendar day in UTC and in India, whatever time the test runs
+    const base = Math.floor(Date.now() / DAY_MS) * DAY_MS + 2 * DAY_MS + 4 * 60 * MIN;
     await getRepos().slots.createSlots([
       { collegeId: a.id, startsAt: base, endsAt: base + 90 * MIN, capacity: 60 },
       { collegeId: b.id, startsAt: base + 30 * MIN, endsAt: base + 120 * MIN, capacity: 50 }, // overlaps the first
@@ -534,5 +536,53 @@ describe('capacity plan, analytics and events', () => {
     expect(step('connect')).toMatchObject({ ok: 0, failed: 1, dropOffPercent: 100 });
     expect(labService.cleanProps({ step: 'a', evil: 1, reason: 'y'.repeat(200) }).reason).toHaveLength(64);
     expect(labService.cleanProps({ step: 'a', evil: 1 })).toEqual({ step: 'a' });
+  });
+});
+
+describe('Lab IDs on Supabase Auth', () => {
+  const labIdentity = require('../lib/labIdentity');
+  const calls = [];
+  const realFetch = global.fetch;
+  let legacy;
+  let url;
+  let secret;
+
+  beforeEach(() => {
+    legacy = config.legacyAuth; url = config.supabaseUrl; secret = config.supabaseSecretKey;
+    config.legacyAuth = false; config.supabaseUrl = 'https://x.supabase.test'; config.supabaseSecretKey = 'secret';
+    calls.length = 0;
+    global.fetch = async (u, init) => {
+      calls.push({ u, method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      return { ok: true, status: 200, json: async () => ({ id: 'sub-1' }) };
+    };
+  });
+  afterEach(() => { global.fetch = realFetch; config.legacyAuth = legacy; config.supabaseUrl = url; config.supabaseSecretKey = secret; });
+
+  test('the address matches what the browser builds', () => {
+    expect(labIdentity.labEmail(' SRM-CSE-0007 ')).toBe('srm-cse-0007@lab.opsacademy.invalid');
+  });
+
+  test('generate creates the Supabase user, keeps no password hash and links the identity', async () => {
+    const [made] = await labAccountService.generate({ prefix: 'demo', count: 1 });
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].body).toMatchObject({ email: 'demo-0001@lab.opsacademy.invalid', password: made.password, email_confirm: true });
+    const stored = await getRepos().users.getById(made.id);
+    expect(stored.password).toBeFalsy();
+    expect(await getRepos().identities.getSubject('supabase', made.id)).toBe('sub-1');
+  });
+
+  test('reset and disable go to Supabase', async () => {
+    const [made] = await labAccountService.generate({ prefix: 'demo', count: 1 });
+    calls.length = 0;
+    const reset = await labAccountService.resetPassword(made.id);
+    expect(calls[0]).toMatchObject({ method: 'PUT', body: { password: reset.password } });
+    await labAccountService.setDisabled(made.id, true);
+    expect(calls[1].body).toEqual({ ban_duration: '876000h' });
+  });
+
+  test('a failed Supabase call leaves no half-made account', async () => {
+    global.fetch = async () => ({ ok: false, status: 500, json: async () => ({}) });
+    await expect(labAccountService.generate({ prefix: 'demo', count: 1 })).rejects.toThrow();
+    expect(await getRepos().users.getByUsername('demo-0001')).toBeNull();
   });
 });

@@ -5,6 +5,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { getRepos } = require('../repositories');
+const labIdentity = require('../lib/labIdentity');
 
 class LabAccountError extends Error {
   constructor(message, statusCode = 400) {
@@ -57,14 +58,19 @@ async function generate({ prefix, count, names }) {
   const made = [];
   for (let i = 0; i < total; i += 1) {
     const password = generatePassword();
-    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    // Supabase keeps the password; only the legacy sign-in needs a hash of its own.
+    const viaSupabase = labIdentity.enabled();
+    const hash = viaSupabase ? null : await bcrypt.hash(password, BCRYPT_ROUNDS);
     for (let attempt = 0; ; attempt += 1) {
       const username = `${clean}-${String(next).padStart(4, '0')}`;
       next += 1;
+      if (viaSupabase && await repos.users.getByUsername(username)) continue; // taken: try the next number
+      const name = list ? list[i] : username;
+      const subject = viaSupabase ? await labIdentity.createUser({ username, name, password }) : null;
       try {
         const user = await repos.users.create({
           id: `u_${crypto.randomBytes(9).toString('base64url')}`,
-          name: list ? list[i] : username,
+          name,
           username,
           password: hash,
           guest: false,
@@ -73,9 +79,11 @@ async function generate({ prefix, count, names }) {
           createdAt: new Date().toISOString(),
           registeredAt: new Date().toISOString(),
         });
+        if (subject) await repos.identities.link({ provider: 'supabase', subject, userId: user.id });
         made.push({ id: user.id, username, name: user.name, password });
         break;
       } catch (err) {
+        if (subject) await labIdentity.deleteUser(subject);
         if (err.code !== 'username_taken' || attempt > 5) throw err; // another admin request took that number: try the next
       }
     }
@@ -99,7 +107,13 @@ async function labAccountOrThrow(id) {
 async function resetPassword(id) {
   const user = await labAccountOrThrow(id);
   const password = generatePassword();
-  await getRepos().users.update(user.id, { password: await bcrypt.hash(password, BCRYPT_ROUNDS), passwordChangedAt: Date.now() });
+  const subject = labIdentity.enabled() ? await getRepos().identities.getSubject('supabase', user.id) : null;
+  if (subject) {
+    await labIdentity.setPassword(subject, password);
+    await getRepos().users.update(user.id, { passwordChangedAt: Date.now() });
+  } else {
+    await getRepos().users.update(user.id, { password: await bcrypt.hash(password, BCRYPT_ROUNDS), passwordChangedAt: Date.now() });
+  }
   return { id: user.id, username: user.username, name: user.name, password };
 }
 
@@ -108,6 +122,8 @@ async function setDisabled(id, disabled) {
   const user = await labAccountOrThrow(id);
   const patch = { disabled: Boolean(disabled) };
   if (disabled) patch.passwordChangedAt = Date.now();
+  const subject = labIdentity.enabled() ? await getRepos().identities.getSubject('supabase', user.id) : null;
+  if (subject) await labIdentity.setBanned(subject, Boolean(disabled));
   return publicLab(await getRepos().users.update(user.id, patch));
 }
 

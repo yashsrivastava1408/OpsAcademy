@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate, Navigate, Link } from 'react-router-dom';
-import { Loader, LogIn, UserPlus } from 'lucide-react';
+import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom';
+import { Loader, LogIn, UserPlus, FlaskConical } from 'lucide-react';
 import useAuth from '../hooks/useAuth';
 import { authApi, errorMessage } from '../services/api';
 import { isSupabaseMode } from '../lib/authMode';
@@ -15,16 +15,17 @@ import './AuthPage.css';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const { isRegistered, login, register } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { isRegistered, login, loginWithLabId, register } = useAuth();
 
-  const [mode, setMode] = useState('register'); // register | login | forgot
+  const [mode, setMode] = useState(searchParams.get('tab') === 'lab' ? 'lab' : 'register'); // register | login | lab | forgot
   const [resetNotice, setResetNotice] = useState(null);
   const [confirmNotice, setConfirmNotice] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', labId: '', password: '' });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (isRegistered) return <Navigate to="/dashboard" replace />;
+  if (isRegistered) return <Navigate to={mode === 'lab' ? '/lab' : '/dashboard'} replace />;
 
   if (confirmNotice) {
     return (
@@ -61,10 +62,12 @@ export default function AuthPage() {
           setConfirmNotice(form.email);
           return;
         }
+      } else if (mode === 'lab') {
+        await loginWithLabId(form.labId, form.password);
       } else {
         await login(form.email, form.password);
       }
-      navigate('/dashboard');
+      navigate(mode === 'lab' ? '/lab' : '/dashboard');
     } catch (err) {
       setError(errorMessage(err, 'Could not reach the server. Please try again.'));
     } finally {
@@ -79,14 +82,18 @@ export default function AuthPage() {
           <button type="button" className={`auth-tab ${mode === 'register' ? 'active' : ''}`} onClick={() => { setMode('register'); setError(null); }}>
             <UserPlus size={15} /> Create account
           </button>
-          <button type="button" className={`auth-tab ${mode !== 'register' ? 'active' : ''}`} onClick={() => { setMode('login'); setError(null); }}>
+          <button type="button" className={`auth-tab ${mode === 'login' || mode === 'forgot' ? 'active' : ''}`} onClick={() => { setMode('login'); setError(null); }}>
             <LogIn size={15} /> Log in
+          </button>
+          <button type="button" className={`auth-tab ${mode === 'lab' ? 'active' : ''}`} onClick={() => { setMode('lab'); setError(null); }}>
+            <FlaskConical size={15} /> Lab login
           </button>
         </div>
 
         <p className="auth-lead">
           {mode === 'register' && 'Keep your progress across devices and earn certificates in your name. Anything you have done as a guest comes with you.'}
           {mode === 'login' && 'Welcome back. Log in to pick up where you left off.'}
+          {mode === 'lab' && 'Use the Lab ID and password your college or OpsAcademy admin gave you. Labs are only open to Lab IDs.'}
           {mode === 'forgot' && 'Enter the email address of your account and we will send a link to choose a new password.'}
         </p>
 
@@ -97,10 +104,17 @@ export default function AuthPage() {
           </label>
         )}
 
-        <label className="auth-field">
-          <span>Email</span>
-          <input className="input" type="email" value={form.email} onChange={update('email')} autoComplete="email" required />
-        </label>
+        {mode === 'lab' ? (
+          <label className="auth-field">
+            <span>Lab ID</span>
+            <input className="input mono" type="text" value={form.labId} onChange={update('labId')} autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={64} required />
+          </label>
+        ) : (
+          <label className="auth-field">
+            <span>Email</span>
+            <input className="input" type="email" value={form.email} onChange={update('email')} autoComplete="email" required />
+          </label>
+        )}
 
         {mode !== 'forgot' && (
         <label className="auth-field">
@@ -134,7 +148,7 @@ export default function AuthPage() {
           </div>
         )}
 
-        {mode !== 'forgot' && SSO_PROVIDERS.length > 0 && (
+        {(mode === 'register' || mode === 'login') && SSO_PROVIDERS.length > 0 && (
           <div className="auth-sso">
             {SSO_PROVIDERS.map((provider) => (
               <button
@@ -151,7 +165,7 @@ export default function AuthPage() {
         )}
 
         <button type="submit" className="btn btn-primary auth-submit" disabled={submitting}>
-          {submitting ? <Loader size={16} className="spin" /> : mode === 'register' ? 'Create account' : mode === 'login' ? 'Log in' : 'Send reset link'}
+          {submitting ? <Loader size={16} className="spin" /> : mode === 'register' ? 'Create account' : mode === 'login' ? 'Log in' : mode === 'lab' ? 'Enter with Lab ID' : 'Send reset link'}
         </button>
 
         {mode === 'login' && (

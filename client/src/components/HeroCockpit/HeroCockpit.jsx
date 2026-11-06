@@ -12,8 +12,6 @@ import {
   Layers,
   Zap,
   Lock,
-  Activity,
-  Sparkles,
 } from 'lucide-react';
 import { SiKubernetes, SiDocker, SiTerraform } from 'react-icons/si';
 import { FaLinux, FaAws } from 'react-icons/fa6';

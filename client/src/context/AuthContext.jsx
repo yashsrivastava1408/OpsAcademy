@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { AuthContext } from '../hooks/useAuth';
 import { authApi, clearIdentity, getStoredUser, onIdentityChange, setIdentity } from '../services/api';
 import { isSupabaseMode } from '../lib/authMode';
+import { labEmail } from '../lib/labEmail';
 import * as supabaseIdentity from '../services/supabaseIdentity';
 
 export function AuthProvider({ children }) {
@@ -27,6 +28,14 @@ export function AuthProvider({ children }) {
     return res.data.user;
   }, []);
 
+  // A Lab ID signs in like everyone else; with Supabase it is an account under a made-up address.
+  const loginWithLabId = useCallback(async (id, password) => {
+    if (isSupabaseMode) return supabaseIdentity.signIn({ email: labEmail(id), password });
+    const res = await authApi.loginWithLabId(id, password);
+    setIdentity(res.data.token, res.data.user);
+    return res.data.user;
+  }, []);
+
   // Sent with the guest token, so the guest's progress moves to the new account.
   // With Supabase the address must be confirmed first: the result says so ({ needsConfirmation: true }).
   const register = useCallback(async (name, email, password) => {
@@ -43,7 +52,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, ready, isRegistered: Boolean(user && !user.guest), login, register, logout }}>
+    <AuthContext.Provider value={{ user, ready, isRegistered: Boolean(user && !user.guest), login, loginWithLabId, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

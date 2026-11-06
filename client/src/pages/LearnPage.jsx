@@ -153,7 +153,7 @@ function ContentBlock({ block, blockKey, unitId, copiedKey, onCopy }) {
                   </>
                 )}
               </button>
-              <Link to={`/unit/${unitId}/practice`} className="btn btn-secondary btn-sm code-run-btn">
+              <Link to={`/lab/${unitId}`} className="btn btn-secondary btn-sm code-run-btn">
                 <Terminal size={12} /> Run in Shell
               </Link>
             </div>
@@ -374,7 +374,7 @@ export default function LearnPage() {
             <span className="learn-badge">Mode: Learn (Theory)</span>
             <h1>{meta.title}</h1>
           </div>
-          <Link to={`/unit/${unitId}/practice`} className="btn btn-primary btn-sm">
+          <Link to={`/lab/${unitId}`} className="btn btn-primary btn-sm">
             <Terminal size={14} /> Practice Lab
           </Link>
         </div>
@@ -412,7 +412,7 @@ export default function LearnPage() {
               <h3>Ready to test your skills in the shell?</h3>
               <p>Apply what you just learned in a live interactive sandbox terminal.</p>
             </div>
-            <Link to={`/unit/${unitId}/practice`} className="btn btn-primary btn-lg">
+            <Link to={`/lab/${unitId}`} className="btn btn-primary btn-lg">
               Launch Practice Lab
             </Link>
           </div>

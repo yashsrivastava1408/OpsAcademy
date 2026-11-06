@@ -230,6 +230,11 @@ export default function LabPage() {
       setStartedAt(sandbox.resumed ? Date.now() - sandbox.uptime : Date.now());
       if (!sandbox.resumed) setVerifiedSteps({});
     } catch (err) {
+      // 403/409 from the lab policy: no slot, no Lab ID, or the lab is full. The enter screen explains and queues.
+      if ([403, 409].includes(err.response?.status) && err.response?.data?.state) {
+        navigate(`/lab/${encodeURIComponent(unitId)}/enter`, { replace: true });
+        return;
+      }
       setStartError(
         err.response
           ? errorMessage(err)

@@ -14,16 +14,7 @@ import {
   Globe,
   Code2,
   Search,
-  Terminal,
-  Play,
-  RotateCcw,
   Check,
-  Star,
-  Users,
-  Award,
-  Layers,
-  Server,
-  ExternalLink,
   AlertCircle,
   ShieldCheck,
   GraduationCap,
@@ -46,52 +37,6 @@ import HeroCockpit from '../components/HeroCockpit/HeroCockpit';
 import CampusPlacementPathwayDiagram from '../components/CampusPlacementPathway/CampusPlacementPathwayDiagram';
 import './LandingPage.css';
 
-const HERO_COMMANDS = [
-  {
-    cmd: 'docker run -d -p 80:80 --name web nginx:alpine',
-    label: 'Docker Run',
-    output: [
-      { text: "Unable to find image 'nginx:alpine' locally", type: 'dim' },
-      { text: 'alpine: Pulling from library/nginx', type: 'dim' },
-      { text: 'Digest: sha256:48b77a32b2170c2a84b5... [Verified]', type: 'cyan' },
-      { text: 'Status: Downloaded newer image for nginx:alpine', type: 'dim' },
-      { text: 'e8b91a72f04dc238a91c01e523f... (Container online)', type: 'emerald' },
-      { text: '✓ Port 80 exposed on 0.0.0.0:80 -> HTTP/1.1 200 OK', type: 'lime' },
-    ],
-  },
-  {
-    cmd: 'kubectl get pods -n production -o wide',
-    label: 'K8s Cluster',
-    output: [
-      { text: 'NAME                          READY   STATUS    RESTARTS   AGE   IP', type: 'dim' },
-      { text: 'nginx-ingress-79d8c97-q8w2    1/1     Running   0          42m   10.244.1.14', type: 'emerald' },
-      { text: 'api-gateway-55c87b99c-x7k9    1/1     Running   0          18m   10.244.2.29', type: 'emerald' },
-      { text: 'auth-service-674b8849-p2m1    1/1     Running   0          18m   10.244.1.18', type: 'emerald' },
-      { text: '✓ All 3 services healthy and passing liveness probes', type: 'lime' },
-    ],
-  },
-  {
-    cmd: 'trivy image --severity HIGH,CRITICAL web-app:v1',
-    label: 'CVE Scan',
-    output: [
-      { text: '2026-10-30 INFO Vulnerability scanning started...', type: 'dim' },
-      { text: 'Analyzing layers [=====================>] 100%', type: 'cyan' },
-      { text: 'web-app:v1 (alpine 3.19.1) — Total: 0 (HIGH: 0, CRITICAL: 0)', type: 'emerald' },
-      { text: '✓ Container image passed all compliance security gates', type: 'lime' },
-    ],
-  },
-  {
-    cmd: 'terraform plan -out=tfplan.binary',
-    label: 'IaC Drift',
-    output: [
-      { text: 'Terraform used the selected providers to generate the plan.', type: 'dim' },
-      { text: '+ aws_vpc.production_network (10.0.0.0/16)', type: 'cyan' },
-      { text: '+ aws_security_group.ingress_tls_rules', type: 'cyan' },
-      { text: 'Plan: 2 to add, 0 to change, 0 to destroy.', type: 'emerald' },
-      { text: '✓ State locked with DynamoDB, ready for zero-drift apply', type: 'lime' },
-    ],
-  },
-];
 
 const CURRICULUM_COURSES = [
   { id: 'linux-basics', title: 'Linux Fundamentals', category: 'Linux', icon: <FaLinux size={22} className="text-amber-400" />, sections: '8 Deep-Dive Modules', group: 'foundations', desc: 'CLI mastery, file permissions, process management, and systemd automation.' },
@@ -140,18 +85,16 @@ const FAQS = [
 ];
 
 export default function LandingPage() {
-  const [searchQuery, setSearchQuery] = useState('');
   const [courseSearch, setCourseSearch] = useState('');
   const [curriculumGroup, setCurriculumGroup] = useState('all');
   const [showAllCourses, setShowAllCourses] = useState(false);
-  const [activeHeroCmd, setActiveHeroCmd] = useState(0);
   const [activeLabTab, setActiveLabTab] = useState('terminal');
   const [activeLabStep, setActiveLabStep] = useState(1);
   const [openLabHint, setOpenLabHint] = useState(null);
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [openFaq, setOpenFaq] = useState(0);
 
-  const activeSearch = courseSearch || searchQuery;
+  const activeSearch = courseSearch;
 
   const filteredCourses = CURRICULUM_COURSES.filter((course) => {
     const matchesGroup = curriculumGroup === 'all' || course.group === curriculumGroup;
@@ -168,7 +111,6 @@ export default function LandingPage() {
       ? filteredCourses
       : filteredCourses.slice(0, 8);
 
-  const currentHeroCmd = HERO_COMMANDS[activeHeroCmd];
 
   return (
     <div className="landing">
@@ -202,7 +144,7 @@ export default function LandingPage() {
 
               {/* Single Clear Action Button routing to Interactive Lab */}
               <div className="hero-editorial-ctas">
-                <Link to="/portal/lab" className="hero-btn-pill-primary hero-btn-single">
+                <Link to="/lab" className="hero-btn-pill-primary hero-btn-single">
                   <span>Go to Interactive Lab</span>
                   <ArrowRight size={18} />
                 </Link>
@@ -1040,7 +982,7 @@ export default function LandingPage() {
                 <p>Stop watching tutorials. Start typing real commands in live sandboxes.</p>
               </div>
             </div>
-            <Link to="/portal/lab" className="ready-banner-btn">
+            <Link to="/lab" className="ready-banner-btn">
               Go to Interactive Lab <ArrowRight size={16} />
             </Link>
           </div>

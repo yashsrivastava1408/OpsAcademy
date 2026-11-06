@@ -6,17 +6,13 @@ import {
   CheckCircle2,
   Terminal,
   Cpu,
-  Layers,
   GitBranch,
   Award,
-  ArrowRight,
   Play,
   Pause,
-  AlertCircle,
   HelpCircle,
-  Lock,
 } from 'lucide-react';
-import { FaLinux, FaAws, FaDocker } from 'react-icons/fa6';
+import { FaLinux, FaDocker } from 'react-icons/fa6';
 import { SiKubernetes, SiTerraform } from 'react-icons/si';
 import './CampusPlacementPathwayDiagram.css';
 

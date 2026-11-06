@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Loader } from 'lucide-react';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar/Navbar';
@@ -22,7 +22,10 @@ const pages = {
   resetPassword: () => import('./pages/ResetPasswordPage'),
   verifyEmail: () => import('./pages/VerifyEmailPage'),
   authCallback: () => import('./pages/AuthCallbackPage'),
+  labHome: () => import('./pages/LabHomePage'),
   labTransition: () => import('./pages/LabTransitionPage'),
+  adminLab: () => import('./pages/AdminLabPage'),
+  collegeSlots: () => import('./pages/CollegeSlotsPage'),
 };
 
 const LandingPage = lazy(pages.landing);
@@ -40,7 +43,10 @@ const AdminPage = lazy(pages.admin);
 const ResetPasswordPage = lazy(pages.resetPassword);
 const VerifyEmailPage = lazy(pages.verifyEmail);
 const AuthCallbackPage = lazy(pages.authCallback);
+const LabHomePage = lazy(pages.labHome);
 const LabTransitionPage = lazy(pages.labTransition);
+const AdminLabPage = lazy(pages.adminLab);
+const CollegeSlotsPage = lazy(pages.collegeSlots);
 
 /** The chunk for a URL, so it can start downloading before React renders. */
 function pageFor(pathname) {
@@ -50,13 +56,15 @@ function pageFor(pathname) {
   if (pathname.startsWith('/casestudies')) return pages.caseStudies;
   if (pathname.startsWith('/login')) return pages.auth;
   if (pathname.startsWith('/verify/')) return pages.verify;
-  if (pathname.startsWith('/lab/') || pathname.endsWith('/practice')) return pages.lab;
+  if (pathname.startsWith('/admin/lab')) return pages.adminLab;
+  if (pathname.startsWith('/college')) return pages.collegeSlots;
+  if (pathname === '/lab') return pages.labHome;
+  if (pathname.startsWith('/lab/')) return pathname.endsWith('/enter') ? pages.labTransition : pages.lab;
   if (pathname.endsWith('/learn')) return pages.learn;
   if (pathname.endsWith('/prepare')) return pages.prepare;
   if (pathname.endsWith('/casestudy')) return pages.caseStudy;
   if (pathname.startsWith('/u/')) return pages.profile;
   if (pathname.startsWith('/admin')) return pages.admin;
-  if (pathname.startsWith('/portal/lab') || pathname.startsWith('/enter-lab')) return pages.labTransition;
   if (pathname.startsWith('/reset-password')) return pages.resetPassword;
   if (pathname.startsWith('/verify-email')) return pages.verifyEmail;
   if (pathname.startsWith('/auth/callback')) return pages.authCallback;
@@ -88,6 +96,12 @@ function ScrollToTop() {
     if (!window.location.hash) window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [pathname]);
   return null;
+}
+
+/** Old links to /unit/:id/practice now open the lab in Lab Studio. */
+function PracticeRedirect() {
+  const { unitId } = useParams();
+  return <Navigate to={`/lab/${encodeURIComponent(unitId)}`} replace />;
 }
 
 function PageLoading() {
@@ -123,7 +137,7 @@ function AppRoutes() {
           <Route path="/login" element={<AuthPage />} />
           <Route path="/verify/:certificateId" element={<VerifyPage />} />
           <Route path="/unit/:unitId/learn" element={<LearnPage />} />
-          <Route path="/unit/:unitId/practice" element={<LabPage />} />
+          <Route path="/unit/:unitId/practice" element={<PracticeRedirect />} />
           <Route path="/unit/:unitId/prepare" element={<PreparePage />} />
           <Route path="/unit/:unitId/casestudy" element={<CaseStudyPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
@@ -131,9 +145,11 @@ function AppRoutes() {
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/u/:slug" element={<ProfilePage />} />
           <Route path="/admin" element={<AdminPage />} />
-          <Route path="/portal/lab" element={<LabTransitionPage />} />
-          <Route path="/enter-lab" element={<LabTransitionPage />} />
-          {/* Legacy route alias */}
+          <Route path="/admin/lab" element={<AdminLabPage />} />
+          <Route path="/college" element={<CollegeSlotsPage />} />
+          <Route path="/learn" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/lab" element={<LabHomePage />} />
+          <Route path="/lab/:unitId/enter" element={<LabTransitionPage />} />
           <Route path="/lab/:unitId" element={<LabPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

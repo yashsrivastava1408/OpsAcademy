@@ -1,45 +1,15 @@
-import { useState, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Terminal, LayoutDashboard, Compass, Sparkles, ExternalLink, Flame, Zap, LogOut } from 'lucide-react';
-import { sandboxApi } from '../../services/api';
+import { LayoutDashboard, Compass, Sparkles, Flame, Zap, LogOut } from 'lucide-react';
 import useAuth from '../../hooks/useAuth';
 import useProgress from '../../hooks/useProgress';
-import usePolling from '../../hooks/usePolling';
+import PortalSwitch from './PortalSwitch';
 import './Navbar.css';
-
-const STATS_POLL_MS = 30000;
-
-/** Sandbox engine status from the gateway's own measurements. */
-function engineLabel(stats) {
-  if (!stats) return { text: 'Engine: offline', title: 'The sandbox gateway is not responding', online: false };
-
-  const { pool, claimLatencyMs, mode } = stats;
-  const measured = claimLatencyMs.pool.samples ? claimLatencyMs.pool : claimLatencyMs.cold;
-  const latency = measured.samples ? ` • ${measured.p50 < 1 ? '<1' : Math.round(measured.p50)}ms start` : '';
-  const text = pool.enabled ? `Engine: ${pool.available}/${pool.targetSize} warm${latency}` : `Engine: ${mode}${latency}`;
-  return {
-    text,
-    title: `Sandbox mode: ${mode}. ${stats.activeSessions} of ${stats.capacity} sandboxes in use. Start time is the median measured by this server.`,
-    online: true,
-  };
-}
 
 export default function Navbar() {
   const location = useLocation();
   const { user, isRegistered, logout } = useAuth();
   const progress = useProgress();
-  const [stats, setStats] = useState(null);
-
-  // The navbar is mounted for the whole visit, so there is nothing to cancel.
-  const loadStats = useCallback(() => {
-    sandboxApi.stats()
-      .then((res) => setStats(res.data.data))
-      .catch(() => setStats(null));
-  }, []);
-  usePolling(loadStats, STATS_POLL_MS);
-
   const isActive = (path) => location.pathname === path ? 'active' : '';
-  const engine = engineLabel(stats);
 
   return (
     <nav className="navbar">
@@ -59,7 +29,7 @@ export default function Navbar() {
           <li>
             <Link to="/dashboard" className={`navbar-link ${isActive('/dashboard')}`}>
               <LayoutDashboard size={16} />
-              <span>Dashboard</span>
+              <span>Theory</span>
             </Link>
           </li>
           <li>
@@ -78,26 +48,12 @@ export default function Navbar() {
 
         {/* Right Actions */}
         <div className="navbar-actions">
-          <div className={`nav-telemetry-badge ${engine.online ? '' : 'offline'}`} title={engine.title}>
-            <span className="pulse-dot">●</span> {engine.text}
-          </div>
-
           {progress.xp > 0 && (
             <Link to="/dashboard" className="nav-progress" title={`Level ${progress.level}`}>
               <span><Zap size={13} /> {progress.xp} XP</span>
               {progress.streak.current > 0 && <span><Flame size={13} /> {progress.streak.current}</span>}
             </Link>
           )}
-
-          <a
-            href="https://github.com/yashsrivastava1408/OpsAcademy"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-ghost btn-icon hide-mobile"
-            title="GitHub Repository"
-          >
-            <ExternalLink size={18} />
-          </a>
 
           {isRegistered ? (
             <div className="nav-user">
@@ -107,14 +63,13 @@ export default function Navbar() {
               </button>
             </div>
           ) : (
-            <Link to="/login" className="btn btn-secondary btn-sm">
-              Sign in
-            </Link>
+            <>
+              <Link to="/login" className="btn btn-ghost btn-sm">Sign in</Link>
+              <Link to="/login?tab=lab" className="btn btn-secondary btn-sm hide-mobile">Lab login</Link>
+            </>
           )}
 
-          <Link to="/portal/lab" className="btn btn-primary btn-sm hide-mobile">
-            Go to Lab
-          </Link>
+          <PortalSwitch enabled={isRegistered} />
         </div>
       </div>
     </nav>

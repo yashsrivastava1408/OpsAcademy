@@ -124,7 +124,7 @@ export default function CaseStudiesPage() {
                   <Layers size={16} />
                   Architecture Lesson
                 </Link>
-                <Link to={`/unit/${study.id}/practice`} className="btn btn-secondary btn-md">
+                <Link to={`/lab/${study.id}`} className="btn btn-secondary btn-md">
                   <Terminal size={16} />
                   Launch Live Terminal Lab
                 </Link>
