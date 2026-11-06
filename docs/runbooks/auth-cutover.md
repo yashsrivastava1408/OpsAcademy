@@ -33,7 +33,7 @@ same confirmed email. Failures are listed; fix and re-run (it skips accounts alr
 
 ## 2. Flip the switches
 
-1. Deploy the client built with `VITE_AUTH_MODE=supabase` (and `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
+1. Rebuild the client with `VITE_AUTH_MODE=supabase`. With `docker-compose.prod.yml` set `VITE_AUTH_MODE=supabase` in `.env.production`; the Supabase URL and publishable key are taken from `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. The browser build bakes these in, so run `docker compose … up -d --build client`.
 2. Set `LEGACY_AUTH=off` on the gateway and restart. The old `/login`, `/register`, `/guest`, `/forgot`, `/reset`,
    `/verify-email` endpoints now answer 404 and old tokens are rejected.
 3. Everyone signs in once; old guests are simply new guests.

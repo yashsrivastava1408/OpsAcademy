@@ -46,6 +46,11 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${PUBLIC_API_URL-}  # empty = same origin, via Caddy
+        # Supabase sign-in. Set VITE_AUTH_MODE=supabase in .env.production at the cutover; empty = the gateway's own sign-in.
+        VITE_AUTH_MODE: ${VITE_AUTH_MODE:-}
+        VITE_SUPABASE_URL: ${SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
+        VITE_SSO_PROVIDERS: ${VITE_SSO_PROVIDERS:-}
     container_name: opsacademy-client
     restart: unless-stopped
     expose:
