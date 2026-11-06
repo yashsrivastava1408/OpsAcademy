@@ -1,6 +1,6 @@
 # ADR 0003: One identity system (Supabase Auth) and session model
 
-Status: accepted (Phase 2, issue #86)
+Status: accepted (Phase 2, issue #86). Implemented in #87-#98; the cutover is done with `docs/runbooks/auth-cutover.md`.
 
 ## Context
 
@@ -96,6 +96,13 @@ rather than a long dual-running period:
 
 **Rollback:** until step 5, the legacy columns are untouched, so turning the flag off
 restores the old flow. After step 5 rollback is a revert plus a restore from the backup taken before step 3.
+
+## Implementation notes
+
+- Two switches make the cutover deliberate: `LEGACY_AUTH=off` on the gateway and `VITE_AUTH_MODE=supabase` in the client build. Both default to the old sign-in so a deploy never changes login by itself; local development and CI keep using the old sign-in (no Supabase project needed).
+- The refresh token is stored by the gateway in an HttpOnly cookie (`/api/auth/cookie`, `/refresh`, `/logout`); the browser keeps only the short-lived access token in memory. `Content-Security-Policy` allows scripts from the app's own files only.
+- A guest upgrades by adding an email and password to the anonymous Supabase user; the address becomes permanent when confirmed, and the app user (same id) is upgraded on the next `POST /api/auth/session`.
+- Migrated accounts keep their app user id; `identities` maps the Supabase user id to it, and a confirmed Supabase email also claims a matching old account on first sign-in.
 
 ## Consequences
 

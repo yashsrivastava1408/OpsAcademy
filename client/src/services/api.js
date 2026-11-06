@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { normalizeApiBase, wsBase } from '../lib/apiBase';
+import { isSupabaseMode } from '../lib/authMode';
+import * as supabaseIdentity from './supabaseIdentity';
 
 const API_BASE_URL = normalizeApiBase(import.meta.env.VITE_API_URL);
 const TOKEN_KEY = 'opsacademy_token';
@@ -24,10 +26,11 @@ const api = axios.create({
 const identityListeners = new Set();
 
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return isSupabaseMode ? supabaseIdentity.getAccessToken() : localStorage.getItem(TOKEN_KEY);
 }
 
 export function getStoredUser() {
+  if (isSupabaseMode) return supabaseIdentity.getUser();
   try {
     return JSON.parse(localStorage.getItem(USER_KEY));
   } catch {
@@ -36,6 +39,7 @@ export function getStoredUser() {
 }
 
 export function setIdentity(token, user) {
+  if (isSupabaseMode) return supabaseIdentity.replaceUser(user);
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
   identityListeners.forEach((listener) => listener(user));
@@ -43,11 +47,13 @@ export function setIdentity(token, user) {
 
 /** Replace the stored user record (same token), e.g. after confirming an email address. */
 export function updateStoredUser(user) {
+  if (isSupabaseMode) return supabaseIdentity.replaceUser(user);
   const token = getToken();
   if (token) setIdentity(token, user);
 }
 
 export function clearIdentity() {
+  if (isSupabaseMode) return supabaseIdentity.clearLocal();
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   identityListeners.forEach((listener) => listener(null));
@@ -55,6 +61,7 @@ export function clearIdentity() {
 
 /** Be told when the signed-in user changes. Returns an unsubscribe function. */
 export function onIdentityChange(listener) {
+  if (isSupabaseMode) return supabaseIdentity.onUserChange(listener);
   identityListeners.add(listener);
   return () => identityListeners.delete(listener);
 }
@@ -63,6 +70,7 @@ let pendingGuest = null;
 
 /** Resolve with a token, creating a guest identity if there is none yet. */
 export function ensureIdentity() {
+  if (isSupabaseMode) return supabaseIdentity.ensureIdentity();
   const token = getToken();
   if (token) return Promise.resolve(token);
 
@@ -84,7 +92,7 @@ export function ensureIdentity() {
 // Requests made by someone who is signing in or recovering an account: they
 // never need a guest identity first, and a 401 from them is an answer, not a
 // stale token.
-const AUTH_ROUTES = ['/auth/login', '/auth/register', '/auth/forgot', '/auth/reset', '/auth/verify-email'];
+const AUTH_ROUTES = ['/auth/login', '/auth/register', '/auth/forgot', '/auth/reset', '/auth/verify-email', '/auth/cookie', '/auth/refresh', '/auth/logout'];
 const isAuthRoute = (url = '') => AUTH_ROUTES.some((route) => url.startsWith(route));
 
 // Endpoints anyone may read. They are sent without a token, so they never
@@ -108,7 +116,8 @@ api.interceptors.response.use(
     const original = error.config;
     if (error.response?.status === 401 && original && !original.retried && !isAuthRoute(original.url)) {
       original.retried = true;
-      clearIdentity();
+      if (isSupabaseMode) await supabaseIdentity.renew().catch(() => {});
+      else clearIdentity();
       await ensureIdentity();
       return api(original);
     }
