@@ -1,0 +1,10 @@
+title = "OpsAcademy secret scan"
+
+[extend]
+useDefault = true
+
+# The test runner, the local development stack and the Supabase Auth stand-in (server/test-support) all need
+# something in a "key" setting. These are fixed, obviously fake placeholders, never real credentials.
+[allowlist]
+description = "Placeholder keys for tests and local development"
+regexes = ['''^(e2e|test|local-development)(-(publishable|secret|anon))?-key$''']
