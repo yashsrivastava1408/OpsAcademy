@@ -60,8 +60,9 @@ const config = {
   // Certificates are signed with their own key so it can be rotated separately.
   certSecret: process.env.CERT_SECRET || `${jwtSecret}:certificates`,
 
-  // Operator endpoints (/api/admin/*) are disabled unless this is set.
-  adminToken: process.env.ADMIN_TOKEN || null,
+  // Verified emails that are platform admins (the first operator). More are granted
+  // with `npm run grant-role`. Comma separated.
+  platformAdminEmails: (process.env.PLATFORM_ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
   // If set, /metrics requires `Authorization: Bearer <token>`.
   metricsToken: process.env.METRICS_TOKEN || null,
 

@@ -78,8 +78,9 @@ function getById(id) {
  * place a first-time Supabase user is created (token verification stays
  * read-only). Returns the stored user.
  */
-function ensureSupabaseUser(identity) {
-  return getRepos().users.createIfAbsent({
+async function ensureSupabaseUser(identity) {
+  const repos = getRepos();
+  const user = await repos.users.createIfAbsent({
     id: identity.id,
     name: identity.name,
     email: identity.email ? identity.email.toLowerCase() : null,
@@ -87,6 +88,15 @@ function ensureSupabaseUser(identity) {
     emailVerified: Boolean(identity.emailVerified),
     createdAt: new Date().toISOString(),
   });
+  await claimInvites(user);
+  return user;
+}
+
+/** Apply college invites addressed to a verified email (see collegeService.importRoster). */
+async function claimInvites(user) {
+  if (user && !user.guest && user.emailVerified && user.email) {
+    await getRepos().invites.claim(user.id, user.email);
+  }
 }
 
 function validatePassword(password) {
@@ -203,7 +213,9 @@ async function verifyEmail(token, now = Date.now()) {
   const userId = await redeemToken(token, 'verify', now);
   const user = userId ? await repos.users.getById(userId) : null;
   if (!user) throw new UserError('This confirmation link is invalid or has expired.', 400);
-  return repos.users.update(user.id, { emailVerified: true });
+  const verified = await repos.users.update(user.id, { emailVerified: true });
+  await claimInvites(verified);
+  return verified;
 }
 
 // ── Public profile ───────────────────────────────────────────

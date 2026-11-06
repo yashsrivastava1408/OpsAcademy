@@ -9,7 +9,7 @@ process.env.SANDBOXES_DIR = path.join(os.tmpdir(), `opsacademy-test-${process.pi
 process.env.DAILY_CHALLENGE = 'off';
 delete process.env.RESEND_API_KEY;
 delete process.env.MAIL_DRIVER;
-delete process.env.ADMIN_TOKEN;
+delete process.env.PLATFORM_ADMIN_EMAILS;
 delete process.env.METRICS_TOKEN;
 delete process.env.CORS_ORIGINS;
 delete process.env.CLIENT_URL;

@@ -22,6 +22,12 @@ function createMemoryRepos() {
   const certificates = new Map(); // id -> certificate
   const sessions = new Map(); // sessionId -> session
   const memberships = []; // { userId, collegeId, sectionId, role }
+  const colleges = new Map(); // id -> college
+  const sections = new Map(); // id -> section
+  const auditRows = []; // append-only
+  const invites = []; // { collegeId, sectionId, email, role }
+  const rateHits = new Map(); // key -> { hits, resetAt }
+  let nextId = 1;
   const locks = new Map(); // userId -> tail promise (serialises progress.mutate)
 
   const findByEmail = (email) => [...users.values()].find((u) => u.email === email);
@@ -175,6 +181,98 @@ function createMemoryRepos() {
         memberships.push({ userId, collegeId, sectionId, role });
       },
       async forUser(userId) { return memberships.filter((m) => m.userId === userId).map(clone); },
+      async remove({ userId, collegeId = null, role }) {
+        const i = memberships.findIndex((m) => m.userId === userId && m.collegeId === collegeId && m.role === role);
+        if (i < 0) return false;
+        memberships.splice(i, 1);
+        return true;
+      },
+      /** Members of one college, optionally one role: [{ userId, name, email, sectionId, role }] */
+      async listByCollege(collegeId, { role = null } = {}) {
+        return memberships
+          .filter((m) => m.collegeId === collegeId && (!role || m.role === role))
+          .map((m) => ({ ...clone(m), name: users.get(m.userId).name, email: users.get(m.userId).email }));
+      },
+    },
+
+    colleges: {
+      async create({ name, slug, timezone = 'Asia/Kolkata' }) {
+        if ([...colleges.values()].some((c) => c.slug === slug)) throw new RepoError('college_slug_taken', 'A college with this address already exists');
+        const college = { id: `col-${nextId++}`, name, slug, timezone, active: true, createdAt: new Date().toISOString() };
+        colleges.set(college.id, college);
+        return clone(college);
+      },
+      async getById(id) { return clone(colleges.get(id) || null); },
+      async getBySlug(slug) { return clone([...colleges.values()].find((c) => c.slug === slug) || null); },
+      async list() { return [...colleges.values()].sort((a, b) => a.name.localeCompare(b.name)).map(clone); },
+    },
+
+    sections: {
+      /** Returns the existing section when the college already has one with that name. */
+      async ensure({ collegeId, name, academicYear = null }) {
+        if (!colleges.has(collegeId)) throw new RepoError('college_missing', `College ${collegeId} does not exist`);
+        const found = [...sections.values()].find((s) => s.collegeId === collegeId && s.name === name);
+        if (found) return clone(found);
+        const section = { id: `sec-${nextId++}`, collegeId, name, academicYear };
+        sections.set(section.id, section);
+        return clone(section);
+      },
+      async listByCollege(collegeId) { return [...sections.values()].filter((s) => s.collegeId === collegeId).map(clone); },
+    },
+
+    invites: {
+      async add({ collegeId, sectionId = null, email, role = 'student' }) {
+        const found = invites.find((i) => i.collegeId === collegeId && i.email === email && i.role === role);
+        if (found) found.sectionId = sectionId;
+        else invites.push({ collegeId, sectionId, email, role });
+      },
+      async listByCollege(collegeId) { return invites.filter((i) => i.collegeId === collegeId).map(clone); },
+      /** Turn every invite for this email into a membership. @returns how many were new. */
+      async claim(userId, email) {
+        requireUser(userId);
+        let made = 0;
+        for (let i = invites.length - 1; i >= 0; i -= 1) {
+          if (invites[i].email !== email) continue;
+          const { collegeId, sectionId, role } = invites.splice(i, 1)[0];
+          if (!memberships.some((m) => m.userId === userId && m.collegeId === collegeId && m.role === role)) {
+            memberships.push({ userId, collegeId, sectionId, role });
+            made += 1;
+          }
+        }
+        return made;
+      },
+    },
+
+    rateLimits: {
+      /** Count one hit in the window that `key` is in. @returns { hits, resetAt (ms) } */
+      async hit(key, windowMs) {
+        const now = Date.now();
+        let row = rateHits.get(key);
+        if (!row || row.resetAt <= now) row = { hits: 0, resetAt: now + windowMs };
+        row.hits += 1;
+        rateHits.set(key, row);
+        return { hits: row.hits, resetAt: row.resetAt };
+      },
+      async decrement(key) { const row = rateHits.get(key); if (row && row.hits > 0) row.hits -= 1; },
+      async reset(key) { rateHits.delete(key); },
+      async prune() {
+        const now = Date.now();
+        let n = 0;
+        for (const [k, row] of rateHits) if (row.resetAt <= now) { rateHits.delete(k); n += 1; }
+        return n;
+      },
+    },
+
+    audit: {
+      async record({ actorId = null, actorRole = null, action, entityType = null, entityId = null, collegeId = null, ip = null, meta = {} }) {
+        auditRows.push({ id: auditRows.length + 1, at: new Date().toISOString(), actorId, actorRole, action, entityType, entityId, collegeId, ip, meta: clone(meta) });
+      },
+      /** Newest first. @param {{ collegeId?: string, actorId?: string, limit?: number }} filter */
+      async list({ collegeId, actorId, limit = 100 } = {}) {
+        return auditRows
+          .filter((r) => (collegeId === undefined || r.collegeId === collegeId) && (!actorId || r.actorId === actorId))
+          .slice().reverse().slice(0, limit).map(clone);
+      },
     },
 
     certificates: {

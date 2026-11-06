@@ -40,7 +40,7 @@ services:
       - DATABASE_URL=postgres://postgres@postgres:5432/opsacademy
       # Optional: real email, operator page (see server/.env.example).
       - RESEND_API_KEY=${RESEND_API_KEY:-}
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      - PLATFORM_ADMIN_EMAILS=${PLATFORM_ADMIN_EMAILS:-}
     volumes:
       # The gateway starts sandbox containers through the host's Docker daemon.
       # This socket is root-equivalent on the host: see docs/THREAT_MODEL.md.

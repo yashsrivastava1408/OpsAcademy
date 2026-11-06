@@ -22,9 +22,15 @@ async function refreshLeaderboards() {
   await getRepos().jobs.refreshLeaderboards();
 }
 
+/** Drop rate-limit counters whose window has passed. */
+async function pruneRateLimits() {
+  return getRepos().rateLimits.prune();
+}
+
 const JOBS = [
   { name: 'prune-expired', everyMs: 60 * MINUTE, run: pruneExpired },
   { name: 'refresh-leaderboards', everyMs: MINUTE, run: refreshLeaderboards },
+  { name: 'prune-rate-limits', everyMs: 10 * MINUTE, run: pruneRateLimits },
 ];
 
 /** Run one job under its lock. Errors are logged, never thrown, so one bad job cannot stop the others. */
@@ -57,4 +63,4 @@ function startJobs(jobs = JOBS) {
   return () => timers.forEach((t) => clearInterval(t));
 }
 
-module.exports = { JOBS, pruneExpired, refreshLeaderboards, runJob, startJobs };
+module.exports = { JOBS, pruneExpired, pruneRateLimits, refreshLeaderboards, runJob, startJobs };

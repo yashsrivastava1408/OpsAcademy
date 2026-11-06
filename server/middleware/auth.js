@@ -116,25 +116,10 @@ function safeEqual(a, b) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-/**
- * Operator-only endpoints. They do not exist (404) unless ADMIN_TOKEN is
- * configured, and then need `x-admin-token`.
- */
-function requireAdmin(req, res, next) {
-  if (!config.adminToken) {
-    return res.status(404).json({ success: false, error: 'Not found' });
-  }
-  if (!safeEqual(req.headers['x-admin-token'] || '', config.adminToken)) {
-    return res.status(403).json({ success: false, error: 'Forbidden' });
-  }
-  next();
-}
-
 module.exports = requireAuth;
 module.exports.requireAuth = requireAuth;
 module.exports.optionalAuth = optionalAuth;
 module.exports.requireRegistered = requireRegistered;
-module.exports.requireAdmin = requireAdmin;
 module.exports.signToken = signToken;
 module.exports.verifyToken = verifyToken;
 module.exports.forgetUser = forgetUser;

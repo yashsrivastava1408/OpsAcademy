@@ -159,18 +159,12 @@ export const profileApi = {
     api.get(`/profiles/${encodeURIComponent(slug)}`),
 };
 
-// ── Operator API (needs the server's ADMIN_TOKEN) ────────────
-const adminHeaders = (adminToken) => ({ headers: { 'x-admin-token': adminToken } });
-
+// ── Operator API (needs the signed-in user to be a platform admin) ──
 export const adminApi = {
-  overview: (adminToken) =>
-    api.get('/admin/overview', adminHeaders(adminToken)),
-
-  stopSandbox: (adminToken, sessionId) =>
-    api.delete(`/admin/sandboxes/${sessionId}`, adminHeaders(adminToken)),
-
-  refillPool: (adminToken) =>
-    api.post('/admin/pool/refill', null, adminHeaders(adminToken)),
+  overview: () => api.get('/admin/overview'),
+  stopSandbox: (sessionId) => api.delete(`/admin/sandboxes/${sessionId}`),
+  refillPool: () => api.post('/admin/pool/refill'),
+  audit: (limit = 100) => api.get('/admin/audit', { params: { limit } }),
 };
 
 // ── Sandbox API ──────────────────────────────────────────────
