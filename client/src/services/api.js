@@ -138,6 +138,10 @@ export const authApi = {
   login: (email, password) =>
     api.post('/auth/login', { email, password }),
 
+  // Lab accounts sign in with the ID an admin issued, not an email address.
+  loginWithLabId: (id, password) =>
+    api.post('/auth/login', { id, password }),
+
   me: () =>
     api.get('/auth/me'),
 
@@ -173,6 +177,22 @@ export const adminApi = {
   stopSandbox: (sessionId) => api.delete(`/admin/sandboxes/${sessionId}`),
   refillPool: () => api.post('/admin/pool/refill'),
   audit: (limit = 100) => api.get('/admin/audit', { params: { limit } }),
+  labAccounts: (params) => api.get('/admin/lab-accounts', { params }),
+  generateLabAccounts: (body) => api.post('/admin/lab-accounts', body),
+  resetLabPassword: (id) => api.post(`/admin/lab-accounts/${encodeURIComponent(id)}/reset-password`),
+  setLabAccountDisabled: (id, disabled) => api.post(`/admin/lab-accounts/${encodeURIComponent(id)}/${disabled ? 'disable' : 'enable'}`),
+  capacityPlan: (days = 7) => api.get('/admin/capacity-plan', { params: { days } }),
+  labFunnel: (days = 7) => api.get('/admin/lab-funnel', { params: { days } }),
+};
+
+// ── Lab portal: can I enter the lab, and in what order ──
+export const labPortalApi = {
+  availability: () => api.get('/lab/availability'),
+  mySlots: () => api.get('/lab/my-slots'),
+  enter: (unitId) => api.post('/lab/enter', { unitId }),
+  leaveQueue: () => api.delete('/lab/queue'),
+  // Analytics only: it must never get in the way of the learner.
+  event: (name, props) => api.post('/lab/events', { name, props }).catch(() => {}),
 };
 
 // ── Sandbox API ──────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { Loader } from 'lucide-react';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar/Navbar';
@@ -23,6 +23,7 @@ const pages = {
   verifyEmail: () => import('./pages/VerifyEmailPage'),
   authCallback: () => import('./pages/AuthCallbackPage'),
   labTransition: () => import('./pages/LabTransitionPage'),
+  adminLab: () => import('./pages/AdminLabPage'),
 };
 
 const LandingPage = lazy(pages.landing);
@@ -41,6 +42,7 @@ const ResetPasswordPage = lazy(pages.resetPassword);
 const VerifyEmailPage = lazy(pages.verifyEmail);
 const AuthCallbackPage = lazy(pages.authCallback);
 const LabTransitionPage = lazy(pages.labTransition);
+const AdminLabPage = lazy(pages.adminLab);
 
 /** The chunk for a URL, so it can start downloading before React renders. */
 function pageFor(pathname) {
@@ -50,6 +52,8 @@ function pageFor(pathname) {
   if (pathname.startsWith('/casestudies')) return pages.caseStudies;
   if (pathname.startsWith('/login')) return pages.auth;
   if (pathname.startsWith('/verify/')) return pages.verify;
+  if (pathname.endsWith('/enter')) return pages.labTransition;
+  if (pathname.startsWith('/admin/lab')) return pages.adminLab;
   if (pathname.startsWith('/lab/') || pathname.endsWith('/practice')) return pages.lab;
   if (pathname.endsWith('/learn')) return pages.learn;
   if (pathname.endsWith('/prepare')) return pages.prepare;
@@ -131,6 +135,10 @@ function AppRoutes() {
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/u/:slug" element={<ProfilePage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin/lab" element={<AdminLabPage />} />
+          <Route path="/learn" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/lab" element={<Navigate to="/portal/lab" replace />} />
+          <Route path="/lab/:unitId/enter" element={<LabTransitionPage />} />
           <Route path="/portal/lab" element={<LabTransitionPage />} />
           <Route path="/enter-lab" element={<LabTransitionPage />} />
           {/* Legacy route alias */}

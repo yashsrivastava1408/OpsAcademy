@@ -27,6 +27,13 @@ export function AuthProvider({ children }) {
     return res.data.user;
   }, []);
 
+  // Lab accounts use the local sign-in even when everyone else signs in with Supabase.
+  const loginWithLabId = useCallback(async (id, password) => {
+    const res = await authApi.loginWithLabId(id, password);
+    setIdentity(res.data.token, res.data.user);
+    return res.data.user;
+  }, []);
+
   // Sent with the guest token, so the guest's progress moves to the new account.
   // With Supabase the address must be confirmed first: the result says so ({ needsConfirmation: true }).
   const register = useCallback(async (name, email, password) => {
@@ -43,7 +50,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, ready, isRegistered: Boolean(user && !user.guest), login, register, logout }}>
+    <AuthContext.Provider value={{ user, ready, isRegistered: Boolean(user && !user.guest), login, loginWithLabId, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

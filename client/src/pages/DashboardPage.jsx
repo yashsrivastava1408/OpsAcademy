@@ -21,6 +21,7 @@ import { unitApi, progressApi, certificateApi, authApi, ensureIdentity, updateSt
 import { EMPTY_PROGRESS } from '../services/progressService';
 import useAuth from '../hooks/useAuth';
 import useProgress from '../hooks/useProgress';
+import LabSlotCard from '../components/LabSlotCard';
 import CertificateModal from '../components/CertificateModal/CertificateModal';
 import './DashboardPage.css';
 
@@ -156,6 +157,7 @@ export default function DashboardPage() {
   return (
     <div className="dashboard">
       <div className="container">
+        {user && !user.guest && <LabSlotCard />}
         {/* ── Stats Bar ──────────────────────────────────── */}
         <div className="dashboard-stats animate-fade-in">
           <div className="stat-card glass-card">

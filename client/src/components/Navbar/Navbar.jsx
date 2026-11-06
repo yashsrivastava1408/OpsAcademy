@@ -5,6 +5,7 @@ import { sandboxApi } from '../../services/api';
 import useAuth from '../../hooks/useAuth';
 import useProgress from '../../hooks/useProgress';
 import usePolling from '../../hooks/usePolling';
+import PortalSwitch from './PortalSwitch';
 import './Navbar.css';
 
 const STATS_POLL_MS = 30000;
@@ -112,9 +113,7 @@ export default function Navbar() {
             </Link>
           )}
 
-          <Link to="/portal/lab" className="btn btn-primary btn-sm hide-mobile">
-            Go to Lab
-          </Link>
+          <PortalSwitch enabled={isRegistered} />
         </div>
       </div>
     </nav>
