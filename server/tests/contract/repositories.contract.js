@@ -250,6 +250,51 @@ function runContract(label, setup) {
       });
     });
 
+    describe('lab nodes and terminal tickets', () => {
+      test('heartbeats create and refresh nodes; only recent, non-draining ones are healthy', async () => {
+        await repos.nodes.heartbeat({ nodeId: 'a', baseUrl: 'http://a:7000', capacity: 50, running: 3, version: '1' });
+        await repos.nodes.heartbeat({ nodeId: 'b', baseUrl: 'http://b:7000', capacity: 50, draining: true });
+        await repos.nodes.heartbeat({ nodeId: 'a', baseUrl: 'http://a2:7000', capacity: 60, running: 5 });
+        expect(await repos.nodes.get('a')).toMatchObject({ nodeId: 'a', baseUrl: 'http://a2:7000', capacity: 60, running: 5, draining: false });
+        expect((await repos.nodes.get('a')).lastSeenAt).toBeGreaterThan(Date.now() - 5000);
+        expect(await repos.nodes.get('zzz')).toBeNull();
+        expect((await repos.nodes.list()).map((n) => n.nodeId)).toEqual(['a', 'b']);
+        expect((await repos.nodes.listHealthy(60000)).map((n) => n.nodeId)).toEqual(['a']);
+        await new Promise((r) => setTimeout(r, 30));
+        expect(await repos.nodes.listHealthy(10)).toEqual([]);
+        expect(await repos.nodes.remove('a')).toBe(true);
+        expect(await repos.nodes.remove('a')).toBe(false);
+      });
+
+      test('a terminal ticket works once and only before it expires; deleting the session removes it', async () => {
+        await repos.users.create(user('u1'));
+        const s = { sessionId: 's1', engineId: 'e1', userId: 'u1', labId: 'x', createdAt: 1, lastActiveAt: 1, fromPool: false, history: [], strikes: 0 };
+        await repos.sessions.upsert(s);
+        await repos.tickets.create({ hash: 'h1', sessionId: 's1', userId: 'u1', expiresAt: Date.now() + 30000 });
+        expect(await repos.tickets.redeem('h1')).toEqual({ sessionId: 's1', userId: 'u1' });
+        expect(await repos.tickets.redeem('h1')).toBeNull();
+        expect(await repos.tickets.redeem('never-issued')).toBeNull();
+
+        await repos.tickets.create({ hash: 'h2', sessionId: 's1', userId: 'u1', expiresAt: Date.now() - 1000 });
+        expect(await repos.tickets.redeem('h2')).toBeNull(); // expired tickets are consumed but refused
+        await repos.tickets.create({ hash: 'h3', sessionId: 's1', userId: 'u1', expiresAt: Date.now() - 1000 });
+        expect(await repos.tickets.prune()).toBe(1);
+
+        await repos.tickets.create({ hash: 'h4', sessionId: 's1', userId: 'u1', expiresAt: Date.now() + 30000 });
+        await repos.sessions.delete('s1');
+        expect(await repos.tickets.redeem('h4')).toBeNull();
+        await expect(repos.tickets.create({ hash: 'h5', sessionId: 'gone', userId: 'u1', expiresAt: Date.now() + 1000 })).rejects.toMatchObject({ code: 'session_missing' });
+      });
+
+      test('concurrent redemptions of one ticket: exactly one wins', async () => {
+        await repos.users.create(user('u1'));
+        await repos.sessions.upsert({ sessionId: 's1', engineId: 'e1', userId: 'u1', labId: 'x', createdAt: 1, lastActiveAt: 1, fromPool: false, history: [], strikes: 0 });
+        await repos.tickets.create({ hash: 'race', sessionId: 's1', userId: 'u1', expiresAt: Date.now() + 30000 });
+        const results = await Promise.all(Array.from({ length: 8 }, () => repos.tickets.redeem('race')));
+        expect(results.filter(Boolean)).toHaveLength(1);
+      });
+    });
+
     describe('identities', () => {
       test('links an external identity to an app user and finds it again', async () => {
         await repos.users.create(user('u1'));

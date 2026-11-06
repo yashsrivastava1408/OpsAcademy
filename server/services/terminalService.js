@@ -13,6 +13,7 @@ const logger = require('../lib/logger');
 const metrics = require('../lib/metrics');
 const commandGuard = require('../lib/commandGuard');
 const { verifyToken } = require('../middleware/auth');
+const ticketService = require('./ticketService');
 const { getManager } = require('./sandboxManager');
 
 const TERMINAL_PATH = '/api/terminal';
@@ -25,7 +26,8 @@ const MESSAGE_WINDOW_MS = 10000;
 // WebSocket close codes in the application range (4000-4999).
 const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
-const CLOSE = { SESSION_ENDED: 4000, POLICY: 4008, FLOOD: 4029 };
+// UPSTREAM_LOST: the lab node's side of the terminal ended (node restart, network); reconnecting may work.
+const CLOSE = { SESSION_ENDED: 4000, UPSTREAM_LOST: 4002, POLICY: 4008, FLOOD: 4029 };
 
 function isAllowedOrigin(origin) {
   // Non-browser clients send no Origin header; browsers always do.
@@ -57,17 +59,25 @@ function attachTerminalWebSocket(server, manager = getManager()) {
 
     if (!isAllowedOrigin(request.headers.origin)) return rejectUpgrade(socket, 403, 'Origin not allowed');
 
-    // Browsers cannot set headers on a WebSocket, so the token rides in the query string.
+    // Browsers cannot set headers on a WebSocket. They send a single-use ticket (see ticketService); the
+    // bearer token in the query string is still accepted for older clients until TERMINAL_TOKEN_AUTH=off.
     let user;
+    let sessionId = url.searchParams.get('sessionId');
     try {
-      user = await verifyToken(url.searchParams.get('token'));
+      const ticket = url.searchParams.get('ticket');
+      if (ticket) {
+        const redeemed = await ticketService.redeem(ticket);
+        user = redeemed ? { id: redeemed.userId } : null;
+        sessionId = redeemed ? redeemed.sessionId : null; // the ticket names the session; the URL cannot override it
+      } else if (config.terminalTokenAuth) {
+        user = await verifyToken(url.searchParams.get('token'));
+      }
     } catch (err) {
-      logger.error({ err: err.message }, '[Terminal] token check failed');
+      logger.error({ err: err.message }, '[Terminal] authentication failed');
       return rejectUpgrade(socket, 503, 'Service unavailable');
     }
     if (!user) return rejectUpgrade(socket, 401, 'Unauthorized');
 
-    const sessionId = url.searchParams.get('sessionId');
     let session;
     try {
       session = sessionId ? await manager.getSession(sessionId) : null;
@@ -134,6 +144,14 @@ async function handleConnection(ws, sessionId, manager) {
     if (!outbox) setImmediate(flushOutbox);
     outbox += data;
   });
+
+  // If the lab node's side of the stream ends while the session lives (node restart, network), say so: the
+  // browser reconnects with a new ticket and attaches again.
+  if (terminal.onClose) {
+    terminal.onClose(() => {
+      if (ws.readyState === ws.OPEN) ws.close(CLOSE.UPSTREAM_LOST, 'Lost connection to the lab server');
+    });
+  }
 
   // If the session is stopped or reaped, close the socket with the reason.
   const unsubscribe = manager.onClose(sessionId, (reason) => {

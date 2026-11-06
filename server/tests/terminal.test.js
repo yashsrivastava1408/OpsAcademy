@@ -39,10 +39,11 @@ afterEach(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-function url({ sessionId, token }) {
+function url({ sessionId, token, ticket }) {
   const params = new URLSearchParams();
   if (sessionId) params.set('sessionId', sessionId);
   if (token) params.set('token', token);
+  if (ticket) params.set('ticket', ticket);
   return `ws://127.0.0.1:${port}/api/terminal?${params}`;
 }
 
@@ -69,6 +70,66 @@ async function openTerminal(user = alice) {
   await term.opened;
   return { term, sessionId: session.sessionId };
 }
+
+describe('terminal tickets', () => {
+  const request = require('supertest');
+  const config = require('../config');
+  const ticketFor = async (sessionId, who = alice) => {
+    const res = await request(server).post(`/api/sandbox/${sessionId}/terminal-ticket`).set('Authorization', `Bearer ${signToken(who)}`);
+    return res;
+  };
+
+  test('a ticket opens the terminal once; the session comes from the ticket, not the URL', async () => {
+    const session = await ctx.manager.createSession(alice.id, 'linux-basics');
+    const other = await ctx.manager.createSession(alice.id, 'git-basics');
+    const res = await ticketFor(session.sessionId);
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body.data).toMatchObject({ expiresInMs: 30000, wsPath: '/api/terminal' });
+    const { ticket } = res.body.data;
+
+    // A different sessionId in the URL cannot redirect the ticket to another sandbox.
+    const term = connect({ ticket, sessionId: other.sessionId });
+    await term.opened;
+    term.type('echo via-ticket-$((20+1))\r');
+    await term.sees('via-ticket-21');
+    expect(await ctx.manager.getHistory(session.sessionId)).toHaveLength(1);
+    expect(await ctx.manager.getHistory(other.sessionId)).toHaveLength(0);
+
+    await expect(connect({ ticket }).opened).rejects.toMatchObject({ status: 401 }); // already used
+  });
+
+  test('only the owner gets a ticket; garbage and expired tickets are refused', async () => {
+    const session = await ctx.manager.createSession(alice.id);
+    expect((await ticketFor(session.sessionId, bob)).status).toBe(404);
+    expect((await request(server).post(`/api/sandbox/${session.sessionId}/terminal-ticket`)).status).toBe(401);
+    await expect(connect({ ticket: 'x'.repeat(43) }).opened).rejects.toMatchObject({ status: 401 });
+    await expect(connect({ ticket: 'short' }).opened).rejects.toMatchObject({ status: 401 });
+
+    const ticketService = require('../services/ticketService');
+    const { ticket } = await ticketService.issue(session.sessionId, alice.id, Date.now() - 31000);
+    await expect(connect({ ticket }).opened).rejects.toMatchObject({ status: 401 });
+  });
+
+  test('ending the session invalidates its tickets', async () => {
+    const session = await ctx.manager.createSession(alice.id);
+    const { ticket } = (await ticketFor(session.sessionId)).body.data;
+    await ctx.manager.destroySession(session.sessionId);
+    await expect(connect({ ticket }).opened).rejects.toMatchObject({ status: 401 });
+  });
+
+  test('with TERMINAL_TOKEN_AUTH=off the bearer token in the URL no longer works', async () => {
+    const session = await ctx.manager.createSession(alice.id);
+    config.terminalTokenAuth = false;
+    try {
+      await expect(connect({ sessionId: session.sessionId, token: signToken(alice) }).opened).rejects.toMatchObject({ status: 401 });
+      const { ticket } = (await ticketFor(session.sessionId)).body.data;
+      await connect({ ticket }).opened;
+    } finally {
+      config.terminalTokenAuth = true;
+    }
+  });
+});
 
 describe('connection authentication', () => {
   test.each([

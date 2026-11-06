@@ -1,7 +1,7 @@
 # ADR 0005: Lab node agent, session registry and terminal routing
 
-Status: accepted (Phase 3, issue #100). The registry (P3-02) is implemented with this ADR; the agent, tickets
-and router follow in the next Phase 3 changes and must match what is written here.
+Status: accepted (Phase 3, issue #100). Implemented: the registry, the agent (`server/lab-node/`), the remote engine, heartbeats,
+placement, tickets, the terminal router and reconciliation. See `docs/runbooks/lab-nodes.md` to run it.
 
 ## Context
 
@@ -50,7 +50,7 @@ hardening step and does not change the API). Agents never receive database crede
 
 | Call | Meaning |
 | --- | --- |
-| `POST /v1/sandboxes` `{ engineId, labId }` | Create a sandbox. `201`, or `503 node_full` when the node is at its hard limit |
+| `POST /v1/sandboxes` `{ labId }` | Create a sandbox (taken from the node's warm pool when one is waiting). `201 { engineId, nodeId, fromPool }`, or `503 node_full` when the node is at its hard limit. The node chooses the id |
 | `DELETE /v1/sandboxes/:engineId` | Destroy it (idempotent) |
 | `POST /v1/sandboxes/:engineId/exec` `{ command, timeoutMs? }` | Run a command: `{ exitCode, stdout, stderr }` |
 | `POST /v1/sandboxes/:engineId/reset` | Wipe the student's home directory |

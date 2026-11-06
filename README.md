@@ -42,6 +42,7 @@ Every unit has three modes:
 - **Accounts that hold up.** Guest progress moves to the account on sign-up; password reset and email confirmation by one-time link; a reset signs out every older session; an optional public profile page; a lab of the day with a small XP bonus.
 - **Works on a phone.** The lab switches between instructions and terminal on narrow screens.
 - **Operations built in.** Prometheus metrics, a Grafana dashboard, alert rules, liveness and readiness probes, structured logs, graceful shutdown.
+- **Scales past one server.** Student sessions live in Postgres, not in one process, so any number of gateway instances can serve them. Sandboxes run on *lab nodes*: small agents that are the only processes holding the Docker socket, found by heartbeat and filled least-loaded first. Terminals connect with single-use tickets and are routed to the node that owns the session ([ADR 0005](docs/adr/0005-lab-nodes-session-registry-terminal-routing.md), [runbook](docs/runbooks/lab-nodes.md)).
 - **Operator page.** `/admin` shows running sandboxes, the warm pool, accounts and what is configured, and can stop a sandbox. Only a signed-in platform admin can open it (role in the database; first admin via `PLATFORM_ADMIN_EMAILS` or `npm run grant-role`).
 - **Colleges and roles.** Roles (student, trainer, placement officer, college admin, platform admin) come from the database, never the token. A college admin imports a roster from CSV (dry run first); invites turn into memberships when the confirmed email signs in. Every `/api/colleges/:id/*` route is limited to that college's members, and admin actions are written to an append-only audit log.
 
@@ -473,6 +474,10 @@ Optional gateway settings (all in `server/.env.example`):
 | `APP_URL` | The web app's address, used to build the links in those emails | `CLIENT_URL`, else `http://localhost:5173` |
 | `PLATFORM_ADMIN_EMAILS` | Comma-separated confirmed emails that are platform admins (the first operator) | Admins are only those granted with `npm run grant-role` |
 | `LEGACY_AUTH` | `off` completes the move to Supabase Auth: the gateway's own sign-in endpoints and tokens stop working ([runbook](docs/runbooks/auth-cutover.md)) | `on` |
+| `SANDBOX_MODE` | `pty`, `docker`, or `remote` (sandboxes on lab nodes; the gateway needs no Docker socket) | `pty` |
+| `NODE_TOKEN` | Shared secret between the gateway and lab node agents (32+ characters; required with `remote`) | none |
+| `NODE_ID`, `NODE_CAPACITY`, `NODE_BASE_URL`, `GATEWAY_URL` | On a lab node: its name, how many sandboxes it runs, where the gateway reaches it, where it sends heartbeats | `local`, 50, `http://localhost:7000`, none |
+| `TERMINAL_TOKEN_AUTH` | `off` allows only single-use tickets for the terminal WebSocket | `on` |
 | `AUTH_COOKIE_SAMESITE` | `lax`, `strict` or `none` for the refresh-token cookie (`none` for a web app on a different site; needs HTTPS) | `lax` |
 | `METRICS_TOKEN` | A bearer token on `/metrics` | `/metrics` is open |
 | `DAILY_CHALLENGE=off` | Removes the lab of the day | It is on |

@@ -11,6 +11,7 @@ const rateLimit = require('../middleware/rateLimit');
 const units = require('../lib/units');
 const { getManager } = require('../services/sandboxManager');
 const telemetryService = require('../services/telemetryService');
+const ticketService = require('../services/ticketService');
 
 const router = express.Router();
 
@@ -97,6 +98,20 @@ router.delete('/:sessionId', requireAuth, requireOwnedSession, async (req, res, 
 router.get('/:sessionId/status', requireAuth, requireOwnedSession, async (req, res, next) => {
   try {
     res.json({ success: true, data: await getManager().getSession(req.params.sessionId) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/sandbox/:sessionId/terminal-ticket
+ * A single-use ticket (valid 30 s) to open the terminal WebSocket with, instead of the bearer token in the URL
+ */
+router.post('/:sessionId/terminal-ticket', requireAuth, requireOwnedSession, async (req, res, next) => {
+  try {
+    const { ticket, expiresInMs } = await ticketService.issue(req.params.sessionId, req.user.id);
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, data: { ticket, expiresInMs, wsPath: '/api/terminal' } });
   } catch (err) {
     next(err);
   }

@@ -26,6 +26,16 @@ function mapError(err) {
 
 // ── row mappers (database shape <-> the shape the services already use) ──
 
+async function nodeRows(q, tail, params = []) {
+  const { rows } = await q(
+    `select node_id, base_url, capacity, running, draining, version,
+            (extract(epoch from last_seen_at) * 1000)::float8 as seen_ms from lab_nodes ${tail}`, params);
+  return rows.map((r) => ({
+    nodeId: r.node_id, baseUrl: r.base_url, capacity: r.capacity, running: r.running,
+    draining: r.draining, version: r.version, lastSeenAt: r.seen_ms,
+  }));
+}
+
 const collegeRow = (r) => ({ id: r.id, name: r.name, slug: r.slug, timezone: r.timezone, active: r.active, createdAt: r.created_at.toISOString() });
 const sectionRow = (r) => ({ id: r.id, collegeId: r.college_id, name: r.name, academicYear: r.academic_year });
 
@@ -389,6 +399,47 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
       async reset(key) { await q('delete from rate_limit_hits where key = $1', [key]); },
       async prune() {
         const { rowCount } = await q('delete from rate_limit_hits where reset_at <= now()');
+        return rowCount;
+      },
+    },
+
+    nodes: {
+      async heartbeat({ nodeId, baseUrl, capacity, running = 0, draining = false, version = null }) {
+        await q(
+          `insert into lab_nodes (node_id, base_url, capacity, running, draining, version, last_seen_at)
+           values ($1,$2,$3,$4,$5,$6, now())
+           on conflict (node_id) do update set base_url = excluded.base_url, capacity = excluded.capacity,
+             running = excluded.running, draining = excluded.draining, version = excluded.version, last_seen_at = now()`,
+          [nodeId, baseUrl, capacity, running, draining, version]
+        );
+      },
+      async get(nodeId) { return (await nodeRows(q, 'where node_id = $1', [nodeId]))[0] || null; },
+      async list() { return nodeRows(q, 'order by node_id'); },
+      async listHealthy(maxAgeMs) {
+        return nodeRows(q, "where not draining and last_seen_at >= now() - ($1 || ' milliseconds')::interval order by node_id", [String(maxAgeMs)]);
+      },
+      async remove(nodeId) {
+        const { rowCount } = await q('delete from lab_nodes where node_id = $1', [nodeId]);
+        return rowCount > 0;
+      },
+    },
+
+    tickets: {
+      async create({ hash, sessionId, userId, expiresAt }) {
+        try {
+          await q('insert into terminal_tickets (hash, session_id, user_id, expires_at) values ($1,$2,$3,$4)', [hash, sessionId, userId, toDate(expiresAt)]);
+        } catch (err) {
+          if (err.code === '23503') throw new RepoError('session_missing', 'Session does not exist');
+          throw err;
+        }
+      },
+      async redeem(hash) {
+        // One statement: the ticket is consumed by whoever deletes it, and only if it has not expired.
+        const { rows } = await q('delete from terminal_tickets where hash = $1 returning session_id, user_id, expires_at > now() as valid', [hash]);
+        return rows[0] && rows[0].valid ? { sessionId: rows[0].session_id, userId: rows[0].user_id } : null;
+      },
+      async prune() {
+        const { rowCount } = await q('delete from terminal_tickets where expires_at <= now()');
         return rowCount;
       },
     },

@@ -1,0 +1,73 @@
+# Lab nodes (ADR 0005): the gateway stops controlling Docker; a lab node agent does.
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.nodes.yml up -d --build
+#
+# This overlay (1) switches the gateway and worker to SANDBOX_MODE=remote and takes the Docker socket
+# away from the gateway, and (2) adds one lab node on this host. More lab servers run only the
+# `lab-node` service (see docs/runbooks/lab-nodes.md) with GATEWAY_URL pointing at this host.
+#
+# Needs NODE_TOKEN (>= 32 random characters) in .env.production: `openssl rand -hex 32`.
+
+services:
+  server:
+    environment:
+      - SANDBOX_MODE=remote
+      - NODE_TOKEN=${NODE_TOKEN:?NODE_TOKEN is required (openssl rand -hex 32)}
+      # Older clients may keep sending the bearer token in the terminal URL; set to "off" once every browser uses tickets.
+      - TERMINAL_TOKEN_AUTH=${TERMINAL_TOKEN_AUTH:-on}
+    # No Docker socket on the process that faces the internet.
+    volumes: !reset []
+    depends_on:
+      lab-node:
+        condition: service_started
+    networks:
+      - opsacademy-public
+      - opsacademy-internal
+      - opsacademy-nodes
+
+  worker:
+    environment:
+      - SANDBOX_MODE=remote
+      - NODE_TOKEN=${NODE_TOKEN:?NODE_TOKEN is required (openssl rand -hex 32)}
+    networks:
+      - opsacademy-public
+      - opsacademy-nodes
+
+  lab-node:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: opsacademy-lab-node
+    restart: unless-stopped
+    command: ["node", "lab-node.js"]
+    healthcheck:
+      disable: true
+    expose:
+      - "7000"
+    environment:
+      - NODE_ENV=production
+      - NODE_ID=${NODE_ID:-node-1}
+      - NODE_TOKEN=${NODE_TOKEN:?NODE_TOKEN is required (openssl rand -hex 32)}
+      - NODE_PORT=7000
+      - NODE_BASE_URL=http://lab-node:7000
+      - GATEWAY_URL=http://server:4000
+      - NODE_CAPACITY=${NODE_CAPACITY:-45}
+      - NODE_ENGINE=docker
+      - SANDBOX_IMAGE=opsacademy-sandbox:latest
+      - SANDBOX_POOL_SIZE=${SANDBOX_POOL_SIZE:-5}
+      - SANDBOX_MEMORY_MB=${SANDBOX_MEMORY_MB:-256}
+      - SANDBOX_CPUS=${SANDBOX_CPUS:-0.5}
+      # The agent holds no database credentials and no signing secrets.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      sandbox-image:
+        condition: service_completed_successfully
+    networks:
+      - opsacademy-nodes
+
+networks:
+  # Gateway, worker and lab nodes only. No route to the internet from here.
+  opsacademy-nodes:
+    driver: bridge
+    internal: true

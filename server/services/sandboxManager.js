@@ -23,6 +23,7 @@ class SandboxError extends Error {
 }
 
 function loadEngine(mode) {
+  if (mode === 'remote') return require('./remoteEngine');
   return mode === 'docker' ? require('./dockerService') : require('./ptyService');
 }
 
@@ -44,7 +45,10 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     ...limits,
   };
 
-  const pool = createPool(engine, poolOptions);
+  // Lab nodes keep their own warm pools; a gateway has no containers to pre-warm.
+  const pool = createPool(engine, engine.remote ? { ...poolOptions, enabled: false } : poolOptions);
+  // Remote engines need to know which node a sandbox is on.
+  const where = (row) => (engine.remote ? { nodeId: row.nodeId } : undefined);
   const registry = () => getRepos().sessions;
 
   // Everything about a session (owner, node, history, strikes, activity) lives in the registry, so
@@ -78,9 +82,11 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
       if (mine >= settings.maxPerUser) {
         throw new SandboxError(`You already have ${settings.maxPerUser} sandboxes running. Stop one first.`, 429);
       }
-      if ((await registry().count()) + pendingTotal() >= settings.maxTotal) {
-        throw new SandboxError('All sandboxes are in use. Please try again in a few minutes.', 503);
-      }
+      // With lab nodes the nodes' own capacity is the limit; otherwise this host's.
+      const full = engine.freeSeats
+        ? (await engine.freeSeats()) <= 0
+        : (await registry().count()) + pendingTotal() >= settings.maxTotal;
+      if (full) throw new SandboxError('All sandboxes are in use. Please try again in a few minutes.', 503);
       pending.set(userId, (pending.get(userId) || 0) + 1);
     });
     admission = run.catch(() => {});
@@ -136,7 +142,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
       await registry().upsert(row);
     } catch (err) {
       // Without a record nobody could ever find this sandbox again.
-      await engine.destroy(row.engineId).catch(() => {});
+      await engine.destroy(row.engineId, where(row)).catch(() => {});
       throw err;
     } finally {
       release();
@@ -225,7 +231,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     closeListeners.delete(sessionId);
     if (listeners) for (const listener of listeners) listener(reason);
 
-    await engine.destroy(row.engineId);
+    await engine.destroy(row.engineId, where(row));
     logger.info({ sessionId, reason }, 'sandbox destroyed');
     return true;
   }
@@ -256,21 +262,21 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
   async function exec(sessionId, command, { touch: countsAsActivity = true, ...options } = {}) {
     const row = await requireRow(sessionId);
     if (countsAsActivity) touch(sessionId);
-    return engine.exec(row.engineId, command, options);
+    return engine.exec(row.engineId, command, engine.remote ? { ...options, nodeId: row.nodeId } : options);
   }
 
   async function attach(sessionId) {
     const row = await registry().get(sessionId);
     if (!row || !owns(row)) return null;
     strikeCounts.set(sessionId, Math.max(strikeCounts.get(sessionId) || 0, row.strikes || 0));
-    return engine.attach(row.engineId);
+    return engine.attach(row.engineId, where(row));
   }
 
   async function reset(sessionId) {
     const row = await requireRow(sessionId);
     await touch(sessionId, { force: true });
     await settle(registry().clearHistory(sessionId), 'clear command history', sessionId);
-    await engine.reset(row.engineId);
+    await engine.reset(row.engineId, where(row));
   }
 
   /**
@@ -334,7 +340,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     return {
       mode: engine.name,
       activeSessions: await registry().count(),
-      capacity: settings.maxTotal,
+      capacity: engine.totalCapacity ? await engine.totalCapacity() : settings.maxTotal,
       pool: pool.stats(),
       claimLatencyMs: { pool: summarise(claimLatencies.pool), cold: summarise(claimLatencies.cold) },
     };
@@ -384,10 +390,15 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     await pool.replenish();
   }
 
-  /** Stop this process: end the sandboxes it runs and empty its pool. */
+  /**
+   * Stop this process. A gateway using lab nodes owns no sandboxes, so students keep theirs through a
+   * gateway restart; an engine that runs sandboxes in this process ends its own, and empties its pool.
+   */
   async function shutdown() {
-    for (const row of await registry().all().catch(() => [])) {
-      if (owns(row)) await destroySession(row.sessionId, 'shutdown').catch(() => {});
+    if (!engine.remote) {
+      for (const row of await registry().all().catch(() => [])) {
+        if (owns(row)) await destroySession(row.sessionId, 'shutdown').catch(() => {});
+      }
     }
     await pool.drain();
   }

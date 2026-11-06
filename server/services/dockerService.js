@@ -117,7 +117,7 @@ async function create(engineId, { labId } = {}) {
     throw err;
   }
 
-  const sandbox = { containerId: container.id, networkName, alive: true, exitListeners: [] };
+  const sandbox = { containerId: container.id, networkName, alive: true, exitListeners: [], createdAt: Date.now() };
   sandboxes.set(engineId, sandbox);
 
   // Notice containers that die on their own (OOM kill, pid limit, `exit`).
@@ -147,6 +147,11 @@ async function destroy(engineId) {
     });
   }
   return true;
+}
+
+/** Every sandbox this engine knows, for the lab node agent's inventory. */
+function list() {
+  return [...sandboxes].map(([engineId, s]) => ({ engineId, alive: s.alive, createdAt: s.createdAt || null }));
 }
 
 function isAlive(engineId) {
@@ -332,6 +337,7 @@ module.exports = {
   name: 'docker',
   create,
   destroy,
+  list,
   isAlive,
   onExit,
   exec,

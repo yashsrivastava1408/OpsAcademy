@@ -66,9 +66,14 @@ function createPool(engine, { size = config.sandbox.poolSize, enabled = config.s
     }
 
     const engineId = newEngineId();
-    await engine.create(engineId, { labId });
+    // A remote engine chooses the node and the sandbox's id (its own pool may serve the request).
+    const created = await engine.create(engineId, { labId });
     setImmediate(() => replenish().catch(() => {}));
-    return { engineId, fromPool: false };
+    return {
+      engineId: (created && created.engineId) || engineId,
+      nodeId: created && created.nodeId,
+      fromPool: Boolean(created && created.fromPool),
+    };
   }
 
   /** Destroy all standby sandboxes (shutdown). */
