@@ -47,7 +47,7 @@ export default function LabTransitionPage() {
   const targetUrl = toParam
     ? safeInternalPath(toParam)
     : unitParam
-      ? `/unit/${encodeURIComponent(unitParam)}/practice`
+      ? `/lab/${encodeURIComponent(unitParam)}`
       : '/dashboard';
 
   // phase: checking | queued | reserved | no_slot | blocked | error
@@ -105,8 +105,8 @@ export default function LabTransitionPage() {
   useEffect(() => {
     if (view.phase !== 'reserved') return undefined;
     labPortalApi.event('transition_step', { step: 'connect', ok: true });
-    const timer = setTimeout(() => navigate(targetUrl, { replace: true }), 900);
-    return () => clearTimeout(timer);
+    navigate(targetUrl, { replace: true });
+    return undefined;
   }, [view.phase, navigate, targetUrl]);
 
   const leave = async () => {

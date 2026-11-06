@@ -179,7 +179,7 @@ export function renderMarkdownString(markdownText, handleCopyCode, copiedIdx, un
                     </>
                   )}
                 </button>
-                <Link to={`/unit/${unitId}/practice`} className="btn btn-secondary btn-sm code-run-btn">
+                <Link to={`/lab/${unitId}`} className="btn btn-secondary btn-sm code-run-btn">
                   <Terminal size={12} /> Run in Shell
                 </Link>
               </div>

@@ -284,7 +284,7 @@ export default function PreparePage() {
             <Link to={`/unit/${unitId}/learn`} className="btn btn-secondary btn-sm">
               <BookOpen size={14} /> Theory
             </Link>
-            <Link to={`/unit/${unitId}/practice`} className="btn btn-primary btn-sm">
+            <Link to={`/lab/${unitId}`} className="btn btn-primary btn-sm">
               <Terminal size={14} /> Practice Lab
             </Link>
           </div>

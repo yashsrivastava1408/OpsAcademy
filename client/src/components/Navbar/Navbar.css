@@ -128,42 +128,6 @@
   flex-shrink: 0;
 }
 
-.nav-telemetry-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 9999px;
-  background: #DCFCE7;
-  border: 1px solid #86EFAC;
-  color: #15803D;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-}
-
-.pulse-dot {
-  color: #16A34A;
-  animation: pulse 1.8s infinite;
-}
-
-@keyframes pulse {
-  0% { opacity: 0.4; transform: scale(0.9); }
-  50% { opacity: 1; transform: scale(1.1); }
-  100% { opacity: 0.4; transform: scale(0.9); }
-}
-
-.nav-telemetry-badge.offline {
-  color: #991B1B;
-  border-color: #FCA5A5;
-  background: #FEE2E2;
-}
-
-.nav-telemetry-badge.offline .pulse-dot {
-  color: #DC2626;
-  animation: none;
-}
-
 .nav-progress {
   display: flex;
   align-items: center;

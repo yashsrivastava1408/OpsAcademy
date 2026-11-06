@@ -30,7 +30,6 @@ const FALLBACK_UNITS = [
 
 export default function RoadmapPage() {
   const [units, setUnits] = useState(FALLBACK_UNITS);
-  const [activeWeekIndex, setActiveWeekIndex] = useState(0);
 
   useEffect(() => {
     async function loadUnits() {
@@ -61,7 +60,7 @@ export default function RoadmapPage() {
               Complete 13-Week <span className="gradient-text">DevOps Engineering</span> Roadmap
             </h1>
             <p className="banner-subtitle">
-              From beginner fundamentals to senior cloud & site reliability engineer. Follow this battle-tested weekly milestone timeline with live interactive labs.
+              From beginner fundamentals to senior cloud & site reliability engineer. Follow this battle-tested weekly milestone timeline with hands-on labs in Lab Studio.
             </p>
 
             <div className="banner-stats-row">
@@ -82,19 +81,14 @@ export default function RoadmapPage() {
 
           <div className="hero-banner-action">
             <Link to="/dashboard" className="btn btn-primary btn-lg">
-              Explore All Labs
+              Browse all topics
               <ArrowRight size={18} />
             </Link>
           </div>
         </div>
 
-        {/* ── Dedicated Interactive CI/CD Pipeline Roadmap ─────── */}
         <div className="roadmap-main-deck animate-fade-in-up">
-          <DevOpsRoadmap
-            units={units}
-            selectedStepIndex={activeWeekIndex}
-            onStepSelect={(index) => setActiveWeekIndex(index)}
-          />
+          <DevOpsRoadmap units={units} />
         </div>
       </div>
     </div>

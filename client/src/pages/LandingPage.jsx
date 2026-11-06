@@ -202,7 +202,7 @@ export default function LandingPage() {
 
               {/* Single Clear Action Button routing to Interactive Lab */}
               <div className="hero-editorial-ctas">
-                <Link to="/portal/lab" className="hero-btn-pill-primary hero-btn-single">
+                <Link to="/lab" className="hero-btn-pill-primary hero-btn-single">
                   <span>Go to Interactive Lab</span>
                   <ArrowRight size={18} />
                 </Link>
@@ -1040,7 +1040,7 @@ export default function LandingPage() {
                 <p>Stop watching tutorials. Start typing real commands in live sandboxes.</p>
               </div>
             </div>
-            <Link to="/portal/lab" className="ready-banner-btn">
+            <Link to="/lab" className="ready-banner-btn">
               Go to Interactive Lab <ArrowRight size={16} />
             </Link>
           </div>

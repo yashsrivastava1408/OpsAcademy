@@ -74,7 +74,7 @@ export default function CaseStudyPage() {
             <span className="learn-badge">Mode: Case Study</span>
             <h1>{study.title || meta.title}</h1>
           </div>
-          <Link to={`/unit/${unitId}/practice`} className="btn btn-primary btn-sm">
+          <Link to={`/lab/${unitId}`} className="btn btn-primary btn-sm">
             <Terminal size={14} /> Practice Lab
           </Link>
         </div>
@@ -143,7 +143,7 @@ export default function CaseStudyPage() {
           </div>
           <div className="case-study-links">
             <Link to={`/unit/${unitId}/learn`} className="btn btn-secondary"><BookOpen size={14} /> Learn</Link>
-            <Link to={`/unit/${unitId}/practice`} className="btn btn-primary"><Terminal size={14} /> Practice</Link>
+            <Link to={`/lab/${unitId}`} className="btn btn-primary"><Terminal size={14} /> Practice</Link>
             <Link to={`/unit/${unitId}/prepare`} className="btn btn-secondary"><Award size={14} /> Prepare</Link>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Navigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom';
 import { Loader, LogIn, UserPlus, FlaskConical } from 'lucide-react';
 import useAuth from '../hooks/useAuth';
 import { authApi, errorMessage } from '../services/api';
@@ -15,16 +15,17 @@ import './AuthPage.css';
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { isRegistered, login, loginWithLabId, register } = useAuth();
 
-  const [mode, setMode] = useState('register'); // register | login | lab | forgot
+  const [mode, setMode] = useState(searchParams.get('tab') === 'lab' ? 'lab' : 'register'); // register | login | lab | forgot
   const [resetNotice, setResetNotice] = useState(null);
   const [confirmNotice, setConfirmNotice] = useState(null);
   const [form, setForm] = useState({ name: '', email: '', labId: '', password: '' });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (isRegistered) return <Navigate to="/dashboard" replace />;
+  if (isRegistered) return <Navigate to={mode === 'lab' ? '/lab' : '/dashboard'} replace />;
 
   if (confirmNotice) {
     return (
@@ -66,7 +67,7 @@ export default function AuthPage() {
       } else {
         await login(form.email, form.password);
       }
-      navigate('/dashboard');
+      navigate(mode === 'lab' ? '/lab' : '/dashboard');
     } catch (err) {
       setError(errorMessage(err, 'Could not reach the server. Please try again.'));
     } finally {

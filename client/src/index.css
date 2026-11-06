@@ -454,3 +454,49 @@ html {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Shared card (the landing page's catalog card), for roadmap, lab topics and anywhere a topic is shown ── */
+.oa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 22px; }
+
+.oa-card {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 1.5px solid var(--border-light);
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.oa-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--primary-blue);
+  box-shadow: 0 16px 36px -8px rgba(37, 99, 235, 0.12), 0 0 0 1px rgba(37, 99, 235, 0.1);
+}
+.oa-card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.oa-card-icon {
+  width: 40px; height: 40px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px; background: var(--primary-blue-light); border: 1px solid var(--primary-blue-border);
+  color: var(--primary-blue);
+}
+.oa-card-kicker { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--primary-blue); }
+.oa-card-title { font-size: 1.02rem; font-weight: 800; color: #0f172a; line-height: 1.25; margin: 0; }
+.oa-card-sub { font-size: 0.84rem; color: var(--text-slate); line-height: 1.5; margin: 0 0 14px; }
+.oa-card-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; flex: 1; align-content: flex-start; }
+.oa-chip { padding: 3px 9px; border-radius: var(--radius-pill); font-size: 0.72rem; font-weight: 700; background: #f1f5f9; color: #475569; }
+.oa-card-foot { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-light); padding-top: 14px; }
+.oa-unit-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.82rem; font-weight: 700; color: #0f172a; }
+.oa-unit-actions { display: flex; gap: 6px; }
+.oa-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: var(--radius-btn);
+  font-size: 0.78rem; font-weight: 700; text-decoration: none;
+  color: var(--primary-blue); background: var(--primary-blue-light); border: 1px solid var(--primary-blue-border);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.oa-link:hover { background: var(--primary-blue); color: #fff; }
+.oa-link.is-quiet { background: transparent; border-color: var(--border-light); color: #475569; }
+.oa-link.is-quiet:hover { background: #f1f5f9; color: #0f172a; }
+.oa-link.is-lab { background: var(--primary-blue); color: #fff; border-color: var(--primary-blue); }
+.oa-link.is-lab:hover { background: var(--primary-blue-hover); }

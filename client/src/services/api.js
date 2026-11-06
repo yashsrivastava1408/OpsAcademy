@@ -185,6 +185,27 @@ export const adminApi = {
   labFunnel: (days = 7) => api.get('/admin/lab-funnel', { params: { days } }),
 };
 
+// ── College staff: lab slots, sections and roster ──
+const college = (id) => `/colleges/${encodeURIComponent(id)}`;
+export const collegeApi = {
+  mine: () => api.get('/colleges/mine'),
+  sections: (id) => api.get(`${college(id)}/sections`),
+  members: (id, role) => api.get(`${college(id)}/members`, { params: { role } }),
+  templates: (id) => api.get(`${college(id)}/slot-templates`),
+  createTemplate: (id, body) => api.post(`${college(id)}/slot-templates`, body),
+  deleteTemplate: (id, templateId) => api.delete(`${college(id)}/slot-templates/${encodeURIComponent(templateId)}`),
+  blackouts: (id) => api.get(`${college(id)}/blackouts`),
+  addBlackout: (id, body) => api.post(`${college(id)}/blackouts`, body),
+  removeBlackout: (id, blackoutId) => api.delete(`${college(id)}/blackouts/${encodeURIComponent(blackoutId)}`),
+  generateSlots: (id, body) => api.post(`${college(id)}/slots/generate`, body),
+  slots: (id, from, to) => api.get(`${college(id)}/slots`, { params: { from, to } }),
+  updateSlot: (id, slotId, body) => api.patch(`${college(id)}/slots/${encodeURIComponent(slotId)}`, body),
+  deleteSlot: (id, slotId) => api.delete(`${college(id)}/slots/${encodeURIComponent(slotId)}`),
+  assignments: (id, slotId) => api.get(`${college(id)}/slots/${encodeURIComponent(slotId)}/assignments`),
+  assignStudent: (id, slotId, userId, kind = 'add') => api.put(`${college(id)}/slots/${encodeURIComponent(slotId)}/students/${encodeURIComponent(userId)}`, { kind }),
+  clearStudent: (id, slotId, userId) => api.delete(`${college(id)}/slots/${encodeURIComponent(slotId)}/students/${encodeURIComponent(userId)}`),
+};
+
 // ── Lab portal: can I enter the lab, and in what order ──
 export const labPortalApi = {
   availability: () => api.get('/lab/availability'),

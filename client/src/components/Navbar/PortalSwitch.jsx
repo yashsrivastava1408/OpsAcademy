@@ -23,20 +23,20 @@ export default function PortalSwitch({ enabled }) {
   const { pathname } = useLocation();
   const state = useLabAvailability(15000, enabled);
   const unit = pathname.match(/^\/(?:unit|lab)\/([^/]+)/)?.[1];
-  const inLab = /^\/lab\//.test(pathname) || /\/practice$/.test(pathname);
+  const inLab = pathname === '/lab' || pathname.startsWith('/lab/');
 
   if (inLab) {
     return (
       <Link to={unit ? `/unit/${unit}/learn` : '/dashboard'} className="btn btn-secondary btn-sm hide-mobile" onClick={() => labPortalApi.event('switch_to_theory')}>
-        <BookOpen size={14} /> Theory
+        <BookOpen size={14} /> Back to Theory
       </Link>
     );
   }
   const hint = labHint(state);
-  const to = unit ? `/lab/${unit}/enter` : '/portal/lab';
+  const to = unit ? `/lab/${unit}` : '/lab';
   return (
-    <Link to={to} className="btn btn-primary btn-sm hide-mobile" onClick={() => labPortalApi.event('switch_to_lab')} title={hint ? `Lab: ${hint}` : 'Go to the lab'}>
-      <FlaskConical size={14} /> Lab{hint ? ` · ${hint}` : ''}
+    <Link to={to} className="btn btn-primary btn-sm hide-mobile" onClick={() => labPortalApi.event('switch_to_lab')} title={hint ? `Lab Studio: ${hint}` : 'Open Lab Studio'}>
+      <FlaskConical size={14} /> Lab Studio{hint ? ` · ${hint}` : ''}
     </Link>
   );
 }

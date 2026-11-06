@@ -214,7 +214,7 @@ export default function DashboardPage() {
               </span>
             </div>
             {!daily.done && (
-              <Link to={`/unit/${daily.unitId}/practice`} className="btn btn-primary btn-sm">
+              <Link to={`/lab/${daily.unitId}`} className="btn btn-primary btn-sm">
                 <Terminal size={14} /> Open lab
               </Link>
             )}
@@ -233,7 +233,7 @@ export default function DashboardPage() {
               <ul className="weak-list">
                 {progress.weakTopics.map((topic) => (
                   <li key={topic.unitId}>
-                    <Link to={`/unit/${topic.unitId}/practice`} className="weak-title">{topic.title}</Link>
+                    <Link to={`/lab/${topic.unitId}`} className="weak-title">{topic.title}</Link>
                     <span className="weak-meta">
                       {topic.fails} failed check{topic.fails === 1 ? '' : 's'} • {topic.hints} hint{topic.hints === 1 ? '' : 's'}
                     </span>
@@ -432,14 +432,6 @@ export default function DashboardPage() {
                   >
                     <BookOpen size={14} />
                     <span>Learn</span>
-                  </Link>
-                  <Link
-                    to={`/unit/${unit.id}/practice`}
-                    className="mode-btn mode-practice"
-                    title="Launch Interactive Terminal Practice Lab"
-                  >
-                    <Terminal size={14} />
-                    <span>Practice</span>
                   </Link>
                   <Link
                     to={`/unit/${unit.id}/prepare`}
