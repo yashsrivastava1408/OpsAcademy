@@ -22,11 +22,17 @@ function errorHandler(err, req, res, _next) {
 
   if (statusCode >= 500) logger.error({ err, path: req.path }, 'request failed');
 
-  res.status(statusCode).json({
+  const body = {
     success: false,
     // Internal error details stay in the logs in production.
     error: statusCode >= 500 && config.isProd ? 'Internal Server Error' : err.message || 'Internal Server Error',
-  });
+  };
+  // A refusal that says why (not allowed, not admitted yet) carries the learner's state for the screen to show.
+  if (err.state && statusCode < 500) {
+    body.code = err.code;
+    body.state = err.state;
+  }
+  res.status(statusCode).json(body);
 }
 
 module.exports = errorHandler;

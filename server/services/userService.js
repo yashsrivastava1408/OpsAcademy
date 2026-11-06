@@ -32,6 +32,8 @@ function publicUser(user) {
     guest: Boolean(user.guest),
     emailVerified: Boolean(user.emailVerified),
     profileSlug: user.profilePublic ? user.profileSlug : null,
+    username: user.username || null,
+    labAccess: Boolean(user.labAccess),
   };
 }
 
@@ -183,14 +185,19 @@ async function register({ name, email, password }, guestId = null) {
 // Compared against when the email is unknown, so both failure paths cost one bcrypt check.
 const DUMMY_HASH = bcrypt.hashSync('opsacademy-timing-equaliser', BCRYPT_ROUNDS);
 
-async function login({ email, password }) {
-  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
-    throw new UserError('Email and password are required');
+/** Sign in with an email, or with a lab ID (`id`), and a password. */
+async function login({ email, id, password }) {
+  const byId = typeof id === 'string' && id.trim() !== '';
+  const who = byId ? id : email;
+  if (typeof who !== 'string' || typeof password !== 'string' || !who || !password) {
+    throw new UserError(byId ? 'Lab ID and password are required' : 'Email and password are required');
   }
-  const user = await getRepos().users.getByEmail(email.toLowerCase().trim());
+  const repos = getRepos();
+  const user = byId ? await repos.users.getByUsername(who.toLowerCase().trim()) : await repos.users.getByEmail(who.toLowerCase().trim());
 
   const matches = await bcrypt.compare(password, user && user.password ? user.password : DUMMY_HASH);
-  if (!user || !matches) throw new UserError('Invalid email or password', 401);
+  if (!user || !matches) throw new UserError(byId ? 'Invalid Lab ID or password' : 'Invalid email or password', 401);
+  if (user.disabled) throw new UserError('This account is disabled. Ask your admin.', 403);
   return user;
 }
 

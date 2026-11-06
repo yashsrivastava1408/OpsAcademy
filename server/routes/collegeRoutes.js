@@ -11,6 +11,7 @@ const { requireRole, requireCollegeRole, loadAccess } = require('../middleware/r
 const asyncHandler = require('../middleware/asyncHandler');
 const collegeService = require('../services/collegeService');
 const audit = require('../services/auditService');
+const slotService = require('../services/slotService');
 
 const router = express.Router();
 
@@ -79,6 +80,102 @@ router.post('/:collegeId/roster', requireCollegeRole('college_admin'), asyncHand
 /** GET /api/colleges/:collegeId/audit — what admins and trainers did in this college */
 router.get('/:collegeId/audit', requireCollegeRole('college_admin'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await audit.list({ collegeId: req.params.collegeId, limit: 200 }) });
+}));
+
+// ── Lab slots ────────────────────────────────────────────────
+// The college decides who uses which slot: admins make templates, blackout dates and slots and give them to
+// sections; trainers move individual students. Every change is audit-logged.
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ADMIN = ['college_admin'];
+const TRAINERS = ['trainer', 'college_admin'];
+
+function timeRange(query) {
+  const from = Number(query.from) || Date.now() - DAY_MS;
+  const to = Number(query.to) || from + 31 * DAY_MS;
+  return { from, to: Math.min(to, from + 190 * DAY_MS) };
+}
+
+router.get('/:collegeId/slot-templates', requireCollegeRole(...STAFF), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await slotService.listTemplates(req.params.collegeId) });
+}));
+
+router.post('/:collegeId/slot-templates', requireCollegeRole(...ADMIN), asyncHandler(async (req, res) => {
+  const template = await slotService.createTemplate(req.params.collegeId, req.body, req.user.id);
+  await audit.record(req, 'slot_template.create', { entityType: 'slot_template', entityId: template.id, collegeId: req.params.collegeId, meta: { weekday: template.weekday, startTime: template.startTime, seats: template.seats } });
+  res.status(201).json({ success: true, data: template });
+}));
+
+router.post('/:collegeId/slot-templates/:templateId/:action(activate|deactivate)', requireCollegeRole(...ADMIN), asyncHandler(async (req, res) => {
+  const template = await slotService.setTemplateActive(req.params.collegeId, req.params.templateId, req.params.action === 'activate');
+  await audit.record(req, `slot_template.${req.params.action}`, { entityType: 'slot_template', entityId: template.id, collegeId: req.params.collegeId });
+  res.json({ success: true, data: template });
+}));
+
+router.delete('/:collegeId/slot-templates/:templateId', requireCollegeRole(...ADMIN), asyncHandler(async (req, res) => {
+  await slotService.deleteTemplate(req.params.collegeId, req.params.templateId);
+  await audit.record(req, 'slot_template.delete', { entityType: 'slot_template', entityId: req.params.templateId, collegeId: req.params.collegeId });
+  res.json({ success: true });
+}));
+
+router.get('/:collegeId/blackouts', requireCollegeRole(...STAFF), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await slotService.listBlackouts(req.params.collegeId) });
+}));
+
+router.post('/:collegeId/blackouts', requireCollegeRole(...ADMIN), asyncHandler(async (req, res) => {
+  const blackout = await slotService.addBlackout(req.params.collegeId, req.body || {});
+  await audit.record(req, 'blackout.add', { entityType: 'blackout', entityId: blackout.id, collegeId: req.params.collegeId, meta: { onDate: blackout.onDate } });
+  res.status(201).json({ success: true, data: blackout });
+}));
+
+router.delete('/:collegeId/blackouts/:id', requireCollegeRole(...ADMIN), asyncHandler(async (req, res) => {
+  await slotService.removeBlackout(req.params.collegeId, req.params.id);
+  await audit.record(req, 'blackout.remove', { entityType: 'blackout', entityId: req.params.id, collegeId: req.params.collegeId });
+  res.json({ success: true });
+}));
+
+/** POST /api/colleges/:collegeId/slots/generate  { from, to, templateId? } — a semester of slots in one action */
+router.post('/:collegeId/slots/generate', requireCollegeRole(...ADMIN), asyncHandler(async (req, res) => {
+  const result = await slotService.generate(req.params.collegeId, req.body || {}, req.user.id);
+  await audit.record(req, 'slots.generate', { entityType: 'college', entityId: req.params.collegeId, collegeId: req.params.collegeId, meta: result });
+  res.status(201).json({ success: true, data: result });
+}));
+
+/** GET /api/colleges/:collegeId/slots?from=&to= (epoch ms) — slots with who may use them and any warnings */
+router.get('/:collegeId/slots', requireCollegeRole(...STAFF), asyncHandler(async (req, res) => {
+  const { from, to } = timeRange(req.query);
+  res.json({ success: true, data: await slotService.listSlots(req.params.collegeId, from, to) });
+}));
+
+/** PATCH /api/colleges/:collegeId/slots/:slotId  { sectionId?, capacity? } — give a slot to a section, set its seats */
+router.patch('/:collegeId/slots/:slotId', requireCollegeRole(...ADMIN), asyncHandler(async (req, res) => {
+  const slot = await slotService.updateSlot(req.params.collegeId, req.params.slotId, req.body || {});
+  await audit.record(req, 'slot.update', { entityType: 'slot', entityId: slot.id, collegeId: req.params.collegeId, meta: { sectionId: slot.sectionId, capacity: slot.capacity } });
+  res.json({ success: true, data: slot });
+}));
+
+router.delete('/:collegeId/slots/:slotId', requireCollegeRole(...ADMIN), asyncHandler(async (req, res) => {
+  await slotService.deleteSlot(req.params.collegeId, req.params.slotId);
+  await audit.record(req, 'slot.delete', { entityType: 'slot', entityId: req.params.slotId, collegeId: req.params.collegeId });
+  res.json({ success: true });
+}));
+
+router.get('/:collegeId/slots/:slotId/assignments', requireCollegeRole(...STAFF), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await slotService.listAssignments(req.params.collegeId, req.params.slotId) });
+}));
+
+/** PUT /api/colleges/:collegeId/slots/:slotId/students/:userId  { kind: 'add' | 'remove' } — a trainer's override for one student */
+router.put('/:collegeId/slots/:slotId/students/:userId', requireCollegeRole(...TRAINERS), asyncHandler(async (req, res) => {
+  const kind = (req.body && req.body.kind) || 'add';
+  const result = await slotService.assignStudent(req.params.collegeId, req.params.slotId, req.params.userId, kind);
+  await audit.record(req, `slot.student_${kind}`, { entityType: 'slot', entityId: req.params.slotId, collegeId: req.params.collegeId, meta: { userId: req.params.userId, warnings: result.warnings.map((w) => w.code) } });
+  res.json({ success: true, data: result });
+}));
+
+router.delete('/:collegeId/slots/:slotId/students/:userId', requireCollegeRole(...TRAINERS), asyncHandler(async (req, res) => {
+  await slotService.unassignStudent(req.params.collegeId, req.params.slotId, req.params.userId);
+  await audit.record(req, 'slot.student_clear', { entityType: 'slot', entityId: req.params.slotId, collegeId: req.params.collegeId, meta: { userId: req.params.userId } });
+  res.json({ success: true });
 }));
 
 module.exports = router;

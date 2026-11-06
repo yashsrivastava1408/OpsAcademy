@@ -80,6 +80,18 @@ const config = {
   // allows only single-use tickets from POST /api/sandbox/:id/terminal-ticket.
   terminalTokenAuth: process.env.TERMINAL_TOKEN_AUTH !== 'off',
 
+  // Who may start a lab. 'open' (default): anyone signed in, as before. 'accounts': only lab accounts (an ID and
+  // password issued by the platform admin), with a queue when seats are full. 'slots': lab accounts, and only in a slot
+  // the college assigned them (platform admins are always allowed).
+  labPolicy: ['open', 'accounts', 'slots'].includes(process.env.LAB_POLICY) ? process.env.LAB_POLICY : 'open',
+  lab: {
+    admitTtlMs: int('LAB_ADMIT_TTL_MS', 2 * 60 * 1000), // how long an admitted learner has to open the lab
+    waitingStaleMs: int('LAB_WAITING_STALE_MS', 45 * 1000), // a waiter that stops checking in loses its place
+    typicalSessionMinutes: int('LAB_TYPICAL_SESSION_MINUTES', 10), // for the wait estimate
+    learnersPerServer: int('LEARNERS_PER_SERVER', 40), // for the capacity plan; replace with the measured number
+    slotEndGraceMinutes: int('LAB_SLOT_END_GRACE_MINUTES', 5), // sandboxes close this long after their slot ends
+  },
+
   // Which lab node this process's sandboxes run on. One gateway running its own sandboxes is one node.
   nodeId: process.env.NODE_ID || 'local',
 

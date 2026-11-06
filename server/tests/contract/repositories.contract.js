@@ -295,6 +295,240 @@ function runContract(label, setup) {
       });
     });
 
+    describe('lab accounts', () => {
+      const lab = (id, username, extra = {}) => ({ id, name: `Lab ${id}`, guest: false, emailVerified: false, createdAt: `2026-01-01T00:00:0${id.length % 9}.000Z`, username, labAccess: true, password: '$2a$10$hash', ...extra });
+
+      test('an account with a lab ID needs no email; lab IDs are unique and case-insensitive', async () => {
+        await repos.users.create(lab('l1', 'srm-001'));
+        expect(await repos.users.getByUsername('srm-001')).toMatchObject({ id: 'l1', username: 'srm-001', labAccess: true });
+        expect(await repos.users.getByUsername('SRM-001')).toMatchObject({ id: 'l1' });
+        expect(await repos.users.getByUsername('nobody')).toBeNull();
+        await expect(repos.users.create(lab('l2', 'srm-001'))).rejects.toMatchObject({ code: 'username_taken' });
+        const updated = await repos.users.update('l1', { disabled: true, labAccess: false });
+        expect(updated).toMatchObject({ disabled: true });
+        expect(updated.labAccess).toBeFalsy();
+      });
+
+      test('lists lab accounts with a search, and finds the next number for a prefix', async () => {
+        await repos.users.create(user('t1')); // a theory account: not a lab account
+        for (const n of [1, 2, 10]) await repos.users.create(lab(`id${n}`, `srm-${String(n).padStart(3, '0')}`));
+        await repos.users.create(lab('other', 'iit-007'));
+        const all = await repos.users.listLabAccounts({});
+        expect(all.total).toBe(4);
+        expect(all.rows.map((u) => u.username).sort()).toEqual(['iit-007', 'srm-001', 'srm-002', 'srm-010']);
+        expect((await repos.users.listLabAccounts({ search: 'srm' })).total).toBe(3);
+        expect((await repos.users.listLabAccounts({ search: 'srm', limit: 2, offset: 2 })).rows).toHaveLength(1);
+        expect(await repos.users.maxUsernameSequence('srm')).toBe(10);
+        expect(await repos.users.maxUsernameSequence('iit')).toBe(7);
+        expect(await repos.users.maxUsernameSequence('new')).toBe(0);
+      });
+    });
+
+    describe('slots, assignments and blackouts', () => {
+      let college;
+      let section;
+      const HOUR = 3600000;
+      const t0 = Date.UTC(2026, 10, 7, 4, 30); // a Saturday, 10:00 IST
+      beforeEach(async () => {
+        college = await repos.colleges.create({ name: 'SRM', slug: 'srm' });
+        section = await repos.sections.ensure({ collegeId: college.id, name: 'CSE-A' });
+      });
+
+      test('templates are stored, changed and removed; blackout dates are unique per college', async () => {
+        const tpl = await repos.slots.createTemplate({ collegeId: college.id, sectionId: section.id, weekday: 6, startTime: '10:00', durationMinutes: 90, seats: 40, makeup: false });
+        expect(tpl).toMatchObject({ weekday: 6, startTime: '10:00', durationMinutes: 90, seats: 40, active: true, sectionId: section.id });
+        expect((await repos.slots.listTemplates(college.id)).map((t) => t.id)).toEqual([tpl.id]);
+        expect(await repos.slots.updateTemplate(tpl.id, { active: false, seats: 30 })).toMatchObject({ active: false, seats: 30 });
+        expect(await repos.slots.updateTemplate('nope', { active: false })).toBeNull();
+
+        const first = await repos.slots.addBlackout({ collegeId: college.id, onDate: '2026-12-25', reason: 'Holiday' });
+        const again = await repos.slots.addBlackout({ collegeId: college.id, onDate: '2026-12-25', reason: 'Christmas' });
+        expect(again.id).toBe(first.id);
+        expect((await repos.slots.listBlackouts(college.id)).map((b) => [b.onDate, b.reason])).toEqual([['2026-12-25', 'Christmas']]);
+        expect(await repos.slots.removeBlackout('other-college', first.id)).toBe(false);
+        expect(await repos.slots.removeBlackout(college.id, first.id)).toBe(true);
+        expect(await repos.slots.deleteTemplate(tpl.id)).toBe(true);
+      });
+
+      test('generating slots twice from one template creates each slot once; slots can be listed by time', async () => {
+        const tpl = await repos.slots.createTemplate({ collegeId: college.id, weekday: 6, startTime: '10:00', durationMinutes: 90, seats: 40 });
+        const rows = [0, 7].map((d) => ({ collegeId: college.id, startsAt: t0 + d * 24 * HOUR, endsAt: t0 + d * 24 * HOUR + 1.5 * HOUR, capacity: 40, templateId: tpl.id }));
+        expect(await repos.slots.createSlots(rows)).toBe(2);
+        expect(await repos.slots.createSlots(rows)).toBe(0);
+        const slots = await repos.slots.listSlots({ collegeId: college.id, from: t0 - HOUR, to: t0 + 2 * HOUR });
+        expect(slots).toHaveLength(1);
+        expect(slots[0]).toMatchObject({ collegeId: college.id, capacity: 40, templateId: tpl.id, startsAt: t0, endsAt: t0 + 1.5 * HOUR, makeup: false });
+        expect(await repos.slots.listSlots({ from: t0, to: t0 + 30 * 24 * HOUR })).toHaveLength(2);
+        expect(await repos.slots.listSlots({ collegeId: 'other', from: t0, to: t0 + 30 * 24 * HOUR })).toEqual([]);
+        expect(await repos.slots.getSlot(slots[0].id)).toMatchObject({ id: slots[0].id });
+        expect(await repos.slots.getSlot('nope')).toBeNull();
+      });
+
+      test('assignments add or remove a student from a slot and can be listed', async () => {
+        await repos.users.create(user('s1'));
+        await repos.slots.createSlots([{ collegeId: college.id, startsAt: t0, endsAt: t0 + HOUR, capacity: 5 }]);
+        const [slot] = await repos.slots.listSlots({ from: t0 - HOUR, to: t0 + 2 * HOUR });
+        await repos.slots.setAssignment({ slotId: slot.id, userId: 's1', kind: 'add' });
+        await repos.slots.setAssignment({ slotId: slot.id, userId: 's1', kind: 'remove' });
+        expect(await repos.slots.listAssignments(slot.id)).toMatchObject([{ userId: 's1', kind: 'remove', name: 'User s1' }]);
+        expect(await repos.slots.assignmentsForUser('s1')).toMatchObject([{ slotId: slot.id, kind: 'remove' }]);
+        expect(await repos.slots.removeAssignment(slot.id, 's1')).toBe(true);
+        expect(await repos.slots.removeAssignment(slot.id, 's1')).toBe(false);
+        expect(await repos.slots.deleteSlot(slot.id)).toBe(true);
+      });
+
+      test('sessions remember their slot', async () => {
+        await repos.users.create(user('s1'));
+        await repos.slots.createSlots([{ collegeId: college.id, startsAt: t0, endsAt: t0 + HOUR, capacity: 5 }]);
+        const [slot] = await repos.slots.listSlots({ from: t0 - HOUR, to: t0 + 2 * HOUR });
+        await repos.sessions.upsert({ sessionId: 'x1', engineId: 'e1', userId: 's1', labId: 'l', slotId: slot.id, createdAt: 1, lastActiveAt: 1, fromPool: false, history: [], strikes: 0 });
+        await repos.sessions.upsert({ sessionId: 'x2', engineId: 'e2', userId: 's1', labId: 'l', createdAt: 1, lastActiveAt: 1, fromPool: false, history: [], strikes: 0 });
+        expect(await repos.sessions.countBySlot(slot.id)).toBe(1);
+        expect((await repos.sessions.get('x1')).slotId).toBe(slot.id);
+      });
+    });
+
+    describe('the lab queue', () => {
+      let slot;
+      beforeEach(async () => {
+        for (const id of ['a', 'b', 'c', 'd']) await repos.users.create(user(id));
+        const college = await repos.colleges.create({ name: 'SRM', slug: 'srm' });
+        await repos.slots.createSlots([{ collegeId: college.id, startsAt: 1_800_000_000_000, endsAt: 1_800_003_600_000, capacity: 2 }]);
+        [slot] = await repos.slots.listSlots({ from: 1_700_000_000_000, to: 1_900_000_000_000 });
+      });
+
+      test('waiters get positions in order; a person waits only once; leaving frees the place', async () => {
+        const a = await repos.queue.enqueue({ userId: 'a', slotId: slot.id });
+        const b = await repos.queue.enqueue({ userId: 'b', slotId: slot.id });
+        const g = await repos.queue.enqueue({ userId: 'c' }); // a different scope: anywhere
+        expect([await repos.queue.position(a), await repos.queue.position(b), await repos.queue.position(g)]).toEqual([1, 2, 1]);
+        await expect(repos.queue.enqueue({ userId: 'a', slotId: slot.id })).rejects.toMatchObject({ code: 'already_queued' });
+        expect(await repos.queue.waitingCount(slot.id)).toBe(2);
+        expect(await repos.queue.getOpen('a')).toMatchObject({ status: 'waiting', slotId: slot.id });
+        expect(await repos.queue.cancel('a')).toBe(true);
+        expect(await repos.queue.cancel('a')).toBe(false);
+        expect(await repos.queue.position(b)).toBe(1);
+        expect(await repos.queue.getOpen('a')).toBeNull();
+        await repos.queue.enqueue({ userId: 'a', slotId: slot.id }); // can join again
+      });
+
+      test('admission takes the longest-waiting first, holds the seat, and lets go of unclaimed seats', async () => {
+        await repos.queue.enqueue({ userId: 'a', slotId: slot.id });
+        await repos.queue.enqueue({ userId: 'b', slotId: slot.id });
+        await repos.queue.enqueue({ userId: 'c', slotId: slot.id });
+        const admitted = await repos.queue.admit({ slotId: slot.id, limit: 2, ttlMs: 60000 });
+        expect(admitted.map((r) => r.userId)).toEqual(['a', 'b']);
+        expect(admitted[0]).toMatchObject({ status: 'admitted' });
+        expect(admitted[0].expiresAt).toBeGreaterThan(Date.now());
+        expect(await repos.queue.countHeld(slot.id)).toBe(2);
+        expect(await repos.queue.admit({ slotId: slot.id, limit: 0, ttlMs: 1 })).toEqual([]);
+
+        const started = await repos.queue.getOpen('a');
+        await repos.queue.markStarted(started.id, 'sess-1');
+        expect(await repos.queue.getOpen('a')).toBeNull();
+        expect(await repos.queue.attendedSlots('a', [slot.id])).toEqual([slot.id]);
+        expect(await repos.queue.attendedSlots('b', [slot.id])).toEqual([]);
+        expect(await repos.queue.countHeld(slot.id)).toBe(1);
+
+        // b never claims its seat
+        expect(await repos.queue.expire({ now: Date.now() + 120000, waitingStaleMs: 10 * 60000 })).toBeGreaterThanOrEqual(1);
+        expect(await repos.queue.countHeld(slot.id)).toBe(0);
+        expect(await repos.queue.getOpen('b')).toBeNull();
+      });
+
+      test('waiters who stop checking in expire; reserve takes a seat at once', async () => {
+        const w = await repos.queue.enqueue({ userId: 'a', slotId: slot.id });
+        await new Promise((r) => setTimeout(r, 20));
+        await repos.queue.touch(w.id);
+        expect(await repos.queue.expire({ now: Date.now(), waitingStaleMs: 5000 })).toBe(0);
+        expect(await repos.queue.expire({ now: Date.now() + 10000, waitingStaleMs: 5000 })).toBe(1);
+        const r = await repos.queue.reserve({ userId: 'b', slotId: slot.id, ttlMs: 30000 });
+        expect(r).toMatchObject({ status: 'admitted', userId: 'b' });
+        expect(await repos.queue.countHeld(slot.id)).toBe(1);
+        await expect(repos.queue.reserve({ userId: 'b', slotId: slot.id, ttlMs: 30000 })).rejects.toMatchObject({ code: 'already_queued' });
+        expect(await repos.queue.scopesWaiting()).toEqual([]);
+      });
+
+      test('concurrent admissions never admit the same waiter twice or exceed the limit', async () => {
+        for (const id of ['a', 'b', 'c', 'd']) await repos.queue.enqueue({ userId: id, slotId: slot.id });
+        const results = await Promise.all([1, 2, 3].map(() => repos.queue.admit({ slotId: slot.id, limit: 2, ttlMs: 60000 })));
+        const users = results.flat().map((r) => r.userId);
+        expect(new Set(users).size).toBe(users.length);
+        expect(users.length).toBeLessThanOrEqual(4);
+        expect(await repos.queue.countHeld(slot.id)).toBe(users.length);
+      });
+    });
+
+    describe('seat accounting', () => {
+      let slot;
+      beforeEach(async () => {
+        for (const id of ['a', 'b', 'c', 'd', 'e']) await repos.users.create(user(id));
+        const college = await repos.colleges.create({ name: 'SRM', slug: 'srm' });
+        await repos.slots.createSlots([{ collegeId: college.id, startsAt: 1_800_000_000_000, endsAt: 1_800_003_600_000, capacity: 2 }]);
+        [slot] = await repos.slots.listSlots({ from: 1_700_000_000_000, to: 1_900_000_000_000 });
+      });
+      const take = (userId, extra = {}) => repos.queue.reserveSeat({ userId, slotId: slot.id, slotCapacity: 2, clusterCapacity: 10, ttlMs: 60000, ...extra });
+
+      test('a slot never hands out more seats than it has, counting running sessions and held seats', async () => {
+        expect(await take('a')).toMatchObject({ status: 'admitted' });
+        await repos.sessions.upsert({ sessionId: 's1', engineId: 'e1', userId: 'b', labId: 'l', slotId: slot.id, createdAt: 1, lastActiveAt: 1, fromPool: false, history: [], strikes: 0 });
+        expect(await repos.queue.seatUsage(slot.id)).toEqual({ slot: 2, cluster: 2 });
+        expect(await take('c')).toBeNull(); // 1 held + 1 running = the slot's 2 seats
+        await repos.queue.cancel('a');
+        expect(await take('c')).toMatchObject({ userId: 'c' });
+      });
+
+      test('the whole cluster is also a limit', async () => {
+        expect(await take('a', { clusterCapacity: 1 })).not.toBeNull();
+        expect(await take('b', { clusterCapacity: 1 })).toBeNull();
+        expect(await repos.queue.reserveSeat({ userId: 'b', slotId: null, clusterCapacity: 1, ttlMs: 1000 })).toBeNull();
+        expect(await repos.queue.reserveSeat({ userId: 'b', slotId: null, clusterCapacity: 2, ttlMs: 1000 })).not.toBeNull();
+      });
+
+      test('simultaneous requests for the last seats never exceed the limit', async () => {
+        const results = await Promise.all(['a', 'b', 'c', 'd', 'e'].map((id) => take(id)));
+        expect(results.filter(Boolean)).toHaveLength(2);
+        expect(await repos.queue.seatUsage(slot.id)).toEqual({ slot: 2, cluster: 2 });
+      });
+
+      test('admission fills only the seats that are free, oldest first', async () => {
+        for (const id of ['a', 'b', 'c', 'd']) await repos.queue.enqueue({ userId: id, slotId: slot.id });
+        const first = await repos.queue.admitSeats({ slotId: slot.id, slotCapacity: 2, clusterCapacity: 10, ttlMs: 60000 });
+        expect(first.map((r) => r.userId)).toEqual(['a', 'b']);
+        expect(await repos.queue.admitSeats({ slotId: slot.id, slotCapacity: 2, clusterCapacity: 10, ttlMs: 60000 })).toEqual([]);
+        await repos.queue.cancel('a');
+        const next = await repos.queue.admitSeats({ slotId: slot.id, slotCapacity: 2, clusterCapacity: 10, ttlMs: 60000 });
+        expect(next.map((r) => r.userId)).toEqual(['c']);
+        // a smaller cluster limit holds the rest back too
+        await repos.queue.cancel('b');
+        expect(await repos.queue.admitSeats({ slotId: slot.id, slotCapacity: 2, clusterCapacity: 1, ttlMs: 60000 })).toEqual([]);
+      });
+
+      test('concurrent admitters (several gateways) never admit past the limit or the same person twice', async () => {
+        for (const id of ['a', 'b', 'c', 'd', 'e']) await repos.queue.enqueue({ userId: id, slotId: slot.id });
+        const runs = await Promise.all([1, 2, 3, 4].map(() => repos.queue.admitSeats({ slotId: slot.id, slotCapacity: 2, clusterCapacity: 10, ttlMs: 60000 })));
+        const ids = runs.flat().map((r) => r.userId);
+        expect(ids).toHaveLength(2);
+        expect(new Set(ids).size).toBe(2);
+      });
+    });
+
+    describe('lab analytics events', () => {
+      test('counts events per name and step', async () => {
+        const now = Date.now();
+        await repos.events.record({ name: 'transition_step', userId: 'u', props: { step: 'slot_check', ok: true } });
+        await repos.events.record({ name: 'transition_step', userId: 'u', props: { step: 'slot_check', ok: true } });
+        await repos.events.record({ name: 'transition_step', userId: 'u', props: { step: 'reserve', ok: false } });
+        await repos.events.record({ name: 'switch_to_lab' });
+        const rows = await repos.events.funnel({ from: now - 1000, to: now + 60000 });
+        const pick = (name, step) => rows.find((r) => r.name === name && r.step === step);
+        expect(pick('transition_step', 'slot_check')).toMatchObject({ ok: 'true', count: 2 });
+        expect(pick('transition_step', 'reserve')).toMatchObject({ ok: 'false', count: 1 });
+        expect(rows.find((r) => r.name === 'switch_to_lab').count).toBe(1);
+        expect(await repos.events.funnel({ from: now + 60000, to: now + 120000 })).toEqual([]);
+      });
+    });
+
     describe('identities', () => {
       test('links an external identity to an app user and finds it again', async () => {
         await repos.users.create(user('u1'));

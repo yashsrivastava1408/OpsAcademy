@@ -15,8 +15,10 @@ function startReaper(manager = getManager(), intervalMs = config.sandbox.reaperI
   if (timer) return;
 
   timer = setInterval(() => {
-    manager.sweep().then((reaped) => {
+    manager.sweep().then(async (reaped) => {
       if (reaped.length > 0) logger.info({ reaped }, '[Reaper] cleaned up stale sandboxes');
+      // Sandboxes of a lab slot that has ended (this gateway's own; with lab nodes the worker does it).
+      if (!manager.isRemote) await require('./labService').closeEndedSlots(manager);
     }).catch((err) => {
       logger.warn({ err: err.message }, '[Reaper] sweep failed');
     });

@@ -112,7 +112,7 @@ describe('auth', () => {
   test('register returns a token and never returns the password hash', async () => {
     const user = await registered();
     expect(user.res.status).toBe(201);
-    expect(user.user).toEqual({ id: expect.any(String), name: 'Asha Rao', email: user.email, guest: false, emailVerified: false, profileSlug: null });
+    expect(user.user).toEqual({ id: expect.any(String), name: 'Asha Rao', email: user.email, guest: false, emailVerified: false, profileSlug: null, username: null, labAccess: false });
     expect(JSON.stringify(user.res.body)).not.toMatch(/password|\$2[aby]\$/);
   });
 

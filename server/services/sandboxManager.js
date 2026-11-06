@@ -104,7 +104,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
    * Start a sandbox for a user.
    * @throws {SandboxError} 429 when the user is at their limit, 503 when the host is full
    */
-  async function createSession(userId, labId = 'sandbox') {
+  async function createSession(userId, labId = 'sandbox', { slotId = null } = {}) {
     await admit(userId);
     const startedAt = process.hrtime.bigint();
     // The reserved slot is held until the session is recorded, so it is never counted twice or not at all.
@@ -129,6 +129,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
       sessionId: randomUUID(),
       engineId: acquired.engineId,
       nodeId: acquired.nodeId || nodeId,
+      slotId: slotId || undefined,
       userId,
       labId,
       createdAt: now,
@@ -424,6 +425,7 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     stats,
     replenishPool: () => pool.replenish(),
     getMode: () => engine.name,
+    isRemote: Boolean(engine.remote),
   };
 }
 

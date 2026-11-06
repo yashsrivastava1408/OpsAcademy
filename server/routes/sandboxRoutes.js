@@ -12,6 +12,8 @@ const units = require('../lib/units');
 const { getManager } = require('../services/sandboxManager');
 const telemetryService = require('../services/telemetryService');
 const ticketService = require('../services/ticketService');
+const labService = require('../services/labService');
+const { dropCached } = require('./labPortalRoutes');
 
 const router = express.Router();
 
@@ -54,7 +56,25 @@ router.post('/start', requireAuth, rateLimit.sandboxStart(), async (req, res, ne
 
     const manager = getManager();
     const running = labId === 'sandbox' ? null : await manager.findSession(req.user.id, labId);
-    const sandbox = running || await manager.createSession(req.user.id, labId);
+    let sandbox = running;
+    if (!running) {
+      // Who may start a lab, and in which slot, is decided here (see services/labService).
+      let grant;
+      try {
+        grant = await labService.authorizeStart(req.user);
+      } finally {
+        dropCached(req.user.id); // joining the queue or taking a seat changes what availability should say
+      }
+      try {
+        sandbox = await manager.createSession(req.user.id, labId, { slotId: grant.slotId });
+      } catch (err) {
+        await labService.startFailed(req.user); // hand the reserved seat back
+        throw err;
+      } finally {
+        dropCached(req.user.id);
+      }
+      await labService.started(grant.entry, sandbox.sessionId);
+    }
 
     res.status(running ? 200 : 201).json({
       success: true,
