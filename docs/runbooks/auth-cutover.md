@@ -19,7 +19,11 @@ both switches default to the old sign-in.
    - Password policy: minimum length 8.
 3. Gateway env (server): `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` set; `CORS_ORIGINS` lists the web origin if the web app and
    API are on different origins; `AUTH_COOKIE_SAMESITE=none` only if they are on different *sites* (needs HTTPS).
-4. First operator: set `PLATFORM_ADMIN_EMAILS=<your verified email>` (or run `npm run grant-role` later).
+4. Gateway env also needs `SUPABASE_SECRET_KEY` (server only). With `LEGACY_AUTH=off` the gateway uses it to create, reset and
+   disable **Lab ID** accounts in Supabase Auth. A Lab ID has no email, so each one is registered under the made-up address
+   `<lab-id>@lab.opsacademy.invalid` (never mailed); the browser builds the same address when the student signs in on the
+   Lab login tab. See `server/lib/labIdentity.js` and `client/src/lib/labEmail.js`.
+5. First operator: set `PLATFORM_ADMIN_EMAILS=<your verified email>` (or run `npm run grant-role` later).
 
 ## 1. Move existing accounts
 

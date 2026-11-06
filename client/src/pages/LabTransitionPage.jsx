@@ -5,11 +5,9 @@ import usePolling from '../hooks/usePolling';
 import useAuth from '../hooks/useAuth';
 import { safeInternalPath } from '../lib/safePath';
 import {
-  Terminal,
   Shield,
   Cpu,
   Wifi,
-  Sparkles,
   CheckCircle2,
   ArrowRight,
   Loader2,
