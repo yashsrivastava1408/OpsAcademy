@@ -1,26 +1,397 @@
 {
-  "unitId": "endpoint-security",
-  "title": "Enterprise Endpoint Security Architecture: EPP, EDR & XDR",
-  "modules": [
+  "overview": {
+    "why": "Laptops, desktops and servers are where attacks actually land: a phishing link, a bad download, a stolen password. Firewalls at the office door no longer help when people work from anywhere. Endpoint security protects each device and lets a security team see, investigate and contain an attack from one console. It is the core of a Security Operations Centre (SOC) analyst's job.",
+    "prerequisites": [
+      "Basic networking and operating-system knowledge.",
+      "No prior security experience is needed."
+    ],
+    "outcomes": [
+      "Explain the difference between EPP, EDR and XDR and when each is the right answer",
+      "Describe how an endpoint agent, its local engine and the cloud console work together",
+      "Walk through an attack with the kill chain and show where an EDR sees it",
+      "Follow a simple playbook for triaging an alert and isolating a host",
+      "List the baseline controls: patching, encryption, least privilege and application control"
+    ],
+    "placementTip": "SOC interviews often give you an alert and ask \"what do you do?\". Practise the order: confirm it is real, scope how far it went, contain (isolate), remove, recover, then write it up."
+  },
+  "sections": [
     {
       "id": "module-1",
       "title": "1. What is Endpoint Security & Why It Exists",
-      "content": "### What is Endpoint Security?\n\nEndpoint security is the process of protecting network endpoints — desktops, laptops, mobile devices, servers, and IoT devices — from malicious threats and cyberattacks. It combines preventative protection (**EPP**) with continuous detection and response capabilities (**EDR**).\n\nAccording to IBM's Cost of a Data Breach Report 2023, the average data breach cost reached **$4.45 million** — a 15% increase over three years.\n\n#### Why Endpoint Security Exists:\n- **Expanding Attack Surface**: Remote work and cloud adoption mean devices are no longer perimeter-protected by traditional firewalls.\n- **Sophisticated Threats**: Fileless malware, zero-days, and ransomware bypass legacy antivirus.\n- **Zero-Trust Architecture**: Every device must be continuously verified; trust is never assumed.\n- **Compliance Mandates**: GDPR, HIPAA, and PCI-DSS mandate endpoint audit trails and encryption."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### What is Endpoint Security?\n\nEndpoint security is the process of protecting network endpoints — desktops, laptops, mobile devices, servers, and IoT devices — from malicious threats and cyberattacks. It combines preventative protection (**EPP**) with continuous detection and response capabilities (**EDR**).\n\nAccording to IBM's Cost of a Data Breach Report 2023, the average data breach cost reached **$4.45 million** — a 15% increase over three years.\n\n#### Why Endpoint Security Exists:\n- **Expanding Attack Surface**: Remote work and cloud adoption mean devices are no longer perimeter-protected by traditional firewalls.\n- **Sophisticated Threats**: Fileless malware, zero-days, and ransomware bypass legacy antivirus.\n- **Zero-Trust Architecture**: Every device must be continuously verified; trust is never assumed.\n- **Compliance Mandates**: GDPR, HIPAA, and PCI-DSS mandate endpoint audit trails and encryption."
+        }
+      ],
+      "keyPoints": [
+        "Endpoints are the new perimeter: laptops, servers, phones and IoT devices all need protection.",
+        "Modern attacks (fileless malware, ransomware) slip past old signature-only antivirus.",
+        "Compliance rules such as GDPR, HIPAA and PCI-DSS expect endpoint controls and audit trails."
+      ],
+      "quiz": {
+        "question": "Why is a traditional office firewall no longer enough to protect devices?",
+        "options": [
+          "Firewalls do not exist any more",
+          "Devices work from home and the cloud, outside the office network, and many attacks arrive through the user",
+          "Firewalls only work on Linux",
+          "Because encryption is banned"
+        ],
+        "correctIndex": 1,
+        "explanation": "People and devices are no longer inside one protected network, so each endpoint needs its own protection and visibility."
+      }
     },
     {
       "id": "module-2",
       "title": "2. Subdomains: EPP vs EDR vs XDR",
-      "content": "### The Endpoint Security Family\n\n| Capability | Primary Goal | Detection Method | Response Action | Leading Vendors |\n| :--- | :--- | :--- | :--- | :--- |\n| **EPP (Prevention)** | Block malware before execution | AV signatures + ML heuristics | Block file, quarantine | Microsoft Defender, Sophos |\n| **EDR (Detection)** | Continuous telemetry & investigation | Behavioral analysis, process trees | Isolate host, kill process | CrowdStrike Falcon, SentinelOne |\n| **XDR (Extended)** | Cross-layer attack correlation | Endpoint + Network + Cloud + Email | Automated cross-domain containment | Palo Alto Cortex XDR, M365 Defender |\n\n#### Core Capabilities Matrix:\n- **Antivirus / NGAV**: Real-time file scanning & signature updates.\n- **Behavioral Analysis**: Machine learning models detecting fileless malware.\n- **Application & Device Control**: Whitelisting approved apps and blocking unauthorized USB drives.\n- **Automated Isolation**: Immediately cutting network access to infected hosts in <5 seconds."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### The Endpoint Security Family\n\n| Capability | Primary Goal | Detection Method | Response Action | Leading Vendors |\n| :--- | :--- | :--- | :--- | :--- |\n| **EPP (Prevention)** | Block malware before execution | AV signatures + ML heuristics | Block file, quarantine | Microsoft Defender, Sophos |\n| **EDR (Detection)** | Continuous telemetry & investigation | Behavioral analysis, process trees | Isolate host, kill process | CrowdStrike Falcon, SentinelOne |\n| **XDR (Extended)** | Cross-layer attack correlation | Endpoint + Network + Cloud + Email | Automated cross-domain containment | Palo Alto Cortex XDR, M365 Defender |\n\n#### Core Capabilities Matrix:\n- **Antivirus / NGAV**: Real-time file scanning & signature updates.\n- **Behavioral Analysis**: Machine learning models detecting fileless malware.\n- **Application & Device Control**: Whitelisting approved apps and blocking unauthorized USB drives.\n- **Automated Isolation**: Quickly cutting network access to infected hosts so malware cannot spread."
+        }
+      ],
+      "keyPoints": [
+        "EPP **prevents** known and likely threats; EDR **records and investigates** behaviour; XDR **correlates** across endpoint, network, cloud and email.",
+        "They build on each other: most products now bundle EPP and EDR together.",
+        "Application control and device control (USB) shrink the attack surface."
+      ],
+      "quiz": {
+        "question": "Which capability records what processes do and lets an analyst isolate an infected host?",
+        "options": [
+          "EPP",
+          "EDR",
+          "DNS",
+          "VPN"
+        ],
+        "correctIndex": 1,
+        "explanation": "EDR (endpoint detection and response) continuously records behaviour and provides investigation and containment actions such as isolation."
+      }
     },
     {
       "id": "module-3",
       "title": "3. Internal Architecture & Agent Mechanics",
-      "content": "### Three-Tier Enterprise Architecture\n\n```text\nAgent on Endpoint (Kernel Driver) ──> Local Engine (Behavioral Decision) ──> Cloud Management Console (Threat Intel Enrichment)\n```\n\n1. **Endpoint Agent**: Operates at the OS kernel level to intercept system calls, process creation, registry changes, and network sockets.\n2. **Local Engine**: Analyzes activity in real-time. If offline, local rules continue to protect the endpoint using cached heuristics.\n3. **Cloud Console**: Aggregates telemetry across millions of endpoints, enriches detections with global threat intelligence, and feeds SIEM/SOAR platforms."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### Three-Tier Enterprise Architecture\n\n```text\nAgent on Endpoint (Kernel Driver) ──> Local Engine (Behavioral Decision) ──> Cloud Management Console (Threat Intel Enrichment)\n```\n\n1. **Endpoint Agent**: Operates at the OS kernel level to intercept system calls, process creation, registry changes, and network sockets.\n2. **Local Engine**: Analyzes activity in real-time. If offline, local rules continue to protect the endpoint using cached heuristics.\n3. **Cloud Console**: Aggregates telemetry across millions of endpoints, enriches detections with global threat intelligence, and feeds SIEM/SOAR platforms."
+        }
+      ],
+      "keyPoints": [
+        "A lightweight agent watches processes, files, registry and network connections at kernel level.",
+        "A local engine decides in real time and keeps protecting the device even when it is offline.",
+        "The cloud console adds threat intelligence and gives analysts one place to investigate."
+      ],
+      "quiz": {
+        "question": "What keeps an endpoint agent protecting the device when it has no internet connection?",
+        "options": [
+          "Nothing: it stops",
+          "The local engine, using cached rules and behavioural logic",
+          "The cloud console",
+          "The user's browser"
+        ],
+        "correctIndex": 1,
+        "explanation": "The local engine continues to decide and block using cached detections and heuristics until the device reconnects."
+      }
     },
     {
       "id": "module-4",
       "title": "4. Enterprise Tooling Comparison & Deployment",
-      "content": "### Platform Comparison & GPO/Intune Deployment\n\n| Platform | Category | Core Strengths | Best Fit |\n| :--- | :--- | :--- | :--- |\n| **Microsoft Defender for Endpoint** | EPP + EDR | Native Windows integration, M365 ecosystem | Microsoft 365 & Azure AD enterprises |\n| **CrowdStrike Falcon** | EPP + EDR | Ultra-lightweight agent (<1% CPU), top threat intel | Enterprises wanting best-in-class EDR |\n| **SentinelOne Singularity** | EPP + EDR | Autonomous AI response & 1-click file rollback | Mid-market & autonomous SOC |\n| **Cortex XDR** | XDR | Cross-layer network & endpoint correlation | Palo Alto Networks ecosystem |\n\n#### GPO / PowerShell Onboarding Script:\n```powershell\n# Onboard Defender for Endpoint\nExpand-Archive -Path 'C:\\Deploy\\DefenderATP.zip' -DestinationPath 'C:\\Deploy\\ATP'\ncd C:\\Deploy\\ATP\n.\\WindowsDefenderATP-Onboarding.ps1\nGet-Service -Name 'Sense' | Select-Object Status\n```"
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### Platform Comparison & GPO/Intune Deployment\n\n| Platform | Category | Core Strengths | Best Fit |\n| :--- | :--- | :--- | :--- |\n| **Microsoft Defender for Endpoint** | EPP + EDR | Native Windows integration, M365 ecosystem | Microsoft 365 & Azure AD enterprises |\n| **CrowdStrike Falcon** | EPP + EDR | Ultra-lightweight agent (<1% CPU), top threat intel | Enterprises wanting best-in-class EDR |\n| **SentinelOne Singularity** | EPP + EDR | Autonomous AI response & 1-click file rollback | Mid-market & autonomous SOC |\n| **Cortex XDR** | XDR | Cross-layer network & endpoint correlation | Palo Alto Networks ecosystem |\n\n#### GPO / PowerShell Onboarding Script:\n```powershell\n# Onboard Defender for Endpoint\nExpand-Archive -Path 'C:\\Deploy\\DefenderATP.zip' -DestinationPath 'C:\\Deploy\\ATP'\ncd C:\\Deploy\\ATP\n.\\WindowsDefenderATP-Onboarding.ps1\nGet-Service -Name 'Sense' | Select-Object Status\n```"
+        }
+      ],
+      "keyPoints": [
+        "Pick a platform by ecosystem and team: Defender for Microsoft shops, CrowdStrike and SentinelOne for dedicated security teams.",
+        "Deploy by Group Policy, Intune or a script, then **verify** the agent is running on every device.",
+        "Encrypt disks (BitLocker) and back up the recovery keys centrally."
+      ],
+      "quiz": {
+        "question": "After rolling out an endpoint agent with Group Policy, what is an essential next step?",
+        "options": [
+          "Assume it worked everywhere",
+          "Verify the agent is running and reporting on every device",
+          "Turn off the console",
+          "Disable updates"
+        ],
+        "correctIndex": 1,
+        "explanation": "Deployments fail silently on some machines. Check coverage in the console so no device is unprotected."
+      }
+    },
+    {
+      "id": "attack-lifecycle",
+      "title": "How an Attack Unfolds (and Where the EDR Sees It)",
+      "content": [
+        {
+          "type": "text",
+          "value": "To defend endpoints you need to know how attackers move. The **cyber kill chain** and the **MITRE ATT&CK** catalogue describe the stages. Each stage leaves traces on a device, and those traces are what an EDR collects."
+        },
+        {
+          "type": "table",
+          "header": [
+            "Stage",
+            "What the attacker does",
+            "What an EDR can see"
+          ],
+          "rows": [
+            [
+              "Delivery",
+              "Sends a phishing email with a document or link",
+              "Office app starting an unusual child process"
+            ],
+            [
+              "Execution",
+              "Runs a script or macro",
+              "PowerShell with encoded commands"
+            ],
+            [
+              "Persistence",
+              "Makes sure it survives a reboot",
+              "New scheduled task, new service, run-key in the registry"
+            ],
+            [
+              "Privilege escalation",
+              "Becomes administrator",
+              "Unusual token use, exploit behaviour"
+            ],
+            [
+              "Credential access",
+              "Steals passwords",
+              "Access to the LSASS process memory"
+            ],
+            [
+              "Lateral movement",
+              "Moves to other machines",
+              "Remote logins, admin shares, remote execution"
+            ],
+            [
+              "Impact",
+              "Encrypts files or steals data",
+              "Mass file renames, shadow-copy deletion, large uploads"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "A defender only needs to break the chain **once**. Stopping the macro that launches PowerShell, or the credential theft, is enough to prevent the later stages."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Signs of ransomware worth memorising"
+        },
+        {
+          "type": "list",
+          "ordered": false,
+          "items": [
+            "Hundreds of files renamed or changed within seconds.",
+            "Volume shadow copies deleted (`vssadmin delete shadows`).",
+            "A new process running from a user's temp folder.",
+            "Sudden spike in disk activity on a file server."
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Attacks follow stages; breaking one stage stops the rest.",
+        "EDR value comes from linking weak signals (a macro, then PowerShell, then a new service) into one story.",
+        "Know the early warning signs so you can act before the Impact stage."
+      ],
+      "quiz": {
+        "question": "An Office document starts PowerShell with an encoded command. Which stage is this most likely?",
+        "options": [
+          "Delivery or execution",
+          "Impact",
+          "Backup",
+          "Patching"
+        ],
+        "correctIndex": 0,
+        "explanation": "A document spawning a script interpreter is a classic initial-execution technique following a phishing delivery."
+      }
+    },
+    {
+      "id": "alert-triage-playbook",
+      "title": "Responding to an Alert: A Triage Playbook",
+      "content": [
+        {
+          "type": "text",
+          "value": "Security teams receive far more alerts than they can read, so a **repeatable playbook** matters more than heroics. The steps below work for most endpoint alerts, from a suspicious script to confirmed ransomware."
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "**Validate.** Is it real? Read the alert, the process tree and the user. Check whether the file or address is known bad (threat intelligence).",
+            "**Scope.** Which devices and accounts are involved? Search the console for the same file hash or command across the estate.",
+            "**Contain.** If it is real, isolate the host. Disable the account if credentials were taken.",
+            "**Collect.** Keep evidence before you clean: process list, files, memory image if needed, and notes with times.",
+            "**Eradicate.** Remove the malware and the persistence it set up. Patch the way in.",
+            "**Recover.** Restore from a clean backup, re-enable the account with new credentials, watch closely.",
+            "**Learn.** Write down what happened, how it was found, and what would catch it sooner."
+          ]
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Containment first, investigation second. Isolating a host takes seconds, can be undone, and stops spread while you work out what happened."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Worked example"
+        },
+        {
+          "type": "text",
+          "value": "The console shows `winword.exe` starting `powershell.exe -enc ...` on a finance laptop. You validate: the user did open an invoice attachment. You scope: the same file hash appears on two more laptops. You isolate all three, reset the user's password, collect the files, and block the hash across the company. Then you write the timeline."
+        }
+      ],
+      "keyPoints": [
+        "Follow the same order each time: validate, scope, contain, collect, eradicate, recover, learn.",
+        "Isolating a host is fast and reversible, so do it early when an alert is real.",
+        "Always search for the same indicator elsewhere: one infected laptop is rarely alone."
+      ],
+      "quiz": {
+        "question": "You confirm a laptop is running ransomware. What is the best FIRST action?",
+        "options": [
+          "Reinstall the operating system",
+          "Isolate the host from the network",
+          "Delete all logs",
+          "Wait to see what happens"
+        ],
+        "correctIndex": 1,
+        "explanation": "Isolation stops the malware from spreading to other machines and cuts attacker access, while keeping evidence on the device."
+      }
+    },
+    {
+      "id": "endpoint-hardening-baseline",
+      "title": "A Baseline for Every Endpoint",
+      "content": [
+        {
+          "type": "text",
+          "value": "Detection is only half of the job. Most successful attacks use problems that are simple to prevent. A baseline applied to every device removes the easy wins."
+        },
+        {
+          "type": "table",
+          "header": [
+            "Control",
+            "Why it matters",
+            "How"
+          ],
+          "rows": [
+            [
+              "**Patch quickly**",
+              "Attackers use known flaws within days of publication",
+              "Windows Update for Business, Intune rings, automatic updates"
+            ],
+            [
+              "**Least privilege**",
+              "Stolen standard accounts can do far less than admin ones",
+              "No daily-use admin accounts; just-in-time elevation"
+            ],
+            [
+              "**Disk encryption**",
+              "A lost laptop does not mean lost data",
+              "BitLocker with recovery keys saved to Azure AD"
+            ],
+            [
+              "**Application control**",
+              "Only approved programs can run",
+              "AppLocker or Windows Defender Application Control"
+            ],
+            [
+              "**Multi-factor sign-in**",
+              "A stolen password alone is not enough",
+              "Authenticator apps or security keys"
+            ],
+            [
+              "**USB and device control**",
+              "Blocks a common way malware arrives",
+              "Device-control policy in the EDR"
+            ],
+            [
+              "**Backups**",
+              "Ransomware becomes an inconvenience, not a disaster",
+              "Offline or immutable copies, restore tests"
+            ]
+          ]
+        },
+        {
+          "type": "code",
+          "title": "Check encryption and Defender health (PowerShell)",
+          "value": "manage-bde -status C:\nGet-MpComputerStatus | Select-Object AntivirusEnabled, RealTimeProtectionEnabled, AntivirusSignatureLastUpdated\nGet-Service -Name 'Sense' | Select-Object Status"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "A backup that has never been restored is only a hope. Test a restore on a schedule."
+        }
+      ],
+      "keyPoints": [
+        "Patching, least privilege, encryption, MFA and backups prevent most real-world incidents.",
+        "Application and device control shrink what attackers can run or plug in.",
+        "Test restores: untested backups fail when you need them."
+      ],
+      "quiz": {
+        "question": "Which control means a stolen laptop does not expose the files on it?",
+        "options": [
+          "Full-disk encryption (BitLocker)",
+          "A longer Wi-Fi password",
+          "A screen saver",
+          "Faster internet"
+        ],
+        "correctIndex": 0,
+        "explanation": "Encrypted disks cannot be read without the key, so a lost or stolen device does not mean a data breach."
+      }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Endpoint security cheat sheet",
+    "rows": [
+      [
+        "EPP",
+        "Prevention: block malware before it runs"
+      ],
+      [
+        "EDR",
+        "Detection and response: record behaviour, investigate, isolate"
+      ],
+      [
+        "XDR",
+        "Correlate signals across endpoint, network, cloud, email"
+      ],
+      [
+        "SIEM / SOAR",
+        "Collect logs and alerts / automate the response"
+      ],
+      [
+        "IOC",
+        "Indicator of compromise: a hash, IP address or domain linked to an attack"
+      ],
+      [
+        "MITRE ATT&CK",
+        "A public catalogue of attacker tactics and techniques"
+      ],
+      [
+        "Get-Service Sense",
+        "Windows: is the Defender for Endpoint sensor running?"
+      ],
+      [
+        "Get-MpComputerStatus",
+        "Windows: Defender health and signature status"
+      ],
+      [
+        "manage-bde -status",
+        "Windows: BitLocker encryption status"
+      ],
+      [
+        "Isolate host",
+        "Cut the device off from the network but keep the agent connected"
+      ],
+      [
+        "Quarantine file",
+        "Move a malicious file where it cannot run"
+      ]
+    ]
+  }
 }

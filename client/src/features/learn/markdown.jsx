@@ -1,22 +1,18 @@
 /**
  * A small Markdown renderer for course content: headings, paragraphs,
- * bullet lists, tables, fenced code blocks and **bold**. Lessons and case
+ * bullet lists, tables, fenced code blocks, and inline **bold**, *italic* and `code`. Lessons and case
  * studies are written in this subset, so no Markdown library is shipped.
  */
 import { Link } from 'react-router-dom';
 import { Terminal, Copy, Check } from 'lucide-react';
+import { tokenizeInline } from './inline';
 
-/**
- * Helper to parse inline bold markdown: **bold text**
- */
 export function parseInline(text) {
-  if (!text) return '';
-  const parts = text.split(/(\*\*.*?\*\*)/g);
-  return parts.map((part, idx) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={idx}>{part.slice(2, -2)}</strong>;
-    }
-    return part;
+  return tokenizeInline(text).map((token, idx) => {
+    if (token.type === 'code') return <code key={idx} className="inline-code">{token.value}</code>;
+    if (token.type === 'bold') return <strong key={idx}>{token.value}</strong>;
+    if (token.type === 'italic') return <em key={idx}>{token.value}</em>;
+    return token.value;
   });
 }
 

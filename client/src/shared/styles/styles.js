@@ -28,3 +28,4 @@ import '../../features/auth/AuthPage.css';
 import '../../features/certificates/VerifyPage.css';
 import './ExtraPages.css';
 import '../../features/lab/LabHomePage.css';
+import '../components/Splash/SplashScreen.css';

@@ -1,4 +1,19 @@
 {
+  "overview": {
+    "why": "\"It works on my machine\" is the oldest problem in software. A container packages your app with everything it needs, so it runs the same on a laptop, a test server and production. Docker is the tool nearly every company uses for this, and it is the stepping stone to Kubernetes, so it shows up in almost every DevOps and backend interview.",
+    "prerequisites": [
+      "Linux basics: you will be working in a terminal inside the lab."
+    ],
+    "outcomes": [
+      "Explain how a container differs from a virtual machine",
+      "Pull an image, run a container, and read its logs",
+      "Write a Dockerfile and keep the image small with layers and multi-stage builds",
+      "Connect containers with networks and keep data with volumes",
+      "Run a web app and a database together with Docker Compose",
+      "Apply basic security habits: a non-root user, a small base image, no secrets in the image"
+    ],
+    "placementTip": "Know the difference between an **image** (the recipe) and a **container** (a running copy), and be able to explain why layer order in a Dockerfile affects build speed."
+  },
   "sections": [
     {
       "id": "what-are-containers",
@@ -22,6 +37,11 @@
           "style": "info",
           "value": "Key interview fact: Containers share the host OS kernel while VMs each run their own kernel. This makes containers 10-100x lighter (MBs vs GBs) and faster to start (seconds vs minutes) than VMs."
         }
+      ],
+      "keyPoints": [
+        "A container shares the host's kernel, so it starts in seconds and is much lighter than a VM.",
+        "An image is a read-only template; a container is a running instance of it.",
+        "Containers are isolated with Linux namespaces and limited with cgroups."
       ],
       "quiz": {
         "question": "What is the main architectural difference between containers and VMs?",
@@ -58,6 +78,11 @@
           "title": "Essential Docker Commands",
           "value": "docker pull nginx              # Download an image from Docker Hub\ndocker images                  # List all local images\ndocker run nginx               # Create and start a container\ndocker run -d -p 80:80 nginx   # Run detached, map port 80\ndocker ps                      # List running containers\ndocker ps -a                   # List ALL containers (including stopped)\ndocker stop <container_id>     # Stop a running container\ndocker rm <container_id>       # Remove a stopped container\ndocker logs <container_id>     # View container logs\ndocker exec -it <id> /bin/sh   # Open a shell inside a container"
         }
+      ],
+      "keyPoints": [
+        "The Docker client (CLI) talks to the Docker daemon, which builds images and runs containers.",
+        "Images come from a registry such as Docker Hub or a private one.",
+        "`docker ps` shows running containers, `docker ps -a` shows stopped ones as well."
       ],
       "quiz": {
         "question": "What is the relationship between a Docker image and a container?",
@@ -102,6 +127,11 @@
           "value": "docker build -t myapp:v1 .              # Build image, tag as myapp:v1\ndocker run -d -p 3000:3000 myapp:v1     # Run the container\ndocker image ls                         # List all images with sizes"
         }
       ],
+      "keyPoints": [
+        "Each instruction (`FROM`, `COPY`, `RUN`) makes a cached layer.",
+        "Put rarely changing steps first (install dependencies) and often changing steps last (copy source) for fast rebuilds.",
+        "`CMD` is the default command; `ENTRYPOINT` is the fixed program it runs."
+      ],
       "quiz": {
         "question": "Why should you COPY package.json before COPY . . in a Dockerfile?",
         "options": [
@@ -144,6 +174,11 @@
           "title": "Docker Volumes",
           "value": "docker volume create mydata                          # Create a named volume\ndocker run -v mydata:/data postgres                  # Mount volume at /data\ndocker run -v $(pwd)/config:/app/config myapp        # Bind mount: host dir → container\n\n# Volumes persist data even after the container is deleted\ndocker volume ls                                     # List all volumes\ndocker volume inspect mydata                         # See volume details"
         }
+      ],
+      "keyPoints": [
+        "Containers on the same user-defined network find each other by name.",
+        "`-p 8080:80` publishes container port 80 on host port 8080.",
+        "Data inside a container is lost with it; use a volume for anything that must survive."
       ],
       "quiz": {
         "question": "How can two Docker containers on the same custom network communicate?",
@@ -188,6 +223,11 @@
           "value": "Interview tip: depends_on only waits for the container to START, not for the application inside to be READY. For production, use healthchecks to ensure the database is actually accepting connections before the API tries to connect."
         }
       ],
+      "keyPoints": [
+        "One `docker-compose.yml` describes all the services, networks and volumes of an app.",
+        "`docker compose up -d` starts everything; `down` stops and removes it.",
+        "`depends_on` controls start order, but does not wait for a service to be ready."
+      ],
       "quiz": {
         "question": "What does 'docker compose up -d' do?",
         "options": [
@@ -228,6 +268,11 @@
           "style": "info",
           "value": "Use 'npm ci' instead of 'npm install' in Dockerfiles. 'npm ci' installs exact versions from package-lock.json and is faster and more reliable for CI/CD environments."
         }
+      ],
+      "keyPoints": [
+        "Build in one stage with all the tools, copy only the result into a small final stage.",
+        "Smaller images pull faster and have fewer things that can be attacked.",
+        "Name stages with `AS build` and copy with `COPY --from=build`."
       ],
       "quiz": {
         "question": "What is the main benefit of multi-stage Docker builds?",
@@ -272,6 +317,11 @@
           "value": "Never run containers as root in production! If an attacker escapes the container, they'll have root access to your host machine. Always create and switch to a non-root user with the USER directive in your Dockerfile."
         }
       ],
+      "keyPoints": [
+        "Run as a non-root user and never as `--privileged` unless you truly must.",
+        "Use small, pinned base images and scan them (Trivy, Docker Scout).",
+        "Never bake secrets into an image: anyone with the image can read them."
+      ],
       "quiz": {
         "question": "Why should you avoid running containers as root?",
         "options": [
@@ -309,6 +359,11 @@
           "value": "Pro debugging trick: If a container keeps crashing on startup, override the entrypoint to get a shell: 'docker run -it --entrypoint /bin/sh myapp'. This lets you poke around inside the container's filesystem and run the app manually to see the real error."
         }
       ],
+      "keyPoints": [
+        "Work in order: `docker ps -a`, `docker logs`, `docker inspect`, then `docker exec -it ... sh`.",
+        "Exit code 137 usually means the container ran out of memory.",
+        "If it dies instantly, run it with a shell instead of its normal command to look around."
+      ],
       "quiz": {
         "question": "A container exits with code 137. What happened?",
         "options": [
@@ -321,5 +376,66 @@
         "explanation": "Exit code 137 = 128 + 9 (SIGKILL). This usually means the container ran out of memory and was killed by the kernel's OOM killer, or someone manually ran 'docker kill'."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Docker cheat sheet",
+    "rows": [
+      [
+        "docker run -d -p 8080:80 --name web nginx",
+        "Run a container in the background and publish a port"
+      ],
+      [
+        "docker ps  /  docker ps -a",
+        "Running containers / all containers"
+      ],
+      [
+        "docker logs -f web",
+        "Follow a container's output"
+      ],
+      [
+        "docker exec -it web sh",
+        "Open a shell inside a running container"
+      ],
+      [
+        "docker stop web  /  docker rm web",
+        "Stop / remove a container"
+      ],
+      [
+        "docker images  /  docker rmi image",
+        "List / remove images"
+      ],
+      [
+        "docker build -t app:1.0 .",
+        "Build an image from the Dockerfile here"
+      ],
+      [
+        "docker pull / docker push",
+        "Download / upload an image"
+      ],
+      [
+        "docker volume ls  /  docker network ls",
+        "List volumes / networks"
+      ],
+      [
+        "docker compose up -d --build",
+        "Build and start every service"
+      ],
+      [
+        "docker compose logs -f service",
+        "Follow one service's logs"
+      ],
+      [
+        "docker system prune",
+        "Clean up stopped containers and unused images"
+      ],
+      [
+        "docker inspect web",
+        "Everything about a container as JSON"
+      ],
+      [
+        "docker stats",
+        "Live CPU and memory use"
+      ]
+    ]
+  }
 }

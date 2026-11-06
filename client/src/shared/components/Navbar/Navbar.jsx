@@ -1,15 +1,13 @@
-import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Compass, Sparkles, Flame, Zap, LogOut } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Flame, Zap, LogOut } from 'lucide-react';
 import useAuth from '../../../features/auth/useAuth';
 import useProgress from '../../hooks/useProgress';
 import PortalSwitch from './PortalSwitch';
 import './Navbar.css';
 
 export default function Navbar() {
-  const location = useLocation();
   const { user, isRegistered, logout } = useAuth();
   const progress = useProgress();
-  const isActive = (path) => location.pathname === path ? 'active' : '';
 
   return (
     <nav className="navbar">
@@ -23,28 +21,6 @@ export default function Navbar() {
             Ops<span>Academy</span>
           </div>
         </Link>
-
-        {/* Navigation Links */}
-        <ul className="navbar-nav">
-          <li>
-            <Link to="/dashboard" className={`navbar-link ${isActive('/dashboard')}`}>
-              <LayoutDashboard size={16} />
-              <span>Theory</span>
-            </Link>
-          </li>
-          <li>
-            <Link to="/roadmap" className={`navbar-link ${isActive('/roadmap')}`}>
-              <Compass size={16} />
-              <span>DevOps Roadmap</span>
-            </Link>
-          </li>
-          <li>
-            <Link to="/casestudies" className={`navbar-link ${isActive('/casestudies')}`}>
-              <Sparkles size={16} className="text-lime" />
-              <span>Case Studies</span>
-            </Link>
-          </li>
-        </ul>
 
         {/* Right Actions */}
         <div className="navbar-actions">

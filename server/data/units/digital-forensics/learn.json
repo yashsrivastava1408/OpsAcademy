@@ -1,21 +1,383 @@
 {
-  "unitId": "digital-forensics",
-  "title": "Digital Forensics & Evidence Preservation Methodology",
-  "modules": [
+  "overview": {
+    "why": "When something goes wrong, someone has to answer: what happened, how, and who did it? Digital forensics is the careful, repeatable way of finding out, and doing it so the evidence can be trusted in a company investigation or a court. The key habit is not touching the original evidence: you work on copies, you prove nothing changed, and you write down everything.",
+    "prerequisites": [
+      "Linux basics and some Windows familiarity.",
+      "Basic networking knowledge helps for the network and log sections."
+    ],
+    "outcomes": [
+      "Describe the five stages of a forensic investigation and why order matters",
+      "Collect evidence without changing it, and prove that with cryptographic hashes",
+      "Keep a chain-of-custody record that stands up to questions",
+      "Run first-pass memory analysis with Volatility and read a process list",
+      "Read Windows artifacts (MFT, registry, event logs, prefetch) and Linux logs to build a timeline",
+      "Write a clear, factual report that another examiner could reproduce"
+    ],
+    "placementTip": "Say the phrase *\"I work on a copy and verify the hash\"* early. It tells the interviewer you understand the single most important rule in forensics."
+  },
+  "sections": [
     {
       "id": "module-1",
       "title": "1. Scientific Forensic Process & Chain of Custody",
-      "content": "### What is Digital Forensics?\n\nDigital forensics is the scientific process of preserving, identifying, extracting, documenting, and interpreting digital evidence so it can be used in legal proceedings, internal corporate investigations, or incident response.\n\nAccording to IBM's Cost of a Data Breach Report 2023, organizations with forensic-ready incident response teams contained breaches **54 days faster** — saving an average of **$1.49 million** per incident.\n\n#### 5-Stage Scientific Methodology:\n1. **Identification**: Locate all potential physical and cloud evidence sources.\n2. **Preservation**: Protect original media with hardware write blockers and SHA-256 hashing.\n3. **Acquisition**: Create byte-for-byte bitstream disk images (`.raw`, `.E01`) and RAM dumps (`.raw`, `.vmem`).\n4. **Analysis**: Reconstruct timeline, extract registry artifacts, and analyze unallocated space.\n5. **Reporting**: Produce court-admissible, reproducible forensic reports."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### What is Digital Forensics?\n\nDigital forensics is the scientific process of preserving, identifying, extracting, documenting, and interpreting digital evidence so it can be used in legal proceedings, internal corporate investigations, or incident response.\n\nAccording to IBM's Cost of a Data Breach Report 2023, organizations with forensic-ready incident response teams contained breaches **54 days faster** — saving an average of **$1.49 million** per incident.\n\n#### 5-Stage Scientific Methodology:\n1. **Identification**: Locate all potential physical and cloud evidence sources.\n2. **Preservation**: Protect original media with hardware write blockers and SHA-256 hashing.\n3. **Acquisition**: Create byte-for-byte bitstream disk images (`.raw`, `.E01`) and RAM dumps (`.raw`, `.vmem`).\n4. **Analysis**: Reconstruct timeline, extract registry artifacts, and analyze unallocated space.\n5. **Reporting**: Produce court-admissible, reproducible forensic reports."
+        }
+      ],
+      "keyPoints": [
+        "Five stages: identify, preserve, acquire, analyse, report.",
+        "Preserve first: write blockers and hashes mean the original is never altered.",
+        "A forensic copy is a bit-for-bit image, not a file copy."
+      ],
+      "quiz": {
+        "question": "Why do investigators work on a forensic image instead of the original disk?",
+        "options": [
+          "It is faster",
+          "So the original evidence is never changed and its integrity can be proven with hashes",
+          "Images are smaller",
+          "It is required by Windows"
+        ],
+        "correctIndex": 1,
+        "explanation": "Any change to the original could make the evidence unreliable. A verified image lets the analysis be repeated without touching the source."
+      }
     },
     {
       "id": "module-2",
       "title": "2. Memory Forensics with Volatility Framework",
-      "content": "### RAM Volatility Analysis\n\nVolatile memory contains crucial ephemeral evidence: active process trees, injected DLLs, unencrypted network sockets, and plaintext passwords.\n\n#### Volatility 3 Command Reference:\n- **List Running Processes**: `vol -f memory.raw windows.pslist`\n- **Detect Hidden/Injected Processes**: `vol -f memory.raw windows.pstree`\n- **Extract Process Memory**: `vol -f memory.raw windows.dumpfiles --pid 1420`\n- **Inspect Active Sockets**: `vol -f memory.raw windows.netscan`"
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### RAM Volatility Analysis\n\nVolatile memory contains crucial ephemeral evidence: active process trees, injected DLLs, unencrypted network sockets, and plaintext passwords.\n\n#### Volatility 3 Command Reference:\n- **List Running Processes**: `vol -f memory.raw windows.pslist`\n- **Detect Hidden/Injected Processes**: `vol -f memory.raw windows.pstree`\n- **Extract Process Memory**: `vol -f memory.raw windows.dumpfiles --pid 1420`\n- **Inspect Active Sockets**: `vol -f memory.raw windows.netscan`"
+        }
+      ],
+      "keyPoints": [
+        "RAM holds things that disk does not: running processes, network connections, keys and passwords in use.",
+        "Memory disappears at power-off, so capture it **before** shutting a machine down.",
+        "Compare `pslist` and `pstree` output, and look for odd parent-child relationships."
+      ],
+      "quiz": {
+        "question": "Why should memory be captured before powering off a suspect machine?",
+        "options": [
+          "RAM contents are lost when power is removed",
+          "Memory is always empty",
+          "Powering off is illegal",
+          "It makes the disk image smaller"
+        ],
+        "correctIndex": 0,
+        "explanation": "RAM is volatile. Running processes, network connections and keys exist only while the machine is on."
+      }
     },
     {
       "id": "module-3",
       "title": "3. Disk Artifacts & Timeline Reconstruction",
-      "content": "### Windows & Linux Forensic Artifacts\n\n- **Master File Table ($MFT)**: Metadata for every file on NTFS partitions.\n- **Windows Registry**: User activity, auto-run persistence keys, recent documents.\n- **Event Logs (`.evtx`)**: Security Event ID 4624 (Logon Success), 4625 (Logon Failed), 7045 (New Service Installed).\n- **Prefetch (`.pf`)**: Proves execution timestamp and frequency of executable applications."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### Windows & Linux Forensic Artifacts\n\n- **Master File Table ($MFT)**: Metadata for every file on NTFS partitions.\n- **Windows Registry**: User activity, auto-run persistence keys, recent documents.\n- **Event Logs (`.evtx`)**: Security Event ID 4624 (Logon Success), 4625 (Logon Failed), 7045 (New Service Installed).\n- **Prefetch (`.pf`)**: Proves execution timestamp and frequency of executable applications."
+        }
+      ],
+      "keyPoints": [
+        "The MFT, registry, event logs and prefetch tell you what existed, ran and logged in, and when.",
+        "Event IDs 4624, 4625 and 7045 are worth knowing: logon success, logon failure, new service.",
+        "Combine artifacts into one timeline; any one source can mislead."
+      ],
+      "quiz": {
+        "question": "Which Windows Security Event ID records a failed logon?",
+        "options": [
+          "4624",
+          "4625",
+          "7045",
+          "1102"
+        ],
+        "correctIndex": 1,
+        "explanation": "4625 is a failed logon. 4624 is a successful logon and 7045 is a service installation."
+      }
+    },
+    {
+      "id": "evidence-handling",
+      "title": "Handling Evidence: Imaging, Hashing and Chain of Custody",
+      "content": [
+        {
+          "type": "text",
+          "value": "Evidence is only useful if people believe it. That belief rests on two things: proof that the data did not change (**hashing**) and a record of who held it and when (**chain of custody**)."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "1. Identify the right disk"
+        },
+        {
+          "type": "code",
+          "title": "Be sure before you copy",
+          "value": "lsblk -o NAME,SIZE,MODEL,SERIAL\nsudo fdisk -l /dev/sdb"
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "2. Image it read-only and hash it"
+        },
+        {
+          "type": "code",
+          "title": "Acquire and verify",
+          "value": "# the source is attached through a hardware write blocker\nsudo dd if=/dev/sdb of=/cases/2026-014/disk.img bs=4M conv=noerror,sync status=progress\n\nsha256sum /dev/sdb            > /cases/2026-014/source.sha256\nsha256sum /cases/2026-014/disk.img > /cases/2026-014/image.sha256\n# the two hashes must be identical"
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "A hash is a fingerprint. Change one bit of a 500 GB image and the SHA-256 value changes completely. Matching hashes prove the copy is exact."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "3. Record the chain of custody"
+        },
+        {
+          "type": "table",
+          "header": [
+            "Field",
+            "Example"
+          ],
+          "rows": [
+            [
+              "Item and description",
+              "Laptop, serial XYZ123, black, Dell"
+            ],
+            [
+              "Where and when seized",
+              "Office 3B, 6 Nov 2026, 14:05"
+            ],
+            [
+              "Who collected it",
+              "A. Sharma, Incident Response"
+            ],
+            [
+              "Hash of the image",
+              "SHA-256: 9f2c..."
+            ],
+            [
+              "Each transfer",
+              "From, to, date and time, reason, signatures"
+            ],
+            [
+              "Storage",
+              "Locked evidence cabinet 4, access log"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "A gap in the record (\"who had it between Tuesday and Friday?\") is enough to make evidence unusable. Record every handover."
+        }
+      ],
+      "keyPoints": [
+        "Never write to the source: use a write blocker and image it.",
+        "Hash the source and the image; matching SHA-256 values prove an exact copy.",
+        "Chain of custody records every person, time and place the evidence passed through."
+      ],
+      "quiz": {
+        "question": "Two SHA-256 hashes are computed: one for the original disk, one for its image. They differ. What does it mean?",
+        "options": [
+          "The copy is perfect",
+          "The image is not an exact copy and cannot be trusted",
+          "Hashes always differ",
+          "The disk is encrypted"
+        ],
+        "correctIndex": 1,
+        "explanation": "Identical data always gives identical hashes. A difference means the image changed or was copied incorrectly."
+      }
+    },
+    {
+      "id": "linux-forensics",
+      "title": "Investigating a Linux Server",
+      "content": [
+        {
+          "type": "text",
+          "value": "Many incidents involve Linux servers: a web server that was broken into, a cloud instance running a crypto-miner. Linux keeps plenty of evidence if you know where to look. Work from a **copy or a read-only mount** wherever you can, and note the time on the machine, since clocks can be wrong."
+        },
+        {
+          "type": "table",
+          "header": [
+            "Question",
+            "Where to look",
+            "Command"
+          ],
+          "rows": [
+            [
+              "Who logged in, from where?",
+              "`/var/log/auth.log` or `/var/log/secure`, `wtmp`",
+              "`last -a`, `grep \"Accepted\" /var/log/auth.log`"
+            ],
+            [
+              "Were there guessing attacks?",
+              "Failed logins",
+              "`lastb`, `grep \"Failed password\" /var/log/auth.log`"
+            ],
+            [
+              "What did a user run?",
+              "Shell history",
+              "`cat ~user/.bash_history`"
+            ],
+            [
+              "What changed recently?",
+              "Modified files",
+              "`find / -xdev -mtime -2 -type f 2>/dev/null`"
+            ],
+            [
+              "What is running now?",
+              "Processes and connections",
+              "`ps auxf`, `ss -tulpn`"
+            ],
+            [
+              "What starts at boot or on schedule?",
+              "Persistence",
+              "`systemctl list-unit-files --state=enabled`, `crontab -l`, `ls /etc/cron.*`"
+            ],
+            [
+              "Any unexpected admin accounts or keys?",
+              "Users and SSH keys",
+              "`cat /etc/passwd`, `cat ~/.ssh/authorized_keys`"
+            ]
+          ]
+        },
+        {
+          "type": "code",
+          "title": "A first look at a suspect web server",
+          "value": "date -u; uptime\nlast -a | head -20\ngrep -E \"Accepted|Failed\" /var/log/auth.log | tail -50\nps auxf --sort=-%cpu | head\nss -tulpn\nfind /var/www /tmp /dev/shm -type f -mtime -3 2>/dev/null"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Unknown programs running from `/tmp` or `/dev/shm`, or a busy process with a random name, are classic signs of a compromise or a crypto-miner."
+        }
+      ],
+      "keyPoints": [
+        "Linux evidence lives in logs, shell history, process and network state, scheduled jobs and SSH keys.",
+        "Look at recently modified files and at anything running from `/tmp` or `/dev/shm`.",
+        "Record the machine's clock and use UTC so events line up with other sources."
+      ],
+      "quiz": {
+        "question": "Which command shows which programs are listening on which network ports?",
+        "options": [
+          "ls -la",
+          "ss -tulpn",
+          "whoami",
+          "df -h"
+        ],
+        "correctIndex": 1,
+        "explanation": "`ss -tulpn` lists listening TCP/UDP sockets and the processes that own them, which helps spot backdoors."
+      }
+    },
+    {
+      "id": "timeline-and-report",
+      "title": "Building a Timeline and Writing the Report",
+      "content": [
+        {
+          "type": "text",
+          "value": "Single artifacts rarely tell the whole story. A **timeline** puts events from many sources on one clock: logins, file changes, program runs, network connections. Patterns appear that no single log shows."
+        },
+        {
+          "type": "mermaid",
+          "title": "From evidence to report",
+          "value": "graph LR\n    A[Disk image] --> T[Timeline tool]\n    B[Memory image] --> T\n    C[Logs] --> T\n    T --> D[Sorted events]\n    D --> E[Findings]\n    E --> F[Report]"
+        },
+        {
+          "type": "text",
+          "value": "Tools such as **Plaso (`log2timeline`)** turn many artifact types into one sorted list. Always convert times to **UTC** and note any clock differences."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "What a good report contains"
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "**Summary** in plain language: what was asked, what was found.",
+            "**Scope and sources**: which systems and images, with their hashes.",
+            "**Method**: tools and versions, so another examiner can repeat it.",
+            "**Findings** as a timeline, each tied to the evidence that supports it.",
+            "**Limits**: what you could not determine, and any assumptions.",
+            "**Appendix**: chain of custody, command output and screenshots."
+          ]
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Report **facts and evidence**, not opinions or blame. \"The account logged in from IP X at 02:14 UTC\" is a fact. \"The employee did it\" is a conclusion the evidence may not support."
+        }
+      ],
+      "keyPoints": [
+        "A timeline combines sources so patterns show up; use UTC throughout.",
+        "Reports are factual, reproducible and honest about limits.",
+        "Every finding should point to the evidence that supports it."
+      ],
+      "quiz": {
+        "question": "Why should all timestamps in a forensic timeline be converted to one time zone (usually UTC)?",
+        "options": [
+          "It looks neater",
+          "Events from different systems can only be ordered correctly on a common clock",
+          "UTC is encrypted",
+          "Time zones do not exist on Linux"
+        ],
+        "correctIndex": 1,
+        "explanation": "Sources record time differently. Converting to UTC lets you compare and order events reliably."
+      }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Digital forensics cheat sheet",
+    "rows": [
+      [
+        "sha256sum evidence.img",
+        "Fingerprint a file: any change gives a different hash"
+      ],
+      [
+        "dd if=/dev/sdb of=disk.img bs=4M status=progress",
+        "Make a bit-for-bit image (read the source, never write to it)"
+      ],
+      [
+        "lsblk  /  fdisk -l",
+        "Identify the right disk before imaging"
+      ],
+      [
+        "vol -f mem.raw windows.pslist",
+        "List processes from a memory image"
+      ],
+      [
+        "vol -f mem.raw windows.pstree",
+        "Show the process parent-child tree"
+      ],
+      [
+        "vol -f mem.raw windows.netscan",
+        "Find network connections"
+      ],
+      [
+        "last -a  /  lastb",
+        "Linux: logins / failed logins"
+      ],
+      [
+        "journalctl --since \"2026-11-01\" --until \"2026-11-02\"",
+        "Linux: logs for a time window"
+      ],
+      [
+        "grep \"Failed password\" /var/log/auth.log",
+        "Linux: brute-force attempts"
+      ],
+      [
+        "Event ID 4624 / 4625 / 7045",
+        "Windows: logon OK / logon failed / service installed"
+      ],
+      [
+        "Prefetch (.pf)",
+        "Proves a program ran, how often and when"
+      ],
+      [
+        "$MFT",
+        "Metadata of every file on an NTFS volume"
+      ]
+    ]
+  }
 }

@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, us
 import { Loader } from 'lucide-react';
 import { AuthProvider } from './features/auth/AuthContext';
 import Navbar from './shared/components/Navbar/Navbar';
+import SplashScreen from './shared/components/Splash/SplashScreen';
 
 // Each page is its own chunk, so a visitor downloads only the page they open
 // (the terminal and diagram libraries are large and most pages need neither).
@@ -157,6 +158,7 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
+      <SplashScreen />
       <Router>
         <AppRoutes />
       </Router>

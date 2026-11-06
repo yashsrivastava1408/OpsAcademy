@@ -10,6 +10,9 @@ import {
   Loader,
   Copy,
   Check,
+  Clock,
+  CheckCircle2,
+  Target,
 } from 'lucide-react';
 import { unitApi } from '../../shared/services/api';
 import Quiz from './Quiz/Quiz';
@@ -190,9 +193,98 @@ function ContentBlock({ block, blockKey, unitId, copiedKey, onCopy }) {
     case 'mermaid':
       return <MermaidBlock chart={block.value} title={block.title} />;
 
+    case 'heading':
+      return block.level === 4
+        ? <h4 className="learn-subheading-4">{parseInline(block.value)}</h4>
+        : <h3 className="learn-subheading-3">{parseInline(block.value)}</h3>;
+
+    case 'list': {
+      const Tag = block.ordered ? 'ol' : 'ul';
+      return (
+        <Tag className={block.ordered ? 'learn-numbered-list' : 'learn-bullet-list'}>
+          {(block.items || []).map((item, i) => <li key={i}>{parseInline(item)}</li>)}
+        </Tag>
+      );
+    }
+
+    case 'table':
+      return (
+        <div className="learn-table-wrapper glass-card">
+          <table className="learn-table">
+            <thead><tr>{(block.header || []).map((col, i) => <th key={i}>{parseInline(col)}</th>)}</tr></thead>
+            <tbody>
+              {(block.rows || []).map((row, r) => (
+                <tr key={r}>{row.map((cell, c) => <td key={c}>{parseInline(cell)}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+
+    // Markdown inside a block list: lets a section mix plain markdown with the structured blocks.
+    case 'markdown':
+      return <>{renderMarkdownString(block.value, onCopy, copiedKey, unitId)}</>;
+
     default:
       return null;
   }
+}
+
+/** Who this unit is for and what it gives you, before the first paragraph. */
+function UnitOverview({ meta, overview }) {
+  const outcomes = overview?.outcomes?.length ? overview.outcomes : meta.objectives || [];
+  return (
+    <section className="learn-overview glass-card" aria-label="About this unit">
+      <div className="learn-overview-facts">
+        <span><Clock size={14} /> {meta.duration}</span>
+        <span className={`overview-level level-${meta.difficulty}`}>{meta.difficulty}</span>
+        {meta.category && <span>{meta.category}</span>}
+      </div>
+      {overview?.why && (
+        <div className="learn-overview-why">
+          <h3>Why this matters</h3>
+          <p>{parseInline(overview.why)}</p>
+        </div>
+      )}
+      <div className="learn-overview-grid">
+        {outcomes.length > 0 && (
+          <div>
+            <h4><CheckCircle2 size={15} /> By the end you can</h4>
+            <ul>{outcomes.map((o, i) => <li key={i}>{parseInline(o)}</li>)}</ul>
+          </div>
+        )}
+        {overview?.prerequisites?.length > 0 && (
+          <div>
+            <h4><BookOpen size={15} /> Before you start</h4>
+            <ul>{overview.prerequisites.map((o, i) => <li key={i}>{parseInline(o)}</li>)}</ul>
+          </div>
+        )}
+      </div>
+      {overview?.placementTip && (
+        <p className="learn-overview-tip"><Lightbulb size={15} /> <span><strong>Placement tip.</strong> {parseInline(overview.placementTip)}</span></p>
+      )}
+    </section>
+  );
+}
+
+/** The commands or ideas worth keeping next to you, as one table. */
+function CheatSheet({ sheet }) {
+  if (!sheet?.rows?.length) return null;
+  return (
+    <section id="cheatsheet" className="learn-section learn-cheatsheet">
+      <h2 className="section-heading">{sheet.title || 'Cheat sheet'}</h2>
+      <div className="learn-table-wrapper glass-card">
+        <table className="learn-table">
+          <thead><tr><th>{sheet.headers?.[0] || 'Command'}</th><th>{sheet.headers?.[1] || 'What it does'}</th></tr></thead>
+          <tbody>
+            {sheet.rows.map((row, i) => (
+              <tr key={i}><td><code>{row[0]}</code></td><td>{parseInline(row[1])}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 /**
@@ -223,6 +315,13 @@ const LearnSection = memo(function LearnSection({ section, unitId }) {
         ))}
         {typeof content === 'string' && renderMarkdownString(content, handleCopy, copiedKey, unitId)}
       </div>
+
+      {Array.isArray(section.keyPoints) && section.keyPoints.length > 0 && (
+        <aside className="learn-takeaways" aria-label="Key takeaways">
+          <h4><Target size={15} /> Key takeaways</h4>
+          <ul>{section.keyPoints.map((point, i) => <li key={i}>{parseInline(point)}</li>)}</ul>
+        </aside>
+      )}
 
       {/* Embedded Quiz */}
       {section.quiz && <Quiz quiz={section.quiz} unitId={unitId} sectionId={section.id} />}
@@ -312,7 +411,7 @@ export default function LearnPage() {
   // Highlight the section being read in the table of contents.
   useEffect(() => {
     if (!content || typeof IntersectionObserver === 'undefined') return undefined;
-    const sections = content.sections || content.modules || [];
+    const sections = [...(content.sections || content.modules || []), ...(content.cheatsheet?.rows?.length ? [{ id: 'cheatsheet' }] : [])];
     const nodes = sections.map((sec) => document.getElementById(sec.id)).filter(Boolean);
     if (nodes.length === 0) return undefined;
 
@@ -386,7 +485,7 @@ export default function LearnPage() {
         <aside className="learn-sidebar">
           <h3>Table of Contents</h3>
           <nav className="toc-nav">
-            {sectionsList.map((sec) => (
+            {[...sectionsList, ...(content.cheatsheet?.rows?.length ? [{ id: 'cheatsheet', title: content.cheatsheet.title || 'Cheat sheet' }] : [])].map((sec) => (
               <a
                 key={sec.id}
                 href={`#${sec.id}`}
@@ -402,9 +501,11 @@ export default function LearnPage() {
 
         {/* Lesson Body */}
         <main className="learn-body">
+          <UnitOverview meta={meta} overview={content.overview} />
           {sectionsList.map((section) => (
             <LearnSection key={section.id} section={section} unitId={unitId} />
           ))}
+          <CheatSheet sheet={content.cheatsheet} />
 
           {/* Bottom Next Action */}
           <div className="learn-footer-cta glass-card animate-fade-in-up">

@@ -1,43 +1,361 @@
 {
+  "overview": {
+    "why": "Production will break. What separates a good team from a stressed one is how it responds: who is in charge, how people communicate, how fast the damage is stopped, and what is learned afterwards. Site Reliability Engineers are paid for exactly this. These skills also make you valuable on any team, even before you carry a pager.",
+    "prerequisites": [
+      "Linux basics, Kubernetes basics and Monitoring basics: the incidents here are Kubernetes and DNS problems that you spot through metrics and logs."
+    ],
+    "outcomes": [
+      "Describe the incident lifecycle and the roles (incident commander, communications lead, responders)",
+      "Diagnose a Pod stuck in CrashLoopBackOff or killed with exit code 137",
+      "Explain why `ndots:5` slows DNS in Kubernetes and fix it",
+      "Stop a cascading failure caused by an exhausted database connection pool",
+      "Write a blameless post-mortem with causes and owned action items"
+    ],
+    "placementTip": "In an incident question, **mitigate before you investigate**: roll back, scale or fail over first, and find the root cause after users are safe. Saying this clearly is a strong signal."
+  },
   "sections": [
     {
       "id": "sre-foundations",
       "title": "SRE Incident Lifecycle & Service Level Objectives",
-      "content": "### Site Reliability Engineering (SRE) Outage Response\n\nWhen high-severity incidents (SEV-1 / P1) occur, structured operational triage is critical to maintaining high availability (>99.99% uptime):\n\n```text\nIncident Timeline:\n[Detection / Pager Alert] ──> [Triage & Containment] ──> [Root Cause Mitigation] ──> [Post-Mortem & Blameless RCA]\n```\n\n#### Core SRE Metrics (The 4 Golden Signals):\n1. **Latency**: Time taken to service a request (differentiating between successful and error latency).\n2. **Traffic**: Demand placed on the system (HTTP requests/sec or IOPS).\n3. **Errors**: The rate of requests that fail (HTTP 5xx, failed DB queries, broken network connections).\n4. **Saturation**: How 'full' the service is (CPU, RAM, disk I/O, socket descriptors)."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### Site Reliability Engineering (SRE) Outage Response\n\nWhen high-severity incidents (SEV-1 / P1) occur, structured operational triage is critical to maintaining high availability (>99.99% uptime):\n\n```text\nIncident Timeline:\n[Detection / Pager Alert] ──> [Triage & Containment] ──> [Root Cause Mitigation] ──> [Post-Mortem & Blameless RCA]\n```\n\n#### Core SRE Metrics (The 4 Golden Signals):\n1. **Latency**: Time taken to service a request (differentiating between successful and error latency).\n2. **Traffic**: Demand placed on the system (HTTP requests/sec or IOPS).\n3. **Errors**: The rate of requests that fail (HTTP 5xx, failed DB queries, broken network connections).\n4. **Saturation**: How 'full' the service is (CPU, RAM, disk I/O, socket descriptors)."
+        }
+      ],
+      "keyPoints": [
+        "Stages: detect, triage, contain, fix, learn. Severity decides who is woken up and how fast.",
+        "The four golden signals (latency, traffic, errors, saturation) tell you where to look first.",
+        "Reliability targets (SLOs) and error budgets tell you how much risk is acceptable."
+      ],
+      "quiz": {
+        "question": "Which of these is one of the four golden signals?",
+        "options": [
+          "Saturation",
+          "Popularity",
+          "Branding",
+          "Commit count"
+        ],
+        "correctIndex": 0,
+        "explanation": "The four golden signals are latency, traffic, errors and saturation. Together they show how a service is behaving and where to look first."
+      }
     },
     {
       "id": "k8s-crashloop-debugging",
       "title": "Diagnosing CrashLoopBackOff & OOMKilled",
-      "content": "### Kubernetes Failure Modes\n\nWhen a container fails to start or continuously terminates, Kubernetes labels it with specific exit statuses:\n\n| State | Primary Root Cause | First Diagnostic Step |\n| :--- | :--- | :--- |\n| **CrashLoopBackOff (Exit 1)** | Application error, missing env var, syntax crash | `kubectl logs <pod> --previous` |\n| **OOMKilled (Exit 137)** | Container exceeded memory `limits` (Linux OOM killer) | `kubectl describe pod <pod>` (Look for `Last State: Terminated, Exit Code: 137`) |\n| **ImagePullBackOff** | Registry authentication failure or non-existent image tag | Check image name and Docker secret credentials |\n| **CreateContainerConfigError** | Missing ConfigMap key or Secret reference | `kubectl get configmap,secret` |"
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### Kubernetes Failure Modes\n\nWhen a container fails to start or continuously terminates, Kubernetes labels it with specific exit statuses:\n\n| State | Primary Root Cause | First Diagnostic Step |\n| :--- | :--- | :--- |\n| **CrashLoopBackOff (Exit 1)** | Application error, missing env var, syntax crash | `kubectl logs <pod> --previous` |\n| **OOMKilled (Exit 137)** | Container exceeded memory `limits` (Linux OOM killer) | `kubectl describe pod <pod>` (Look for `Last State: Terminated, Exit Code: 137`) |\n| **ImagePullBackOff** | Registry authentication failure or non-existent image tag | Check image name and Docker secret credentials |\n| **CreateContainerConfigError** | Missing ConfigMap key or Secret reference | `kubectl get configmap,secret` |"
+        }
+      ],
+      "keyPoints": [
+        "Read the exit code: 1 is usually an application error; 137 means the kernel killed it for memory.",
+        "`kubectl logs --previous` shows the crashed container; `kubectl describe pod` shows events and limits.",
+        "ImagePullBackOff is a registry or image-name problem; CreateContainerConfigError is a missing ConfigMap or Secret."
+      ],
+      "quiz": {
+        "question": "What is the primary indicator that a Kubernetes Pod was killed by the Linux Out-of-Memory (OOM) killer?",
+        "options": [
+          "Exit code 137 in container Last State",
+          "Exit code 0 with Completed status",
+          "Exit code 1 with Error status",
+          "Pod state set to Evicted due to disk pressure"
+        ],
+        "correctIndex": 0,
+        "explanation": "Exit code 137 corresponds to 128 + 9 (SIGKILL), indicating the Linux kernel OOM killer forcibly terminated the process for violating memory limits."
+      }
     },
     {
       "id": "dns-and-networking-failures",
       "title": "CoreDNS Failures & The ndots:5 Bottleneck",
-      "content": "### Debugging DNS Outages in Cloud Workloads\n\nBy default, `/etc/resolv.conf` in Kubernetes pods sets `options ndots:5`. For external domains like `api.stripe.com`, Linux performs up to 4 sequential DNS queries inside cluster search domains (`default.svc.cluster.local`, `svc.cluster.local`, `cluster.local`) before querying the public root.\n\n```text\nClient Request: api.stripe.com\n1. api.stripe.com.default.svc.cluster.local  -> NXDOMAIN (Latency penalty)\n2. api.stripe.com.svc.cluster.local          -> NXDOMAIN\n3. api.stripe.com.cluster.local              -> NXDOMAIN\n4. api.stripe.com                            -> SUCCESS (Resolved)\n```\n\n**Fix**: Append a trailing dot (`api.stripe.com.`) in application configs to bypass search domain penalties and reduce DNS lookups by 75%."
-    }
-  ],
-  "quiz": [
-    {
-      "question": "What is the primary indicator that a Kubernetes Pod was killed by the Linux Out-of-Memory (OOM) killer?",
-      "options": [
-        "Exit code 137 in container Last State",
-        "Exit code 0 with Completed status",
-        "Exit code 1 with Error status",
-        "Pod state set to Evicted due to disk pressure"
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### Debugging DNS Outages in Cloud Workloads\n\nBy default, `/etc/resolv.conf` in Kubernetes pods sets `options ndots:5`. For external domains like `api.stripe.com`, Linux performs up to 4 sequential DNS queries inside cluster search domains (`default.svc.cluster.local`, `svc.cluster.local`, `cluster.local`) before querying the public root.\n\n```text\nClient Request: api.stripe.com\n1. api.stripe.com.default.svc.cluster.local  -> NXDOMAIN (Latency penalty)\n2. api.stripe.com.svc.cluster.local          -> NXDOMAIN\n3. api.stripe.com.cluster.local              -> NXDOMAIN\n4. api.stripe.com                            -> SUCCESS (Resolved)\n```\n\n**Fix**: Append a trailing dot (`api.stripe.com.`) in application configs to bypass search domain penalties and reduce DNS lookups by 75%."
+        }
       ],
-      "correctIndex": 0,
-      "explanation": "Exit code 137 corresponds to 128 + 9 (SIGKILL), indicating the Linux kernel OOM killer forcibly terminated the process for violating memory limits."
+      "keyPoints": [
+        "Kubernetes sets `ndots:5`, so an external name is tried against several cluster suffixes first.",
+        "A trailing dot (`api.example.com.`) or a lower `ndots` removes the wasted lookups.",
+        "If DNS breaks everywhere, check the CoreDNS Pods, their logs and their resource limits."
+      ],
+      "quiz": {
+        "question": "Why does adding a trailing dot (e.g. `api.example.com.`) improve external DNS query latency in Kubernetes pods?",
+        "options": [
+          "It signals to the resolver that the domain is Fully Qualified (FQDN), bypassing ndots search domain expansions",
+          "It switches the query protocol from UDP to TCP automatically",
+          "It forces CoreDNS to cache responses indefinitely",
+          "It encrypts DNS queries with DNS-over-HTTPS"
+        ],
+        "correctIndex": 0,
+        "explanation": "A trailing dot indicates a Fully Qualified Domain Name (FQDN), which skips search domain expansions defined in ndots:5."
+      }
     },
     {
-      "question": "Why does adding a trailing dot (e.g. `api.example.com.`) improve external DNS query latency in Kubernetes pods?",
-      "options": [
-        "It signals to the resolver that the domain is Fully Qualified (FQDN), bypassing ndots search domain expansions",
-        "It switches the query protocol from UDP to TCP automatically",
-        "It forces CoreDNS to cache responses indefinitely",
-        "It encrypts DNS queries with DNS-over-HTTPS"
+      "id": "incident-roles-communication",
+      "title": "Running an Incident: Roles and Communication",
+      "content": [
+        {
+          "type": "text",
+          "value": "Most incident chaos is not technical: too many people, nobody in charge, no one telling the customers anything. A simple structure fixes this."
+        },
+        {
+          "type": "table",
+          "header": [
+            "Role",
+            "Job"
+          ],
+          "rows": [
+            [
+              "**Incident Commander (IC)**",
+              "Owns the response. Makes decisions, assigns tasks, does **not** debug personally."
+            ],
+            [
+              "**Operations / responders**",
+              "Investigate and apply fixes as the IC directs."
+            ],
+            [
+              "**Communications lead**",
+              "Posts regular updates to stakeholders and customers."
+            ],
+            [
+              "**Scribe**",
+              "Writes a timeline of what was seen and done, with times."
+            ]
+          ]
+        },
+        {
+          "type": "table",
+          "header": [
+            "Severity",
+            "Meaning",
+            "Example",
+            "Response"
+          ],
+          "rows": [
+            [
+              "SEV-1",
+              "Major outage or data loss",
+              "Checkout is down for everyone",
+              "Page immediately, all hands, updates every 15-30 minutes"
+            ],
+            [
+              "SEV-2",
+              "Serious degradation",
+              "Slow responses for many users",
+              "Page on-call, regular updates"
+            ],
+            [
+              "SEV-3",
+              "Minor impact",
+              "One feature broken for few users",
+              "Fix in working hours"
+            ]
+          ]
+        },
+        {
+          "type": "code",
+          "title": "A status update template",
+          "value": "[14:20 UTC] INVESTIGATING  Checkout errors for about 30% of users since 14:05.\nImpact: payments fail with an error page. Orders already placed are safe.\nNext: engineers are checking the latest release. Next update at 14:45 or sooner."
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Updates should say what is **known**, the **impact**, and **when the next update is**. Silence is worse than \"we are still working on it\"."
+        }
       ],
-      "correctIndex": 0,
-      "explanation": "A trailing dot indicates a Fully Qualified Domain Name (FQDN), which skips search domain expansions defined in ndots:5."
+      "keyPoints": [
+        "Name an Incident Commander; the IC coordinates and decides, others do the hands-on work.",
+        "Severity levels decide how loudly to respond and how often to update.",
+        "Communicate on a schedule with impact, status and the time of the next update."
+      ],
+      "quiz": {
+        "question": "What is the Incident Commander's main job during a SEV-1?",
+        "options": [
+          "Fixing the bug personally",
+          "Coordinating the response and making decisions",
+          "Writing the post-mortem later",
+          "Blaming the person who deployed"
+        ],
+        "correctIndex": 1,
+        "explanation": "The IC keeps the response organised: who does what, what to try next, when to escalate. Hands-on debugging is delegated."
+      }
+    },
+    {
+      "id": "mitigate-cascading-failures",
+      "title": "Stopping a Cascading Failure (Connection Pool Exhaustion)",
+      "content": [
+        {
+          "type": "text",
+          "value": "A cascading failure is when a small problem in one place makes everything fail. A classic case: the database slows down, requests wait longer, each request holds a **database connection** longer, the **pool runs out**, and now even healthy requests cannot get a connection. Retries from clients add more load and make it worse."
+        },
+        {
+          "type": "mermaid",
+          "title": "How a slow database becomes an outage",
+          "value": "graph TD\n    A[Database gets slow] --> B[Requests hold connections longer]\n    B --> C[Connection pool exhausted]\n    C --> D[New requests wait or time out]\n    D --> E[Clients retry]\n    E --> B\n    D --> F[Whole service appears down]"
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "What you see"
+        },
+        {
+          "type": "list",
+          "ordered": false,
+          "items": [
+            "Latency climbs, then error rates jump (timeouts, \"too many connections\").",
+            "Database connections sit at the maximum while CPU may look fine.",
+            "Restarting the app helps for a minute, then it returns."
+          ]
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Mitigate first, in this order"
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "**Reduce the load.** Roll back the recent release; turn off the expensive feature; shed or rate-limit traffic.",
+            "**Protect the database.** Stop non-essential jobs; kill long-running queries; avoid restarting everything at once (a thundering herd).",
+            "**Make failure cheaper.** Lower timeouts so connections free up; use a circuit breaker so callers stop hammering a failing dependency.",
+            "**Add capacity carefully.** Raising the pool size only moves the problem if the database is the bottleneck."
+          ]
+        },
+        {
+          "type": "code",
+          "title": "Spotting it (PostgreSQL)",
+          "value": "-- how many connections, and what are they doing?\nSELECT state, count(*) FROM pg_stat_activity GROUP BY state;\n\n-- the longest running queries\nSELECT pid, now() - query_start AS runtime, left(query, 80)\nFROM pg_stat_activity\nWHERE state <> 'idle'\nORDER BY runtime DESC LIMIT 5;"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Retries without a limit and without waiting (backoff) are a common cause of cascading failures. Add jitter so that all clients do not retry at the same moment."
+        }
+      ],
+      "keyPoints": [
+        "A slow dependency can exhaust shared resources (connection pools) and take everything down.",
+        "Reduce load and protect the database before looking for the root cause.",
+        "Timeouts, circuit breakers, and retries with backoff and jitter stop failures from spreading."
+      ],
+      "quiz": {
+        "question": "During connection pool exhaustion, why can simply increasing the pool size make things worse?",
+        "options": [
+          "It never has any effect",
+          "It lets more requests pile onto an already overloaded database",
+          "Pools cannot be changed",
+          "It deletes data"
+        ],
+        "correctIndex": 1,
+        "explanation": "If the database is the bottleneck, more connections mean more concurrent work for it. Reduce load and speed up failure instead."
+      }
+    },
+    {
+      "id": "blameless-postmortem",
+      "title": "Learning from Incidents: The Blameless Post-Mortem",
+      "content": [
+        {
+          "type": "text",
+          "value": "A post-mortem turns an incident into improvement. **Blameless** means the question is \"how did our system allow this?\" and not \"who made a mistake?\". People who fear blame hide facts, and then the same incident returns."
+        },
+        {
+          "type": "code",
+          "title": "A post-mortem template",
+          "value": "Title:            Checkout errors on 6 Nov 2026\nSeverity:         SEV-1, 55 minutes\nImpact:           ~30% of checkouts failed; no data lost\n\nTimeline (UTC):\n  14:05  Error rate rises (alert fires at 14:08)\n  14:12  On-call acknowledges; IC named\n  14:31  Release 2.14 identified as the trigger\n  14:38  Rolled back; errors fall\n  15:00  Resolved\n\nRoot cause:       A new query without an index overloaded the database,\n                  exhausting the connection pool.\nWhy it was not caught: Staging data is 1% of production size.\n\nWhat went well:   Fast alert, clear roles, quick rollback.\nWhat went badly:  No load test; alert fired 3 minutes late.\n\nAction items (owner, due):\n  - Add index and a query-plan check in CI       (Priya, 13 Nov)\n  - Load-test big queries before release         (Ravi, 27 Nov)\n  - Alert on pool saturation above 80%           (Meera, 20 Nov)"
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Finding causes: the five whys"
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "Why did checkout fail? Requests timed out.",
+            "Why? The connection pool was exhausted.",
+            "Why? One query became very slow.",
+            "Why? It had no index and the table is large.",
+            "Why did it reach production? Staging data is too small to show the problem."
+          ]
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Good action items are **specific, owned and dated**. \"Be more careful\" is not an action item; \"add a query-plan check to CI by 13 Nov\" is."
+        }
+      ],
+      "keyPoints": [
+        "Blameless reviews focus on systems and processes, so people tell the truth.",
+        "A good post-mortem has a timeline, impact, root causes, what worked and owned action items.",
+        "The five whys keeps asking until you reach something you can fix in the system."
+      ],
+      "quiz": {
+        "question": "Which is a well-written post-mortem action item?",
+        "options": [
+          "Be more careful next time",
+          "Add a query-plan check to CI (owner: Priya, due 13 Nov)",
+          "Fire the engineer who deployed",
+          "Hope it does not happen again"
+        ],
+        "correctIndex": 1,
+        "explanation": "Action items must be specific, assigned to an owner and have a due date, so they actually get done."
+      }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Incident response cheat sheet",
+    "rows": [
+      [
+        "kubectl get pods -A | grep -v Running",
+        "Which Pods are not healthy?"
+      ],
+      [
+        "kubectl describe pod NAME",
+        "Events, restarts, limits and last state"
+      ],
+      [
+        "kubectl logs NAME --previous",
+        "Logs from the crashed container"
+      ],
+      [
+        "kubectl get events --sort-by=.lastTimestamp",
+        "What happened most recently"
+      ],
+      [
+        "kubectl rollout undo deploy/NAME",
+        "Roll back a bad release"
+      ],
+      [
+        "kubectl top pod --sort-by=memory",
+        "Who is using the most memory"
+      ],
+      [
+        "kubectl exec -it POD -- cat /etc/resolv.conf",
+        "Check the Pod's DNS settings (ndots)"
+      ],
+      [
+        "kubectl -n kube-system logs -l k8s-app=kube-dns",
+        "CoreDNS logs"
+      ],
+      [
+        "Exit code 137",
+        "Killed by the OOM killer (128 + SIGKILL 9)"
+      ],
+      [
+        "Exit code 1",
+        "The application exited with an error"
+      ],
+      [
+        "SEV-1 / SEV-2 / SEV-3",
+        "Critical outage / major degradation / minor issue"
+      ],
+      [
+        "MTTD / MTTR",
+        "Mean time to detect / to recover"
+      ]
+    ]
+  }
 }

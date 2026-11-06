@@ -18,6 +18,7 @@ import {
   AlertCircle,
   ShieldCheck,
   GraduationCap,
+  BookOpen,
 } from 'lucide-react';
 import {
   FaAws,
@@ -142,10 +143,14 @@ export default function LandingPage() {
                 Every engineering student has a generic To-Do app on their resume. Stand out in campus placements by deploying real Docker containers, Kubernetes clusters, and AWS infrastructure inside browser sandboxes — Zero Credit Card Required. Runs on Any 4GB College PC.
               </p>
 
-              {/* Single Clear Action Button routing to Lab Studio */}
+              {/* Two ways in: learn the theory, or go straight to the labs */}
               <div className="hero-editorial-ctas">
+                <Link to="/dashboard" className="hero-btn-pill-secondary hero-btn-single">
+                  <BookOpen size={18} />
+                  <span>Explore Theory</span>
+                </Link>
                 <Link to="/lab" className="hero-btn-pill-primary hero-btn-single">
-                  <span>Open Lab Studio</span>
+                  <span>Launch Lab Studio</span>
                   <ArrowRight size={18} />
                 </Link>
               </div>
@@ -982,9 +987,14 @@ export default function LandingPage() {
                 <p>Stop watching tutorials. Start typing real commands in live sandboxes.</p>
               </div>
             </div>
-            <Link to="/lab" className="ready-banner-btn">
-              Open Lab Studio <ArrowRight size={16} />
-            </Link>
+            <div className="ready-banner-actions">
+              <Link to="/dashboard" className="ready-banner-btn is-secondary">
+                <BookOpen size={16} /> Explore Theory
+              </Link>
+              <Link to="/lab" className="ready-banner-btn">
+                Launch Lab Studio <ArrowRight size={16} />
+              </Link>
+            </div>
           </div>
         </div>
       </section>

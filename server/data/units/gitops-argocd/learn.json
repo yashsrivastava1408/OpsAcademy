@@ -1,4 +1,19 @@
 {
+  "overview": {
+    "why": "Deploying with `kubectl apply` from a laptop or a CI server is hard to audit and easy to get wrong. GitOps makes Git the single source of truth: you change a file, review it in a pull request, and an agent inside the cluster makes reality match. You get history, review, rollback and drift correction for free. Argo CD is the most widely used tool for it.",
+    "prerequisites": [
+      "Kubernetes basics (Deployments, Services, namespaces).",
+      "Git basics and CI/CD basics."
+    ],
+    "outcomes": [
+      "Explain push-based versus pull-based deployment and why pull is safer",
+      "Describe a GitOps repository layout with a base and per-environment overlays",
+      "Write an Argo CD Application and explain sync, prune and self-heal",
+      "Read sync status and health, and roll back with a Git revert",
+      "Release gradually with an Argo Rollouts canary and stop it on bad metrics"
+    ],
+    "placementTip": "The key sentence is: *\"the cluster pulls its desired state from Git, so no CI system needs cluster-admin credentials.\"* Follow it with how you would roll back (revert the commit)."
+  },
   "sections": [
     {
       "id": "what-is-gitops",
@@ -18,6 +33,11 @@
           "style": "info",
           "value": "Key GitOps Rule: Never edit a live cluster with 'kubectl' manually! If you want to change replicas from 3 to 5, update the YAML file in Git, commit, and let ArgoCD sync it to the cluster."
         }
+      ],
+      "keyPoints": [
+        "Git holds the desired state; an in-cluster agent pulls it and reconciles.",
+        "Pull-based means no outside system needs cluster admin keys.",
+        "Never fix production by hand with `kubectl edit`: change Git, or self-heal will undo you."
       ],
       "quiz": {
         "question": "What is the primary advantage of ArgoCD's Pull-based model over traditional Push pipelines?",
@@ -42,6 +62,11 @@
           "value": "apiVersion: argoproj.io/v1alpha1\nkind: Application\nmetadata:\n  name: production-web-app\n  namespace: argocd\nspec:\n  project: default\n  source:\n    repoURL: 'https://github.com/opsacademy/k8s-manifests.git'\n    targetRevision: HEAD\n    path: overlays/production\n  destination:\n    server: 'https://kubernetes.default.svc'\n    namespace: prod\n  syncPolicy:\n    automated:\n      prune: true        # Delete resources removed from Git\n      selfHeal: true     # Revert manual kubectl edits automatically!"
         }
       ],
+      "keyPoints": [
+        "An `Application` says where the manifests are (repo, path, revision) and where they go (cluster, namespace).",
+        "`prune: true` deletes what was removed from Git; `selfHeal: true` reverts manual changes.",
+        "Start with manual sync while learning, then turn on automation."
+      ],
       "quiz": {
         "question": "What does 'selfHeal: true' do in an ArgoCD Application spec?",
         "options": [
@@ -53,6 +78,254 @@
         "correctIndex": 1,
         "explanation": "'selfHeal: true' guarantees Git is the single source of truth. If an engineer manually alters live cluster state, ArgoCD immediately detects drift and forces the cluster back to the state in Git."
       }
+    },
+    {
+      "id": "repo-layout-kustomize",
+      "title": "Repository Layout and Environments with Kustomize",
+      "content": [
+        {
+          "type": "text",
+          "value": "GitOps needs a repository that is easy to read and safe to change. A common approach keeps **application code** and **deployment manifests** in separate repositories, and uses **Kustomize** to describe each environment as small changes on top of a shared base."
+        },
+        {
+          "type": "code",
+          "title": "A typical manifests repository",
+          "value": "k8s-manifests/\n├── base/                    # what every environment shares\n│   ├── deployment.yaml\n│   ├── service.yaml\n│   └── kustomization.yaml\n└── overlays/\n    ├── staging/\n    │   └── kustomization.yaml   # 1 replica, staging hostname\n    └── production/\n        └── kustomization.yaml   # 5 replicas, production hostname, bigger limits"
+        },
+        {
+          "type": "code",
+          "title": "overlays/production/kustomization.yaml",
+          "value": "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - ../../base\nreplicas:\n  - name: web\n    count: 5\nimages:\n  - name: web\n    newTag: 2.1.0          # the release is just a one-line change in Git"
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "How a release works"
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "CI builds and tests the code, then pushes an image tagged `2.1.0`.",
+            "A pull request changes `newTag` in the staging overlay; the team reviews it.",
+            "Argo CD notices the merge and syncs staging. Tests run against it.",
+            "A second pull request changes the production overlay. After approval, Argo CD syncs production."
+          ]
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Promotion is a Git change, so every release has an author, a reviewer, a timestamp and a one-click undo (`git revert`)."
+        }
+      ],
+      "keyPoints": [
+        "Keep manifests in their own repository, with a shared `base` and one overlay per environment.",
+        "A release or promotion is a reviewed pull request that changes an image tag.",
+        "Overlays only contain differences, which keeps environments from drifting apart."
+      ],
+      "quiz": {
+        "question": "In a Kustomize layout, what belongs in an environment overlay?",
+        "options": [
+          "A full copy of every manifest",
+          "Only the differences from the shared base, such as replica count and image tag",
+          "The application source code",
+          "The cluster admin credentials"
+        ],
+        "correctIndex": 1,
+        "explanation": "Overlays patch the base. Keeping only differences means one place to change anything shared."
+      }
+    },
+    {
+      "id": "sync-health-drift",
+      "title": "Sync, Health and Drift in Practice",
+      "content": [
+        {
+          "type": "text",
+          "value": "Argo CD continuously compares Git with the cluster and reports two separate things. **Sync status** says whether the cluster matches Git. **Health status** says whether the app is actually working."
+        },
+        {
+          "type": "table",
+          "header": [
+            "Status",
+            "Meaning",
+            "What to do"
+          ],
+          "rows": [
+            [
+              "Synced + Healthy",
+              "Cluster matches Git and the app runs",
+              "Nothing: this is the goal"
+            ],
+            [
+              "OutOfSync",
+              "Git changed, or someone edited the cluster",
+              "Review the diff, then sync (or let auto-sync do it)"
+            ],
+            [
+              "Synced + Degraded",
+              "Manifests applied but Pods are failing",
+              "Debug the app: logs, events, probes"
+            ],
+            [
+              "Progressing",
+              "A rollout is in progress",
+              "Wait, then check again"
+            ]
+          ]
+        },
+        {
+          "type": "code",
+          "title": "Daily commands",
+          "value": "argocd app get production-web-app      # status and the resources it manages\nargocd app diff production-web-app     # exactly what differs from Git\nargocd app sync production-web-app     # apply the Git state now"
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Drift and self-heal"
+        },
+        {
+          "type": "text",
+          "value": "If someone runs `kubectl scale deploy web --replicas=1` against production, the cluster no longer matches Git. With `selfHeal: true`, Argo CD changes it back within moments. This is a feature: it stops quiet, undocumented changes."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Rolling back"
+        },
+        {
+          "type": "text",
+          "value": "The GitOps rollback is `git revert` of the bad commit. Argo CD then syncs the previous state, and your history shows both the mistake and the fix. The `argocd app rollback` command exists too, but it only works while auto-sync is off, so reverting in Git is the habit to build."
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Secrets must **not** be stored as plain Kubernetes Secrets in Git. Use Sealed Secrets, External Secrets or SOPS so that only encrypted values are committed."
+        }
+      ],
+      "keyPoints": [
+        "Sync says \"matches Git?\"; health says \"is it working?\". You need both to be good.",
+        "Self-heal reverts manual cluster edits, so changes always go through Git.",
+        "Roll back by reverting the commit; never commit plain secrets."
+      ],
+      "quiz": {
+        "question": "An app shows Synced but Degraded. What does that mean?",
+        "options": [
+          "Git and the cluster differ",
+          "The manifests were applied correctly, but the workload is failing (for example crashing Pods)",
+          "Argo CD cannot reach Git",
+          "The application was deleted"
+        ],
+        "correctIndex": 1,
+        "explanation": "Synced only says the cluster matches Git. Degraded says the resources are not healthy, so look at the Pods."
+      }
+    },
+    {
+      "id": "progressive-delivery",
+      "title": "Progressive Delivery with Argo Rollouts (Canary)",
+      "content": [
+        {
+          "type": "text",
+          "value": "A normal Deployment replaces every Pod and hopes. **Argo Rollouts** adds safer strategies. A **canary** sends a small share of traffic to the new version, waits, checks, and only then continues. If the new version misbehaves, it is stopped before most users see it."
+        },
+        {
+          "type": "code",
+          "title": "A canary Rollout",
+          "value": "apiVersion: argoproj.io/v1alpha1\nkind: Rollout\nmetadata:\n  name: web\nspec:\n  replicas: 5\n  selector:\n    matchLabels: { app: web }\n  template:\n    metadata:\n      labels: { app: web }\n    spec:\n      containers:\n        - name: web\n          image: web:2.1.0\n  strategy:\n    canary:\n      steps:\n        - setWeight: 10        # 10% of traffic to the new version\n        - pause: { duration: 5m }\n        - setWeight: 50\n        - pause: { duration: 5m }\n        - setWeight: 100       # fully rolled out"
+        },
+        {
+          "type": "mermaid",
+          "title": "A canary release",
+          "value": "graph LR\n    U[Users] --> S[Service]\n    S -->|90%| V1[Stable v2.0]\n    S -->|10%| V2[Canary v2.1]\n    V2 --> M{Metrics healthy?}\n    M -->|Yes| P[Promote to 50% then 100%]\n    M -->|No| A[Abort and return to v2.0]"
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Let the metrics decide"
+        },
+        {
+          "type": "text",
+          "value": "Pauses are a start, but the real power is an **analysis**: Argo Rollouts queries Prometheus during the canary and aborts automatically if, for example, the error rate rises above 1%. Nobody has to be watching a dashboard at midnight."
+        },
+        {
+          "type": "code",
+          "title": "Operating a rollout",
+          "value": "kubectl argo rollouts get rollout web -w     # watch the steps happen\nkubectl argo rollouts promote web            # continue past a pause\nkubectl argo rollouts abort web              # stop and go back to stable"
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Canary, blue-green and rolling are all ways of answering one question: *how much of my user base am I willing to risk on a new version?*"
+        }
+      ],
+      "keyPoints": [
+        "A canary shifts traffic in steps (10%, 50%, 100%), pausing to check each time.",
+        "Automated analysis against metrics (error rate, latency) can abort a bad release by itself.",
+        "`abort` returns to the stable version; `promote` continues past a pause."
+      ],
+      "quiz": {
+        "question": "What is the main benefit of a canary release over replacing all Pods at once?",
+        "options": [
+          "It uses fewer servers",
+          "Only a small share of users is exposed to a bad version, and it can be stopped early",
+          "It does not need a Service",
+          "It removes the need for tests"
+        ],
+        "correctIndex": 1,
+        "explanation": "A canary limits the blast radius of a bad release and lets metrics decide whether to continue."
+      }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Argo CD and GitOps cheat sheet",
+    "rows": [
+      [
+        "argocd app list",
+        "All applications and their sync/health"
+      ],
+      [
+        "argocd app get NAME",
+        "Details and current status of one app"
+      ],
+      [
+        "argocd app sync NAME",
+        "Apply what is in Git now"
+      ],
+      [
+        "argocd app diff NAME",
+        "What differs between Git and the cluster"
+      ],
+      [
+        "argocd app history NAME",
+        "Deployed revisions"
+      ],
+      [
+        "argocd app rollback NAME ID",
+        "Go back to an earlier revision (manual sync only)"
+      ],
+      [
+        "git revert COMMIT",
+        "The GitOps way to roll back: revert in Git and let Argo sync"
+      ],
+      [
+        "kubectl argo rollouts get rollout NAME -w",
+        "Watch a canary progress"
+      ],
+      [
+        "kubectl argo rollouts promote NAME",
+        "Move a paused rollout forward"
+      ],
+      [
+        "kubectl argo rollouts abort NAME",
+        "Stop a bad rollout and return to stable"
+      ],
+      [
+        "Synced / OutOfSync",
+        "Does the cluster match Git?"
+      ],
+      [
+        "Healthy / Degraded / Progressing",
+        "Is the app working?"
+      ]
+    ]
+  }
 }
