@@ -13,7 +13,13 @@
  * process used while it ran.
  *
  * Usage:
- *   node scripts/loadtest.js [baseUrl] [--students 25] [--seconds 60] [--ramp 5]
+ *   node scripts/loadtest.js [baseUrl] [--students 25] [--seconds 60] [--ramp 5] [thresholds]
+ *
+ * Thresholds make it a pass/fail check (exit code 1 when one is exceeded); each is optional:
+ *   --max-start-p95 <ms>     starting a sandbox          --max-prompt-p95 <ms>   connect to first shell output
+ *   --max-echo-p95 <ms>      keystroke to echo           --max-command-p95 <ms>  Enter to command output
+ *   --max-error-rate <0-1>   failed actions / students   --min-peak <n>          sandboxes running at once
+ * The SRM-scale run (625 students) and its numbers are described in docs/runbooks/load-test.md.
  *
  * Numbers depend on the machine and on SANDBOX_MODE; quote them with both.
  * The gateway allows 25 sandboxes in total by default (SANDBOX_MAX_TOTAL),
@@ -72,10 +78,12 @@ async function timed(kind, what, request) {
   }
 }
 
-function openTerminal(sessionId, token) {
+async function openTerminal(sessionId, token) {
+  // The way the web app connects: a single-use ticket, never the bearer token in the URL.
+  const ticket = (await api('POST', `/api/sandbox/${sessionId}/terminal-ticket`, token)).data.ticket;
   return new Promise((resolve, reject) => {
     const started = now();
-    const ws = new WebSocket(`${BASE.replace(/^http/, 'ws')}/api/terminal?sessionId=${sessionId}&token=${token}`);
+    const ws = new WebSocket(`${BASE.replace(/^http/, 'ws')}/api/terminal?ticket=${encodeURIComponent(ticket)}`);
     const term = { ws, output: '', closed: null };
     ws.on('message', (data) => {
       if (!term.output) {
@@ -177,6 +185,31 @@ async function gatewayUsage() {
   };
 }
 
+const flagValue = (name) => {
+  const index = args.indexOf(`--${name}`);
+  return index >= 0 ? Number(args[index + 1]) : null;
+};
+const LIMITS = {
+  startP95: flagValue('max-start-p95'), promptP95: flagValue('max-prompt-p95'), echoP95: flagValue('max-echo-p95'),
+  commandP95: flagValue('max-command-p95'), errorRate: flagValue('max-error-rate'), minPeak: flagValue('min-peak'),
+};
+const THRESHOLDS_SET = Object.values(LIMITS).some((v) => v !== null);
+
+/** The thresholds this run broke, as sentences. */
+function judge(report) {
+  const out = [];
+  const over = (label, value, limit) => { if (limit !== null && (value === null || value > limit)) out.push(`${label} p95 ${value} ms is over ${limit} ms`); };
+  over('start sandbox', report.startSandboxMs.p95, LIMITS.startP95);
+  over('connect to first output', report.firstPromptMs.p95, LIMITS.promptP95);
+  over('keystroke echo', report.keystrokeEchoMs.p95, LIMITS.echoP95);
+  over('command output', report.commandMs.p95, LIMITS.commandP95);
+  if (LIMITS.errorRate !== null && errors.length / report.students > LIMITS.errorRate) {
+    out.push(`${errors.length} errors for ${report.students} students (${Math.round((errors.length / report.students) * 1000) / 10}%) is over ${LIMITS.errorRate * 100}%`);
+  }
+  if (LIMITS.minPeak !== null && report.peakSandboxes < LIMITS.minPeak) out.push(`only ${report.peakSandboxes} sandboxes ran at once; wanted at least ${LIMITS.minPeak}`);
+  return out;
+}
+
 function summarise(values) {
   const sorted = values.slice().sort((a, b) => a - b);
   const at = (p) => sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
@@ -252,7 +285,15 @@ async function main() {
   }
   for (const [kind, count] of [...kinds].sort((a, b) => b[1] - a[1]).slice(0, 8)) console.log(`    ${count} x ${kind}`);
   console.log(`\n${JSON.stringify(report)}\n`);
-  process.exit(errors.length ? 1 : 0);
+
+  const failures = judge(report);
+  if (failures.length) {
+    console.log('FAILED thresholds:');
+    for (const f of failures) console.log(`  - ${f}`);
+  } else if (THRESHOLDS_SET) {
+    console.log('All thresholds met.');
+  }
+  process.exit(failures.length || (!THRESHOLDS_SET && errors.length) ? 1 : 0);
 }
 
 main().catch((err) => {

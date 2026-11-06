@@ -37,6 +37,22 @@ docker run -d --name opsacademy-lab-node --restart unless-stopped \
 Never publish port 7000 to the internet: it is reachable only from the gateway and worker (security group / firewall rule).
 Rotate `NODE_TOKEN` on every node and the gateway together.
 
+## Stronger isolation: gVisor (optional)
+
+gVisor runs each sandbox against a user-space kernel, so a kernel exploit inside a sandbox does not reach the host. On every
+lab server:
+
+```
+# install runsc (https://gvisor.dev/docs/user_guide/install/), then register it with Docker:
+sudo runsc install            # adds the "runsc" runtime to /etc/docker/daemon.json
+sudo systemctl restart docker
+docker run --rm --runtime=runsc opsacademy-sandbox:latest echo ok   # must print ok
+```
+Then give the agent `SANDBOX_RUNTIME=runsc`. The agent refuses to start if Docker does not have that runtime, and
+`GET /v1/health` reports the runtime in use. Every other restriction (no capabilities, read-only root, limits) stays.
+Measure the cost with the load test before choosing it for production: gVisor adds overhead to system calls and file
+access, and a few lab commands that need unusual kernel features may behave differently. Roll out one node first.
+
 ## Operating
 
 | Task | How |

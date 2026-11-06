@@ -53,3 +53,43 @@ test('every container gets the lab port variables with the standard numbers', ()
   // A container has its own loopback, so students never share these ports.
   expect(options.Env).toEqual(expect.arrayContaining(['WEB_PORT=8080', 'APP_PORT=9090', 'SITE_PORT=8000', 'HOME=/home/student']));
 });
+
+describe('gVisor runtime (SANDBOX_RUNTIME)', () => {
+  afterEach(() => { config.sandbox.dockerRuntime = null; });
+
+  test('uses Docker\'s default runtime unless one is configured', () => {
+    expect(host.Runtime).toBeUndefined();
+  });
+
+  test('runs the sandbox under the configured runtime, with every other restriction unchanged', () => {
+    config.sandbox.dockerRuntime = 'runsc';
+    const gvisor = docker.buildContainerOptions('abc123', { labId: 'linux-basics', networkMode: 'none' }).HostConfig;
+    expect(gvisor.Runtime).toBe('runsc');
+    expect(gvisor.CapDrop).toEqual(['ALL']);
+    expect(gvisor.ReadonlyRootfs).toBe(true);
+    expect(gvisor.Privileged).toBe(false);
+  });
+});
+
+describe('verifyRuntime', () => {
+  function engineWith(runtimes, wanted) {
+    let engine;
+    jest.isolateModules(() => {
+      jest.doMock('dockerode', () => function Docker() { return { info: async () => ({ Runtimes: runtimes }) }; });
+      const cfg = require('../config');
+      cfg.sandbox.dockerRuntime = wanted;
+      engine = require('../services/dockerService');
+    });
+    jest.dontMock('dockerode');
+    return engine;
+  }
+
+  test('passes without a configured runtime, and when Docker has the one that is configured', async () => {
+    await expect(engineWith({ runc: {} }, null).verifyRuntime()).resolves.toBe('runc');
+    await expect(engineWith({ runc: {}, runsc: {} }, 'runsc').verifyRuntime()).resolves.toBe('runsc');
+  });
+
+  test('fails at start-up, naming what is available, when the runtime is not installed', async () => {
+    await expect(engineWith({ runc: {} }, 'runsc').verifyRuntime()).rejects.toThrow(/runsc is not installed.*available: runc/);
+  });
+});

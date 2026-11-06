@@ -33,6 +33,7 @@ Out of scope: a compromised host, a malicious operator, and kernel 0-days (see "
 | Exhaust memory | 256 MB limit with swap disabled | a 512 MB allocation is OOM-killed; the sandbox survives |
 | Hog the CPU | 0.5 CPU quota | set in the container config (not load-tested) |
 | Mine coins, attack other hosts, exfiltrate | No network interface at all (`NetworkMode: none`) | only loopback has an address; an outbound request fails |
+| Escape the container to the host kernel | Optional gVisor (`SANDBOX_RUNTIME=runsc`): the sandbox talks to a user-space kernel; capabilities dropped, no-new-privileges, read-only root | `tests/docker.test.js`; `docs/runbooks/lab-nodes.md` |
 | Reach the Docker daemon | The socket is never mounted into a sandbox; with lab nodes it is not mounted into the gateway either | `/var/run/docker.sock` does not exist inside; `docker-compose.nodes.yml` |
 | Steal a terminal connection from a log | The terminal WebSocket URL carries a random single-use ticket valid for 30 s, not the bearer token | `tests/terminal.test.js` |
 | Linger forever | Reaper destroys sandboxes after 15 idle minutes or 30 minutes total; containers are labelled and orphans are removed at startup | unit tests on the sweep; shutdown leaves zero containers |

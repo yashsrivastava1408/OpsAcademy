@@ -35,6 +35,7 @@ function echoEngine() {
       let send = () => {};
       const terminal = {
         onData(cb) { send = cb; setImmediate(() => cb('prompt$ ')); },
+        onClose(cb) { box.shellEnded = cb; },
         write(data) { box.writes.push(data); send(`echo:${data}`); },
         resize(cols, rows) { box.sizes.push([cols, rows]); },
         close() { box.closed = true; },
@@ -276,6 +277,20 @@ describe('terminal stream through the agent', () => {
     terminal.onClose(() => { closed = true; });
     terminal.close();
     await waitFor(() => closed && box.closed, { timeoutMs: 12000 }).catch((e) => { throw new Error('step 4 never happened: ' + e.message + ' output=' + JSON.stringify(output.join(''))); });
+  });
+
+  test('when the shell on the node ends, the gateway side is told so the browser can reconnect', async () => {
+    const a = await node('node-a');
+    const gateway = remoteManager();
+    const session = await gateway.createSession('u1');
+    const terminal = await gateway.attach(session.sessionId);
+    let closed = false;
+    terminal.onClose(() => { closed = true; });
+    terminal.onData(() => {});
+    await waitFor(() => [...a.engine.boxes.values()][0].shellEnded, { timeoutMs: 12000 });
+    [...a.engine.boxes.values()][0].shellEnded(); // the student typed `exit`
+    await waitFor(() => closed, { timeoutMs: 12000 });
+    expect(a.engine.boxes.size).toBe(1); // the sandbox itself is still there
   });
 
   test('attaching to a session whose node is gone gives null, and a wrong token is refused', async () => {

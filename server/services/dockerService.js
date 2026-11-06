@@ -11,7 +11,7 @@
 
 const Docker = require('dockerode');
 const fs = require('fs');
-const { StringDecoder } = require('string_decoder');
+const { SharedShell } = require('../lib/sharedShell');
 const config = require('../config');
 const logger = require('../lib/logger');
 
@@ -84,6 +84,8 @@ function buildContainerOptions(engineId, { labId, networkMode }) {
       NanoCpus: Math.round(config.sandbox.maxCpuCores * 1e9),
       PidsLimit: config.sandbox.maxPids,
       NetworkMode: networkMode,
+      // gVisor (runsc) when configured: the sandbox talks to a user-space kernel, not the host's.
+      ...(config.sandbox.dockerRuntime ? { Runtime: config.sandbox.dockerRuntime } : {}),
       CapDrop: ['ALL'],
       SecurityOpt: securityOpt,
       Privileged: false,
@@ -134,6 +136,7 @@ async function destroy(engineId) {
   if (!sandbox) return false;
   sandboxes.delete(engineId);
   sandbox.exitListeners = [];
+  if (sandbox.shell) sandbox.shell.destroy();
 
   try {
     await getDocker().getContainer(sandbox.containerId).remove({ force: true });
@@ -147,6 +150,21 @@ async function destroy(engineId) {
     });
   }
   return true;
+}
+
+/**
+ * Refuse to start if SANDBOX_RUNTIME names a runtime this Docker does not have: otherwise every
+ * sandbox would fail to start, one student at a time.
+ * @returns {Promise<string>} the runtime in use
+ */
+async function verifyRuntime() {
+  const wanted = config.sandbox.dockerRuntime;
+  if (!wanted) return 'runc';
+  const info = await getDocker().info();
+  if (!info.Runtimes || !info.Runtimes[wanted]) {
+    throw new Error(`SANDBOX_RUNTIME=${wanted} is not installed in Docker (available: ${Object.keys(info.Runtimes || {}).join(', ') || 'none'})`);
+  }
+  return wanted;
 }
 
 /** Every sandbox this engine knows, for the lab node agent's inventory. */
@@ -215,48 +233,39 @@ async function attach(engineId) {
   const sandbox = sandboxes.get(engineId);
   if (!sandbox || !sandbox.alive) return null;
 
-  const container = getDocker().getContainer(sandbox.containerId);
-  const execInstance = await container.exec({
-    Cmd: ['/bin/sh', '-c', 'command -v bash >/dev/null 2>&1 && exec bash -l || exec sh -l'],
-    AttachStdin: true,
-    AttachStdout: true,
-    AttachStderr: true,
-    Tty: true,
-    WorkingDir: STUDENT_HOME,
-    Env: ['TERM=xterm-256color'],
-  });
-  const stream = await execInstance.start({ hijack: true, stdin: true, Tty: true });
-
-  return {
-    onData(callback) {
-      // A chunk can end in the middle of a multi-byte character (an accented
-      // letter, a box-drawing line); the decoder holds the tail until the rest arrives.
-      const decoder = new StringDecoder('utf8');
-      stream.on('data', (chunk) => {
-        const text = decoder.write(chunk);
-        if (text) callback(text);
-      });
-    },
-    write(data) {
-      if (!stream.destroyed) stream.write(data);
-    },
-    resize(cols, rows) {
-      execInstance.resize({ h: rows, w: cols }).catch(() => {});
-    },
-    close() {
-      stream.destroy();
-    },
-  };
+  // One shell per container, kept running between connections: a dropped network or a reloaded page
+  // attaches to the same shell and sees the recent output (see lib/sharedShell.js).
+  if (!sandbox.shell || sandbox.shell.ended) {
+    const container = getDocker().getContainer(sandbox.containerId);
+    const execInstance = await container.exec({
+      Cmd: ['/bin/sh', '-c', 'command -v bash >/dev/null 2>&1 && exec bash -l || exec sh -l'],
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: true,
+      WorkingDir: STUDENT_HOME,
+      Env: ['TERM=xterm-256color'],
+    });
+    const stream = await execInstance.start({ hijack: true, stdin: true, Tty: true });
+    sandbox.shell = new SharedShell({ stream, resize: (cols, rows) => execInstance.resize({ h: rows, w: cols }).catch(() => {}) });
+  }
+  return sandbox.shell.attach();
 }
 
 /** Wipe the student's home directory so the lab can be started over. */
 async function reset(engineId) {
   await exec(engineId, `find ${STUDENT_HOME} -mindepth 1 -delete`);
+  // An open shell may be standing in a directory that no longer exists: bring it home and clear the screen.
+  const sandbox = sandboxes.get(engineId);
+  if (sandbox && sandbox.shell && !sandbox.shell.ended) {
+    sandbox.shell.clearScrollback();
+    sandbox.shell.stream.write('\x03cd ~ && clear\r');
+  }
 }
 
 function info(engineId) {
   const sandbox = sandboxes.get(engineId);
-  return { mode: 'docker', containerId: sandbox ? sandbox.containerId.slice(0, 12) : null };
+  return { mode: 'docker', runtime: config.sandbox.dockerRuntime || 'runc', containerId: sandbox ? sandbox.containerId.slice(0, 12) : null };
 }
 
 /**
@@ -338,6 +347,7 @@ module.exports = {
   create,
   destroy,
   list,
+  verifyRuntime,
   isAlive,
   onExit,
   exec,

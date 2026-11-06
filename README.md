@@ -477,6 +477,7 @@ Optional gateway settings (all in `server/.env.example`):
 | `SANDBOX_MODE` | `pty`, `docker`, or `remote` (sandboxes on lab nodes; the gateway needs no Docker socket) | `pty` |
 | `NODE_TOKEN` | Shared secret between the gateway and lab node agents (32+ characters; required with `remote`) | none |
 | `NODE_ID`, `NODE_CAPACITY`, `NODE_BASE_URL`, `GATEWAY_URL` | On a lab node: its name, how many sandboxes it runs, where the gateway reaches it, where it sends heartbeats | `local`, 50, `http://localhost:7000`, none |
+| `SANDBOX_RUNTIME` | Docker runtime for sandboxes, e.g. `runsc` for gVisor (the agent refuses to start if it is not installed) | Docker default (`runc`) |
 | `TERMINAL_TOKEN_AUTH` | `off` allows only single-use tickets for the terminal WebSocket | `on` |
 | `AUTH_COOKIE_SAMESITE` | `lax`, `strict` or `none` for the refresh-token cookie (`none` for a web app on a different site; needs HTTPS) | `lax` |
 | `METRICS_TOKEN` | A bearer token on `/metrics` | `/metrics` is open |

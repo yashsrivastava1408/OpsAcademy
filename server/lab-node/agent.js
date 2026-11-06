@@ -65,7 +65,7 @@ function createAgent({ engine, settings, fetchImpl = (...args) => fetch(...args)
   });
 
   function snapshot() {
-    return { nodeId, capacity, running: active.size, draining, version: VERSION, mode: engine.name, poolAvailable: pool.stats().available };
+    return { nodeId, capacity, running: active.size, draining, version: VERSION, mode: engine.name, runtime: engine.runtimeName || null, poolAvailable: pool.stats().available };
   }
 
   const known = (engineId) => ENGINE_ID.test(engineId) && active.has(engineId);
@@ -150,6 +150,8 @@ function createAgent({ engine, settings, fetchImpl = (...args) => fetch(...args)
     if (!terminal) return ws.close(4004, 'Sandbox not found');
 
     terminal.onData((data) => { if (ws.readyState === ws.OPEN) ws.send(data); });
+    // The shell itself ended (the student typed `exit`): tell the gateway, which tells the browser.
+    if (terminal.onClose) terminal.onClose(() => { if (ws.readyState === ws.OPEN) ws.close(1000, 'Shell ended'); });
     const onMessage = (msg) => {
       const text = msg.toString();
       if (text.startsWith('{')) {
@@ -192,6 +194,7 @@ function createAgent({ engine, settings, fetchImpl = (...args) => fetch(...args)
   }
 
   async function start(port = settings.port) {
+    if (engine.verifyRuntime) engine.runtimeName = await engine.verifyRuntime(); // throws if the runtime is missing
     if (engine.reconcile) await engine.reconcile().catch(() => {});
     // Sandboxes found after a restart belong to sessions the gateway still knows about.
     for (const s of engine.list()) active.add(s.engineId);

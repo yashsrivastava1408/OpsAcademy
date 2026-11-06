@@ -177,6 +177,9 @@ const config = {
     // 'none' = no network at all | 'internal' = per-session bridge with no route out
     // | 'bridge' = outbound internet allowed (only for labs that need it).
     dockerNetworkMode: process.env.SANDBOX_NETWORK || 'none',
+    // OCI runtime for sandbox containers, e.g. "runsc" for gVisor (a user-space kernel between the sandbox and the host).
+    // Unset = Docker's default runtime (runc). See docs/runbooks/lab-nodes.md.
+    dockerRuntime: process.env.SANDBOX_RUNTIME || null,
     dockerImage: process.env.SANDBOX_IMAGE || 'opsacademy-sandbox:latest',
     dockerSeccompProfile: process.env.SANDBOX_SECCOMP_PROFILE || null,
     sandboxesDir: process.env.SANDBOXES_DIR || path.join(__dirname, '..', 'sandboxes'),

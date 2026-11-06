@@ -18,8 +18,8 @@
     "migrate": "node scripts/migrate.js",
     "migrate:status": "node scripts/migrate.js --status",
     "grant-role": "node scripts/grant-role.js",
-    "test:db": "jest tests/migrator.test.js tests/schema.test.js tests/repositories.postgres.test.js tests/legacyImport.test.js --runInBand --coverage=false",
-    "test:pg": "TEST_REPOS=postgres jest --runInBand --coverage=false --testPathIgnorePatterns migrator schema repositories.postgres legacyImport",
+    "test:db": "jest tests/migrator.test.js tests/schema.test.js tests/repositories.postgres.test.js tests/legacyImport.test.js tests/twoGateways.test.js --runInBand --coverage=false",
+    "test:pg": "TEST_REPOS=postgres jest --runInBand --coverage=false --testPathIgnorePatterns migrator schema repositories.postgres legacyImport twoGateways",
     "migrate:data": "node scripts/migrate-data.js"
   },
   "dependencies": {
