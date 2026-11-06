@@ -426,6 +426,10 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
         const { rows } = await q('select user_id from identities where provider = $1 and subject = $2', [provider, subject]);
         return rows[0] ? rows[0].user_id : null;
       },
+      async getSubject(provider, userId) {
+        const { rows } = await q('select subject from identities where provider = $1 and user_id = $2 limit 1', [provider, userId]);
+        return rows[0] ? rows[0].subject : null;
+      },
     },
 
     invites: {

@@ -271,6 +271,10 @@ function createMemoryRepos() {
         identities.set(`${provider}:${subject}`, userId);
       },
       async getUserId(provider, subject) { return identities.get(`${provider}:${subject}`) || null; },
+      async getSubject(provider, userId) {
+        for (const [key, id] of identities) if (id === userId && key.startsWith(`${provider}:`)) return key.slice(provider.length + 1);
+        return null;
+      },
     },
 
     invites: {

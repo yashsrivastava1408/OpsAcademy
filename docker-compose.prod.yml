@@ -79,6 +79,10 @@ services:
       - DATABASE_POOL_SIZE=${DATABASE_POOL_SIZE:-10}
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY:-}
+      # Server-only: creates and manages Lab ID accounts in Supabase Auth. Never reaches the browser build.
+      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
+      # Cutover switch (docs/runbooks/auth-cutover.md): empty = the gateway's own sign-in, off = Supabase only.
+      - LEGACY_AUTH=${LEGACY_AUTH:-}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - CERT_SECRET=${CERT_SECRET:-}
       - PLATFORM_ADMIN_EMAILS=${PLATFORM_ADMIN_EMAILS:-}

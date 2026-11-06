@@ -141,6 +141,8 @@ const config = {
   // Supabase
   supabaseUrl: process.env.SUPABASE_URL || null,
   supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || null,
+  // Server-only. Lets the gateway create and manage Lab ID accounts in Supabase Auth. Never sent to a browser.
+  supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || null,
   // The refresh token lives in this HttpOnly cookie, never in script-readable storage.
   // SameSite=Lax suits a web app and API on the same site; use "none" (needs HTTPS) for different sites.
   authCookie: {

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { AuthContext } from '../hooks/useAuth';
 import { authApi, clearIdentity, getStoredUser, onIdentityChange, setIdentity } from '../services/api';
 import { isSupabaseMode } from '../lib/authMode';
+import { labEmail } from '../lib/labEmail';
 import * as supabaseIdentity from '../services/supabaseIdentity';
 
 export function AuthProvider({ children }) {
@@ -27,8 +28,9 @@ export function AuthProvider({ children }) {
     return res.data.user;
   }, []);
 
-  // Lab accounts use the local sign-in even when everyone else signs in with Supabase.
+  // A Lab ID signs in like everyone else; with Supabase it is an account under a made-up address.
   const loginWithLabId = useCallback(async (id, password) => {
+    if (isSupabaseMode) return supabaseIdentity.signIn({ email: labEmail(id), password });
     const res = await authApi.loginWithLabId(id, password);
     setIdentity(res.data.token, res.data.user);
     return res.data.user;
