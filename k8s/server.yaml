@@ -49,9 +49,9 @@ spec:
             - name: AI_HUB_TOKEN
               valueFrom:
                 secretKeyRef: { name: opsacademy-secrets, key: AI_HUB_TOKEN }
-            - name: ADMIN_TOKEN
+            - name: PLATFORM_ADMIN_EMAILS
               valueFrom:
-                secretKeyRef: { name: opsacademy-secrets, key: ADMIN_TOKEN, optional: true }
+                secretKeyRef: { name: opsacademy-secrets, key: PLATFORM_ADMIN_EMAILS, optional: true }
             - name: SANDBOXES_DIR
               value: /sandboxes
           securityContext:

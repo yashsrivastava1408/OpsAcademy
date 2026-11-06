@@ -1,57 +1,39 @@
 import { useCallback, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Activity, Loader, RefreshCw, Square } from 'lucide-react';
 import { adminApi, errorMessage } from '../services/api';
 import usePolling from '../hooks/usePolling';
 import './AuthPage.css';
 import './ExtraPages.css';
 
-const TOKEN_KEY = 'opsacademy_admin_token';
 const REFRESH_MS = 10000;
 
 const minutes = (ms) => `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
 const yesNo = (value) => (value ? 'yes' : 'no');
 
 /**
- * Operator page. It needs the server's ADMIN_TOKEN, which is kept only for
- * this browser tab (sessionStorage) and sent as a header; the endpoints do
- * not exist at all on a server that has no ADMIN_TOKEN set.
+ * Operator page. Only a signed-in platform admin can use it: the server checks the
+ * role in the database (ADR 0003), so there is no shared secret to type in.
  */
 export default function AdminPage() {
-  const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) || '');
-  const [draft, setDraft] = useState('');
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    if (!token) return;
     try {
-      const res = await adminApi.overview(token);
+      const res = await adminApi.overview();
       setOverview(res.data.data);
       setError(null);
     } catch (err) {
       setOverview(null);
-      if (err.response?.status === 404) setError('Operator access is switched off on this server (no ADMIN_TOKEN is set).');
-      else if (err.response?.status === 403) setError('That token was not accepted.');
+      const status = err.response?.status;
+      if (status === 401 || status === 403) setError('This page is for platform administrators. Sign in with an administrator account.');
       else setError(errorMessage(err, 'The server did not respond.'));
     }
-  }, [token]);
+  }, []);
 
-  usePolling(load, REFRESH_MS, Boolean(token));
-
-  const signIn = (e) => {
-    e.preventDefault();
-    sessionStorage.setItem(TOKEN_KEY, draft.trim());
-    setToken(draft.trim());
-    setDraft('');
-  };
-
-  const signOut = () => {
-    sessionStorage.removeItem(TOKEN_KEY);
-    setToken('');
-    setOverview(null);
-    setError(null);
-  };
+  usePolling(load, REFRESH_MS, true);
 
   const act = async (action) => {
     setBusy(true);
@@ -65,19 +47,14 @@ export default function AdminPage() {
     }
   };
 
-  if (!token || (error && !overview)) {
+  if (error && !overview) {
     return (
       <div className="auth-page">
-        <form className="auth-card glass-card" onSubmit={signIn}>
+        <div className="auth-card glass-card">
           <h1 className="auth-title"><Activity size={18} /> Operator access</h1>
-          <p className="auth-lead">Enter the ADMIN_TOKEN this server was started with.</p>
-          <label className="auth-field">
-            <span>Admin token</span>
-            <input className="input" type="password" value={draft} onChange={(e) => setDraft(e.target.value)} autoComplete="off" required />
-          </label>
-          {error && <p className="auth-error" role="alert">{error}</p>}
-          <button type="submit" className="btn btn-primary auth-submit">Open</button>
-        </form>
+          <p className="auth-error" role="alert">{error}</p>
+          <Link to="/login" className="btn btn-primary auth-submit">Sign in</Link>
+        </div>
       </div>
     );
   }
@@ -93,10 +70,9 @@ export default function AdminPage() {
         <div className="admin-header">
           <h1><Activity size={20} /> Operator overview</h1>
           <div className="admin-actions">
-            <button className="btn btn-secondary btn-sm" onClick={() => act(() => adminApi.refillPool(token))} disabled={busy}>
+            <button className="btn btn-secondary btn-sm" onClick={() => act(() => adminApi.refillPool())} disabled={busy}>
               <RefreshCw size={14} /> Refill pool
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={signOut}>Lock</button>
           </div>
         </div>
         {error && <p className="auth-error" role="alert">{error}</p>}
@@ -145,7 +121,7 @@ export default function AdminPage() {
                       <td>{minutes(s.idleMs)}</td>
                       <td>{s.fromPool ? 'pool' : 'cold'} · {s.claimMs} ms</td>
                       <td>
-                        <button className="btn btn-ghost btn-xs" onClick={() => act(() => adminApi.stopSandbox(token, s.sessionId))} disabled={busy}>
+                        <button className="btn btn-ghost btn-xs" onClick={() => act(() => adminApi.stopSandbox(s.sessionId))} disabled={busy}>
                           <Square size={12} /> Stop
                         </button>
                       </td>

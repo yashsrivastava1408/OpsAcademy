@@ -79,7 +79,7 @@ try {
       DATA_DIR: path.join(scratch, 'data'),
       SANDBOXES_DIR: path.join(scratch, 'sandboxes'),
       LOG_LEVEL: 'warn',
-      ADMIN_TOKEN: 'e2e-admin-token',
+      PLATFORM_ADMIN_EMAILS: 'e2e-admin@example.com',
       ...extraGatewayEnv,
     },
   });

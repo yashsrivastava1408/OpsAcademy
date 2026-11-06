@@ -662,52 +662,75 @@ describe('sandbox ownership', () => {
 });
 
 describe('admin', () => {
-  test('admin routes do not exist unless ADMIN_TOKEN is configured', async () => {
-    expect((await request(app).get('/api/admin/sandboxes').set('x-admin-token', 'anything')).status).toBe(404);
+  /** A registered user with the platform_admin role. */
+  async function operator() {
+    const who = await registered();
+    await ctx.repos.memberships.add({ userId: who.user.id, collegeId: null, role: 'platform_admin' });
+    return who;
+  }
+
+  test('admin routes need a signed-in platform admin', async () => {
+    expect((await request(app).get('/api/admin/sandboxes')).status).toBe(401);
+    expect((await request(app).get('/api/admin/sandboxes').set('x-admin-token', 'anything')).status).toBe(401);
+    expect((await request(app).get('/api/admin/sandboxes').set((await guest()).auth)).status).toBe(403);
+    expect((await request(app).get('/api/admin/sandboxes').set((await registered()).auth)).status).toBe(403);
   });
 
-  describe('with ADMIN_TOKEN set', () => {
-    beforeEach(() => { config.adminToken = 'operator-secret'; });
-    afterEach(() => { config.adminToken = null; });
+  test('a trainer or college admin is not a platform admin', async () => {
+    const college = await ctx.repos.colleges.create({ name: 'SRM', slug: 'srm' });
+    const who = await registered();
+    await ctx.repos.memberships.add({ userId: who.user.id, collegeId: college.id, role: 'college_admin' });
+    expect((await request(app).get('/api/admin/overview').set(who.auth)).status).toBe(403);
+  });
 
-    test('rejects a missing or wrong token', async () => {
-      expect((await request(app).get('/api/admin/sandboxes')).status).toBe(403);
-      expect((await request(app).get('/api/admin/sandboxes').set('x-admin-token', 'operator-secreT')).status).toBe(403);
+  test('a verified email in PLATFORM_ADMIN_EMAILS is a platform admin; an unverified one is not', async () => {
+    const who = await registered();
+    config.platformAdminEmails = [who.email];
+    try {
+      expect((await request(app).get('/api/admin/overview').set(who.auth)).status).toBe(403);
+      await ctx.repos.users.update(who.user.id, { emailVerified: true });
+      require('../middleware/rbac').forgetAccess(who.user.id);
+      expect((await request(app).get('/api/admin/overview').set(who.auth)).status).toBe(200);
+    } finally {
+      config.platformAdminEmails = [];
+    }
+  });
+
+  test('lists and stops any sandbox, and records it in the audit log', async () => {
+    const admin = await operator();
+    const owner = await guest();
+    const { sessionId } = await startSandbox(owner);
+
+    const list = await request(app).get('/api/admin/sandboxes').set(admin.auth);
+    expect(list.body.data.map((s) => s.sessionId)).toEqual([sessionId]);
+
+    expect((await request(app).delete(`/api/admin/sandboxes/${sessionId}`).set(admin.auth)).status).toBe(200);
+    expect((await request(app).delete(`/api/admin/sandboxes/${sessionId}`).set(admin.auth)).status).toBe(404);
+    expect((await request(app).post('/api/admin/pool/refill').set(admin.auth)).status).toBe(200);
+
+    const trail = (await request(app).get('/api/admin/audit').set(admin.auth)).body.data;
+    expect(trail.map((r) => r.action)).toEqual(['pool.refill', 'sandbox.stop']);
+    expect(trail[1]).toMatchObject({ actorId: admin.user.id, actorRole: 'platform_admin', entityType: 'sandbox', entityId: sessionId });
+  });
+
+  test('the overview reports sandboxes, accounts and what is configured', async () => {
+    const admin = await operator();
+    const visitor = await guest();
+    const { sessionId } = await startSandbox(visitor);
+    await request(app).post('/api/labs/linux-basics/verify').set(visitor.auth).send({ sessionId, stepNumber: 1 });
+
+    const res = await request(app).get('/api/admin/overview').set(admin.auth);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      users: { registered: 1, guests: 1 },
+      progress: { learnersWithXp: 1, totalXp: 20 },
+      certificates: 0,
+      sandbox: { activeSessions: 1 },
+      services: { aiHub: true, storeDriver: ctx.repos.driver, storeWritable: true, emailDelivers: false },
+      limits: { maxPerUser: config.sandbox.maxPerUser },
     });
-
-    test('lists and stops any sandbox', async () => {
-      const owner = await guest();
-      const { sessionId } = await startSandbox(owner);
-      const admin = { 'x-admin-token': 'operator-secret' };
-
-      const list = await request(app).get('/api/admin/sandboxes').set(admin);
-      expect(list.body.data.map((s) => s.sessionId)).toEqual([sessionId]);
-
-      expect((await request(app).delete(`/api/admin/sandboxes/${sessionId}`).set(admin)).status).toBe(200);
-      expect((await request(app).delete(`/api/admin/sandboxes/${sessionId}`).set(admin)).status).toBe(404);
-      expect((await request(app).post('/api/admin/pool/refill').set(admin)).status).toBe(200);
-    });
-
-    test('the overview reports sandboxes, accounts and what is configured', async () => {
-      await registered();
-      const visitor = await guest();
-      const { sessionId } = await startSandbox(visitor);
-      await request(app).post('/api/labs/linux-basics/verify').set(visitor.auth).send({ sessionId, stepNumber: 1 });
-
-      expect((await request(app).get('/api/admin/overview')).status).toBe(403);
-      const res = await request(app).get('/api/admin/overview').set('x-admin-token', 'operator-secret');
-      expect(res.status).toBe(200);
-      expect(res.body.data).toMatchObject({
-        users: { registered: 1, guests: 1 },
-        progress: { learnersWithXp: 1, totalXp: 20 },
-        certificates: 0,
-        sandbox: { activeSessions: 1 },
-        services: { aiHub: true, storeDriver: ctx.repos.driver, storeWritable: true, emailDelivers: false },
-        limits: { maxPerUser: config.sandbox.maxPerUser },
-      });
-      expect(res.body.data.sandboxes.map((s) => s.sessionId)).toEqual([sessionId]);
-      expect(JSON.stringify(res.body)).not.toMatch(/\$2[aby]\$|password/);
-    });
+    expect(res.body.data.sandboxes.map((s) => s.sessionId)).toEqual([sessionId]);
+    expect(JSON.stringify(res.body)).not.toMatch(/\$2[aby]\$|password/);
   });
 });
 

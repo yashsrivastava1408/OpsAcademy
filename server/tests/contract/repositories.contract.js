@@ -203,6 +203,87 @@ function runContract(label, setup) {
       });
     });
 
+    describe('colleges, sections, memberships and audit', () => {
+      test('colleges are unique by slug and sections by name within a college', async () => {
+        const srm = await repos.colleges.create({ name: 'SRM', slug: 'srm' });
+        expect(srm).toMatchObject({ name: 'SRM', slug: 'srm', timezone: 'Asia/Kolkata', active: true });
+        await expect(repos.colleges.create({ name: 'Other', slug: 'srm' })).rejects.toMatchObject({ code: 'college_slug_taken' });
+        expect((await repos.colleges.getBySlug('srm')).id).toBe(srm.id);
+        expect((await repos.colleges.getById(srm.id)).slug).toBe('srm');
+        expect(await repos.colleges.getBySlug('none')).toBeNull();
+
+        const a = await repos.sections.ensure({ collegeId: srm.id, name: 'CSE-A', academicYear: 2026 });
+        const again = await repos.sections.ensure({ collegeId: srm.id, name: 'CSE-A' });
+        expect(again.id).toBe(a.id);
+        const other = await repos.colleges.create({ name: 'Other', slug: 'other' });
+        const b = await repos.sections.ensure({ collegeId: other.id, name: 'CSE-A' });
+        expect(b.id).not.toBe(a.id);
+        expect((await repos.sections.listByCollege(srm.id)).map((s) => s.name)).toEqual(['CSE-A']);
+        await expect(repos.sections.ensure({ collegeId: 'missing', name: 'X' })).rejects.toMatchObject({ code: 'college_missing' });
+      });
+
+      test('memberships can be listed by college and role, and removed', async () => {
+        const c1 = await repos.colleges.create({ name: 'One', slug: 'one' });
+        const c2 = await repos.colleges.create({ name: 'Two', slug: 'two' });
+        for (const id of ['u1', 'u2', 'u3']) await repos.users.create(user(id));
+        await repos.memberships.add({ userId: 'u1', collegeId: c1.id, role: 'student' });
+        await repos.memberships.add({ userId: 'u2', collegeId: c1.id, role: 'trainer' });
+        await repos.memberships.add({ userId: 'u3', collegeId: c2.id, role: 'student' });
+        await repos.memberships.add({ userId: 'u1', collegeId: null, role: 'platform_admin' });
+        expect((await repos.memberships.listByCollege(c1.id)).map((m) => m.userId).sort()).toEqual(['u1', 'u2']);
+        expect((await repos.memberships.listByCollege(c1.id, { role: 'trainer' })).map((m) => m.name)).toEqual(['User u2']);
+        expect(await repos.memberships.remove({ userId: 'u1', collegeId: null, role: 'platform_admin' })).toBe(true);
+        expect(await repos.memberships.remove({ userId: 'u1', collegeId: null, role: 'platform_admin' })).toBe(false);
+        expect((await repos.memberships.forUser('u1')).map((m) => m.role)).toEqual(['student']);
+      });
+
+      test('the audit log records and filters entries, newest first', async () => {
+        const c1 = await repos.colleges.create({ name: 'One', slug: 'one' });
+        await repos.audit.record({ actorId: 'a1', actorRole: 'college_admin', action: 'college.import', collegeId: c1.id, meta: { rows: 3 } });
+        await repos.audit.record({ actorId: 'a2', actorRole: 'platform_admin', action: 'college.create', entityType: 'college', entityId: c1.id });
+        const all = await repos.audit.list();
+        expect(all.map((r) => r.action)).toEqual(['college.create', 'college.import']);
+        expect(all[1]).toMatchObject({ actorId: 'a1', collegeId: c1.id, meta: { rows: 3 } });
+        expect((await repos.audit.list({ collegeId: c1.id })).map((r) => r.action)).toEqual(['college.import']);
+        expect((await repos.audit.list({ actorId: 'a2' })).map((r) => r.action)).toEqual(['college.create']);
+        expect(await repos.audit.list({ limit: 1 })).toHaveLength(1);
+      });
+    });
+
+    describe('invites and shared rate limits', () => {
+      test('an invite becomes a membership when the invited email signs in, once', async () => {
+        const college = await repos.colleges.create({ name: 'One', slug: 'one' });
+        const section = await repos.sections.ensure({ collegeId: college.id, name: 'CSE-A' });
+        await repos.invites.add({ collegeId: college.id, sectionId: section.id, email: 'ada@example.com' });
+        await repos.invites.add({ collegeId: college.id, sectionId: null, email: 'ada@example.com' }); // same invite, updated
+        await repos.invites.add({ collegeId: college.id, email: 'bob@example.com' });
+        expect(await repos.invites.listByCollege(college.id)).toHaveLength(2);
+
+        await repos.users.create(user('u1', { email: 'ada@example.com' }));
+        expect(await repos.invites.claim('u1', 'ada@example.com')).toBe(1);
+        expect(await repos.invites.claim('u1', 'ada@example.com')).toBe(0);
+        expect(await repos.memberships.forUser('u1')).toMatchObject([{ collegeId: college.id, role: 'student' }]);
+        expect(await repos.invites.listByCollege(college.id)).toHaveLength(1);
+      });
+
+      test('rate-limit counters count within a window and start over after it', async () => {
+        expect((await repos.rateLimits.hit('ip:1', 60000)).hits).toBe(1);
+        const second = await repos.rateLimits.hit('ip:1', 60000);
+        expect(second.hits).toBe(2);
+        expect(second.resetAt).toBeGreaterThan(Date.now());
+        expect((await repos.rateLimits.hit('ip:2', 60000)).hits).toBe(1);
+        await repos.rateLimits.decrement('ip:1');
+        expect((await repos.rateLimits.hit('ip:1', 60000)).hits).toBe(2);
+        await repos.rateLimits.reset('ip:1');
+        expect((await repos.rateLimits.hit('ip:1', 60000)).hits).toBe(1);
+        await new Promise((r) => setTimeout(r, 30));
+        expect((await repos.rateLimits.hit('short', 10)).hits).toBe(1);
+        await new Promise((r) => setTimeout(r, 30));
+        expect(await repos.rateLimits.prune()).toBeGreaterThanOrEqual(1);
+        expect((await repos.rateLimits.hit('short', 10)).hits).toBe(1);
+      });
+    });
+
     describe('certificates', () => {
       const cert = (id, extra = {}) => ({ id, userId: 'u1', studentName: 'Ada', unitId: 'linux', unitTitle: 'Linux', score: 90, issuedAt: '2026-11-05T10:20:30.123Z', signature: 'sig', ...extra });
       beforeEach(() => repos.users.create(user('u1')));

@@ -53,8 +53,8 @@ services:
       # Optional. Without it reset and confirmation links are only logged.
       - key: RESEND_API_KEY
         sync: false
-      # Optional. Enables the operator page at /admin.
-      - key: ADMIN_TOKEN
+      # Optional. Comma-separated verified emails that are platform admins (operator page at /admin).
+      - key: PLATFORM_ADMIN_EMAILS
         sync: false
       - fromGroup: opsacademy-shared
 

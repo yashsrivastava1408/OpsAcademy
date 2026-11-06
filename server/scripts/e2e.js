@@ -253,7 +253,8 @@ async function main() {
 
   const publicStats = await api('GET', '/api/sandbox/stats');
   check('public stats report measured claim latency without session ids', publicStats.status === 200 && !publicStats.text.includes(session.sessionId));
-  check('the admin sandbox list is not publicly reachable', [403, 404].includes((await api('GET', '/api/admin/sandboxes')).status));
+  check('the admin sandbox list is not publicly reachable', [401, 403, 404].includes((await api('GET', '/api/admin/sandboxes')).status));
+  check('a signed-in student cannot open the admin sandbox list', (await api('GET', '/api/admin/sandboxes', { token })).status === 403);
 
   await api('DELETE', `/api/sandbox/${session.sessionId}`, { token });
   await waitFor(() => term.closed, 5000).catch(() => {});

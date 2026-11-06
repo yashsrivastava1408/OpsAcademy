@@ -1,11 +1,11 @@
 /**
  * Admin Routes — operator view of all sandboxes
  *
- * Disabled unless ADMIN_TOKEN is set; requests need the `x-admin-token` header.
+ * Platform admins only (role in `memberships`); see ADR 0003.
  */
 
 const express = require('express');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/rbac');
 const config = require('../config');
 const { getManager } = require('../services/sandboxManager');
 const { getHubClient } = require('../services/aiHubClient');
@@ -13,6 +13,7 @@ const { getRepos } = require('../repositories');
 const { getMailer } = require('../lib/mailer');
 const userService = require('../services/userService');
 const progressService = require('../services/progressService');
+const audit = require('../services/auditService');
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -68,6 +69,7 @@ router.delete('/sandboxes/:sessionId', async (req, res, next) => {
   try {
     const destroyed = await getManager().destroySession(req.params.sessionId, 'stopped by operator');
     if (!destroyed) return res.status(404).json({ success: false, error: 'Sandbox session not found' });
+    await audit.record(req, 'sandbox.stop', { entityType: 'sandbox', entityId: req.params.sessionId });
     res.json({ success: true, message: 'Sandbox destroyed' });
   } catch (err) {
     next(err);
@@ -81,7 +83,21 @@ router.delete('/sandboxes/:sessionId', async (req, res, next) => {
 router.post('/pool/refill', async (req, res, next) => {
   try {
     await getManager().replenishPool();
+    await audit.record(req, 'pool.refill');
     res.json({ success: true, stats: getManager().stats() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/admin/audit?actorId=&limit=
+ * Everything admins and trainers did, newest first
+ */
+router.get('/audit', async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
+    res.json({ success: true, data: await audit.list({ actorId: req.query.actorId, limit }) });
   } catch (err) {
     next(err);
   }

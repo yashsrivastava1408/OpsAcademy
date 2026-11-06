@@ -4,14 +4,15 @@
  * "sandbox is closing" warning, steps staying verified after a reload, and
  * the phone layout of the lab.
  *
- * Needs the gateway started with ADMIN_TOKEN=e2e-admin-token and no mail
+ * Needs the gateway started with PLATFORM_ADMIN_EMAILS=e2e-admin@example.com and no mail
  * provider (run.mjs does both), so reset and confirmation links are handed
  * back by the API instead of being emailed.
  */
 import { chromium } from 'playwright';
 
 const APP = process.env.APP_URL || 'http://localhost:4173';
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'e2e-admin-token';
+const API = process.env.API_URL || 'http://localhost:5005';
+const ADMIN_EMAIL = 'e2e-admin@example.com';
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${detail ? `  -> ${detail}` : ''}`); };
 
@@ -169,14 +170,24 @@ try {
   check('"Keep it open" restarts the countdown and the warning goes away', (await page.locator('.lab-closing-banner').count()) === 0);
 
   // ── Operator page ────────────────────────────────────────
-  const admin = await context.newPage();
+  // A signed-out visitor (a guest) is refused…
+  const guestAdmin = await context.newPage();
+  await guestAdmin.goto(`${APP}/admin`, { waitUntil: 'networkidle' });
+  await guestAdmin.waitForSelector('.auth-error');
+  check('the operator page refuses anyone who is not a platform admin', (await guestAdmin.locator('.auth-error').innerText()).includes('platform administrators'));
+  await guestAdmin.close();
+
+  // …and a verified platform admin gets in with their normal sign-in (no shared secret).
+  const post = (path, body) => fetch(`${API}/api${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  const adminAccount = await post('/auth/register', { name: 'Operator', email: ADMIN_EMAIL, password: 'operator-password-1' });
+  await post('/auth/verify-email', { token: new URL(adminAccount.devVerifyLink).searchParams.get('token') });
+  const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await adminContext.addInitScript(([token, user]) => {
+    localStorage.setItem('opsacademy_token', token);
+    localStorage.setItem('opsacademy_user', JSON.stringify(user));
+  }, [adminAccount.token, adminAccount.user]);
+  const admin = await adminContext.newPage();
   await admin.goto(`${APP}/admin`, { waitUntil: 'networkidle' });
-  await admin.locator('input[type="password"]').fill('not-the-token');
-  await admin.locator('.auth-submit').click();
-  await admin.waitForSelector('.auth-error');
-  check('the operator page rejects a wrong token', (await admin.locator('.auth-error').innerText()).includes('not accepted'));
-  await admin.locator('input[type="password"]').fill(ADMIN_TOKEN);
-  await admin.locator('.auth-submit').click();
   await admin.waitForSelector('.admin-tiles');
   check('the operator page shows the overview tiles', (await admin.locator('.admin-tile').count()) === 6);
   check('it reports email as not delivered on this stack', (await admin.locator('.admin-facts').innerText()).includes('links go to the server log'));
@@ -186,6 +197,7 @@ try {
   await admin.waitForFunction(() => !document.querySelector('.admin-table tbody tr'), null, { timeout: 8000 }).catch(() => {});
   check('stopping a sandbox from the operator page removes it', (await admin.locator('.admin-table tbody tr').count()) === 0);
   await admin.close();
+  await adminContext.close();
   await page.waitForSelector('.terminal-status.disconnected', { timeout: 10000 }).catch(() => {});
   check('the student sees their terminal close when an operator stops it', (await page.locator('.terminal-status.disconnected').count()) === 1);
   check('no JavaScript errors on the desktop pages', errors.length === 0, errors.slice(0, 3).join(' || '));

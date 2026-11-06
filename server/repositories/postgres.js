@@ -26,6 +26,9 @@ function mapError(err) {
 
 // ── row mappers (database shape <-> the shape the services already use) ──
 
+const collegeRow = (r) => ({ id: r.id, name: r.name, slug: r.slug, timezone: r.timezone, active: r.active, createdAt: r.created_at.toISOString() });
+const sectionRow = (r) => ({ id: r.id, collegeId: r.college_id, name: r.name, academicYear: r.academic_year });
+
 function userFromRow(r) {
   const u = { id: r.id, name: r.name, guest: r.guest, emailVerified: r.email_verified, createdAt: iso(r.created_at) };
   if (r.email) u.email = r.email;
@@ -256,6 +259,128 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
       async forUser(userId) {
         const { rows } = await q('select user_id, college_id, section_id, role from memberships where user_id = $1', [userId]);
         return rows.map((r) => ({ userId: r.user_id, collegeId: r.college_id, sectionId: r.section_id, role: r.role }));
+      },
+      async remove({ userId, collegeId = null, role }) {
+        const { rowCount } = await q('delete from memberships where user_id = $1 and college_id is not distinct from $2 and role = $3', [userId, collegeId, role]);
+        return rowCount > 0;
+      },
+      async listByCollege(collegeId, { role = null } = {}) {
+        const { rows } = await q(
+          `select m.user_id, m.college_id, m.section_id, m.role, u.name, u.email
+             from memberships m join users u on u.id = m.user_id
+            where m.college_id = $1 and ($2::text is null or m.role = $2) order by u.name, m.user_id`,
+          [collegeId, role]
+        );
+        return rows.map((r) => ({ userId: r.user_id, collegeId: r.college_id, sectionId: r.section_id, role: r.role, name: r.name, email: r.email }));
+      },
+    },
+
+    colleges: {
+      async create({ name, slug, timezone = 'Asia/Kolkata' }) {
+        try {
+          const { rows } = await q('insert into colleges (name, slug, timezone) values ($1,$2,$3) returning *', [name, slug, timezone]);
+          return collegeRow(rows[0]);
+        } catch (err) {
+          if (err.code === '23505') throw new RepoError('college_slug_taken', 'A college with this address already exists');
+          throw err;
+        }
+      },
+      async getById(id) {
+        const { rows } = await q('select * from colleges where id = $1', [id]);
+        return rows[0] ? collegeRow(rows[0]) : null;
+      },
+      async getBySlug(slug) {
+        const { rows } = await q('select * from colleges where slug = $1', [slug]);
+        return rows[0] ? collegeRow(rows[0]) : null;
+      },
+      async list() {
+        const { rows } = await q('select * from colleges order by name');
+        return rows.map(collegeRow);
+      },
+    },
+
+    sections: {
+      async ensure({ collegeId, name, academicYear = null }) {
+        try {
+          const { rows } = await q(
+            `insert into sections (college_id, name, academic_year) values ($1,$2,$3)
+             on conflict (college_id, name) do update set name = excluded.name returning *`,
+            [collegeId, name, academicYear]
+          );
+          return sectionRow(rows[0]);
+        } catch (err) {
+          if (err.code === '23503') throw new RepoError('college_missing', `College ${collegeId} does not exist`);
+          throw err;
+        }
+      },
+      async listByCollege(collegeId) {
+        const { rows } = await q('select * from sections where college_id = $1 order by name', [collegeId]);
+        return rows.map(sectionRow);
+      },
+    },
+
+    invites: {
+      async add({ collegeId, sectionId = null, email, role = 'student' }) {
+        await q(
+          `insert into college_invites (college_id, section_id, email, role) values ($1,$2,$3,$4)
+           on conflict (college_id, email, role) do update set section_id = excluded.section_id`,
+          [collegeId, sectionId, email, role]
+        );
+      },
+      async listByCollege(collegeId) {
+        const { rows } = await q('select college_id, section_id, email, role from college_invites where college_id = $1 order by email', [collegeId]);
+        return rows.map((r) => ({ collegeId: r.college_id, sectionId: r.section_id, email: r.email, role: r.role }));
+      },
+      async claim(userId, email) {
+        const { rowCount } = await q(
+          `with claimed as (delete from college_invites where email = $1 returning college_id, section_id, role)
+           insert into memberships (user_id, college_id, section_id, role)
+           select $2, college_id, section_id, role from claimed
+           on conflict do nothing`,
+          [email, userId]
+        );
+        return rowCount;
+      },
+    },
+
+    rateLimits: {
+      async hit(key, windowMs) {
+        const { rows } = await q(
+          `insert into rate_limit_hits (key, hits, reset_at) values ($1, 1, now() + ($2 || ' milliseconds')::interval)
+           on conflict (key) do update set
+             hits = case when rate_limit_hits.reset_at <= now() then 1 else rate_limit_hits.hits + 1 end,
+             reset_at = case when rate_limit_hits.reset_at <= now() then now() + ($2 || ' milliseconds')::interval else rate_limit_hits.reset_at end
+           returning hits, (extract(epoch from reset_at) * 1000)::bigint as reset_ms`,
+          [key, String(windowMs)]
+        );
+        return { hits: rows[0].hits, resetAt: Number(rows[0].reset_ms) };
+      },
+      async decrement(key) { await q('update rate_limit_hits set hits = hits - 1 where key = $1 and hits > 0', [key]); },
+      async reset(key) { await q('delete from rate_limit_hits where key = $1', [key]); },
+      async prune() {
+        const { rowCount } = await q('delete from rate_limit_hits where reset_at <= now()');
+        return rowCount;
+      },
+    },
+
+    audit: {
+      async record({ actorId = null, actorRole = null, action, entityType = null, entityId = null, collegeId = null, ip = null, meta = {} }) {
+        await q(
+          'insert into audit_log (actor_id, actor_role, action, entity_type, entity_id, college_id, ip, meta) values ($1,$2,$3,$4,$5,$6,$7,$8)',
+          [actorId, actorRole, action, entityType, entityId, collegeId, ip, JSON.stringify(meta)]
+        );
+      },
+      async list({ collegeId, actorId, limit = 100 } = {}) {
+        const { rows } = await q(
+          `select * from audit_log
+            where ($1::boolean = false or college_id is not distinct from $2) and ($3::text is null or actor_id = $3)
+            order by id desc limit $4`,
+          [collegeId !== undefined, collegeId === undefined ? null : collegeId, actorId || null, limit]
+        );
+        return rows.map((r) => ({
+          id: Number(r.id), at: r.at.toISOString(), actorId: r.actor_id, actorRole: r.actor_role, action: r.action,
+          entityType: r.entity_type, entityId: r.entity_id, collegeId: r.college_id, ip: r.ip, meta: r.meta,
+        }));
       },
     },
 
