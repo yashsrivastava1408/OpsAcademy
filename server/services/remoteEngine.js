@@ -144,6 +144,20 @@ function createRemoteEngine({ fetchImpl = (...args) => fetch(...args), WebSocket
     const url = `${node.baseUrl.replace(/^http/, 'ws').replace(/\/+$/, '')}/v1/sandboxes/${encodeURIComponent(engineId)}/attach`;
     const ws = new WebSocketImpl(url, { headers: { authorization: `Bearer ${settings.token}` }, handshakeTimeout: ATTACH_TIMEOUT_MS });
 
+    // Listeners are attached before the connection finishes opening: the node may send the first output
+    // (the prompt, the recent scrollback) in the same turn as the handshake, and it must not be lost.
+    let onData = null;
+    let onClose = null;
+    let closed = false;
+    const held = []; // output that arrives before anyone is listening
+    ws.on('message', (data) => {
+      const text = data.toString();
+      if (onData) onData(text);
+      else held.push(text);
+    });
+    ws.on('close', () => { closed = true; if (onClose) onClose(); });
+    ws.on('error', () => {});
+
     const opened = await new Promise((resolve) => {
       ws.once('open', () => resolve(true));
       ws.once('error', () => resolve(false));
@@ -154,24 +168,16 @@ function createRemoteEngine({ fetchImpl = (...args) => fetch(...args), WebSocket
       return null;
     }
 
-    let onData = null;
-    let onClose = null;
-    const held = []; // output that arrives before anyone is listening
-    ws.on('message', (data) => {
-      const text = data.toString();
-      if (onData) onData(text);
-      else held.push(text);
-    });
-    ws.on('close', () => { if (onClose) onClose(); });
-    ws.on('error', () => {});
-
     return {
       onData(callback) {
         onData = callback;
         for (const text of held.splice(0)) callback(text);
       },
       /** Called when the node connection ends (container exited, node restarted, network drop). */
-      onClose(callback) { onClose = callback; },
+      onClose(callback) {
+        onClose = callback;
+        if (closed) callback(); // it ended before anyone asked
+      },
       write(data) { if (ws.readyState === ws.OPEN) ws.send(data); },
       resize(cols, rows) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'resize', cols, rows })); },
       close() { ws.close(); },

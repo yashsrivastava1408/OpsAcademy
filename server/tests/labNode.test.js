@@ -263,11 +263,11 @@ describe('terminal stream through the agent', () => {
     const output = [];
     terminal.onData((d) => output.push(d));
 
-    await waitFor(() => output.join('').includes('prompt$ '));
+    await waitFor(() => output.join('').includes('prompt$ '), { timeoutMs: 12000 }).catch((e) => { throw new Error('step 1 never happened: ' + e.message + ' output=' + JSON.stringify(output.join(''))); });
     terminal.write('ls\r');
     terminal.resize(120, 40);
-    await waitFor(() => output.join('').includes('echo:ls\r'));
-    await waitFor(() => [...a.engine.boxes.values()][0].sizes.length === 1);
+    await waitFor(() => output.join('').includes('echo:ls\r'), { timeoutMs: 12000 }).catch((e) => { throw new Error('step 2 never happened: ' + e.message + ' output=' + JSON.stringify(output.join(''))); });
+    await waitFor(() => [...a.engine.boxes.values()][0].sizes.length === 1, { timeoutMs: 12000 }).catch((e) => { throw new Error('step 3 never happened: ' + e.message + ' output=' + JSON.stringify(output.join(''))); });
     const box = [...a.engine.boxes.values()][0];
     expect(box.sizes[0]).toEqual([120, 40]);
     expect(box.writes).toEqual(['ls\r']); // the resize message was not typed into the shell
@@ -275,7 +275,7 @@ describe('terminal stream through the agent', () => {
     let closed = false;
     terminal.onClose(() => { closed = true; });
     terminal.close();
-    await waitFor(() => closed && box.closed);
+    await waitFor(() => closed && box.closed, { timeoutMs: 12000 }).catch((e) => { throw new Error('step 4 never happened: ' + e.message + ' output=' + JSON.stringify(output.join(''))); });
   });
 
   test('attaching to a session whose node is gone gives null, and a wrong token is refused', async () => {
