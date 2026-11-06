@@ -34,10 +34,17 @@ function normaliseUrl(raw, defaultPort) {
   return url;
 }
 
+// Our own sign-in (email + password, guests, HS256 tokens) is the legacy path. LEGACY_AUTH=off
+// completes the move to Supabase Auth (ADR 0003): the gateway then only verifies Supabase sessions.
+const legacyAuth = process.env.LEGACY_AUTH !== 'off';
+
 const jwtSecret = process.env.JWT_SECRET || DEV_JWT_SECRET;
-if (isProd && jwtSecret === DEV_JWT_SECRET) {
+if (isProd && jwtSecret === DEV_JWT_SECRET && (legacyAuth || !process.env.CERT_SECRET)) {
   // Signing tokens and certificates with a public default would let anyone forge them.
-  throw new Error('JWT_SECRET must be set when NODE_ENV=production');
+  throw new Error(legacyAuth ? 'JWT_SECRET must be set when NODE_ENV=production' : 'CERT_SECRET must be set when NODE_ENV=production');
+}
+if (isProd && !legacyAuth && !(process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY)) {
+  throw new Error('LEGACY_AUTH=off needs SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (nothing else can sign users in)');
 }
 
 const config = {
@@ -52,7 +59,9 @@ const config = {
   // 'pty' = local shell via node-pty | 'docker' = Docker containers via dockerode
   sandboxMode: process.env.SANDBOX_MODE || 'pty',
 
-  // JWT
+  legacyAuth,
+
+  // JWT (legacy sign-in only)
   jwtSecret,
   jwtExpiry: process.env.JWT_EXPIRY || '7d',
   guestJwtExpiry: '30d',
@@ -95,6 +104,14 @@ const config = {
   // Supabase
   supabaseUrl: process.env.SUPABASE_URL || null,
   supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || null,
+  // The refresh token lives in this HttpOnly cookie, never in script-readable storage.
+  // SameSite=Lax suits a web app and API on the same site; use "none" (needs HTTPS) for different sites.
+  authCookie: {
+    name: 'oa_rt',
+    sameSite: (process.env.AUTH_COOKIE_SAMESITE || 'lax').toLowerCase(),
+    secure: isProd || process.env.AUTH_COOKIE_SECURE === 'on',
+    maxAgeSeconds: 30 * 24 * 60 * 60,
+  },
 
   // Postgres (Supabase). Use the transaction-pooler connection string here and the
   // direct one for migrations (MIGRATION_DATABASE_URL). Required in production.

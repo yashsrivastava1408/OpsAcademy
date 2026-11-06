@@ -26,6 +26,7 @@ function createMemoryRepos() {
   const sections = new Map(); // id -> section
   const auditRows = []; // append-only
   const invites = []; // { collegeId, sectionId, email, role }
+  const identities = new Map(); // `${provider}:${subject}` -> userId
   const rateHits = new Map(); // key -> { hits, resetAt }
   let nextId = 1;
   const locks = new Map(); // userId -> tail promise (serialises progress.mutate)
@@ -86,6 +87,11 @@ function createMemoryRepos() {
         checkUnique(next);
         users.set(id, next);
         return clone(next);
+      },
+      /** Registered accounts with a password that have no Supabase identity yet (for the auth migration). */
+      async listForAuthMigration() {
+        const linked = new Set(identities.values());
+        return [...users.values()].filter((u) => !u.guest && u.email && u.password && !linked.has(u.id)).map(clone);
       },
       /** @returns { [id]: name } for the ids that exist */
       async namesByIds(ids) {
@@ -218,6 +224,15 @@ function createMemoryRepos() {
         return clone(section);
       },
       async listByCollege(collegeId) { return [...sections.values()].filter((s) => s.collegeId === collegeId).map(clone); },
+    },
+
+    identities: {
+      /** Link an external identity (a Supabase user id) to an app user. */
+      async link({ provider = 'supabase', subject, userId }) {
+        requireUser(userId);
+        identities.set(`${provider}:${subject}`, userId);
+      },
+      async getUserId(provider, subject) { return identities.get(`${provider}:${subject}`) || null; },
     },
 
     invites: {

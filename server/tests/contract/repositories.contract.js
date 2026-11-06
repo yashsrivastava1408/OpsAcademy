@@ -250,6 +250,26 @@ function runContract(label, setup) {
       });
     });
 
+    describe('identities', () => {
+      test('links an external identity to an app user and finds it again', async () => {
+        await repos.users.create(user('u1'));
+        expect(await repos.identities.getUserId('supabase', 'sub-1')).toBeNull();
+        await repos.identities.link({ subject: 'sub-1', userId: 'u1' });
+        await repos.identities.link({ subject: 'sub-1', userId: 'u1' }); // idempotent
+        expect(await repos.identities.getUserId('supabase', 'sub-1')).toBe('u1');
+        await expect(repos.identities.link({ subject: 'sub-2', userId: 'nobody' })).rejects.toBeTruthy();
+      });
+
+      test('lists the accounts that still need moving to Supabase', async () => {
+        await repos.users.create(user('with-pw', { password: '$2a$10$hash' }));
+        await repos.users.create(user('linked', { password: '$2a$10$hash2' }));
+        await repos.users.create(user('no-pw'));
+        await repos.users.create(guest('g1'));
+        await repos.identities.link({ subject: 'sub-x', userId: 'linked' });
+        expect((await repos.users.listForAuthMigration()).map((u) => u.id)).toEqual(['with-pw']);
+      });
+    });
+
     describe('invites and shared rate limits', () => {
       test('an invite becomes a membership when the invited email signs in, once', async () => {
         const college = await repos.colleges.create({ name: 'One', slug: 'one' });

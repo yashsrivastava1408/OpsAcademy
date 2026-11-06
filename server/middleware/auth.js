@@ -52,16 +52,51 @@ function forgetUser(userId) {
   passwordCache().delete(userId);
 }
 
+// A Supabase user maps to an app user through `identities` (accounts migrated from the old sign-in
+// keep their original id). New Supabase users have no row there and use their Supabase id.
+const IDENTITY_TTL_MS = 30 * 1000;
+const UNLINKED_TTL_MS = 5 * 1000;
+const identityCaches = new WeakMap(); // repositories -> Map<sub, { userId|null, at }>
+
+function identityCache() {
+  const repos = getRepos();
+  let cache = identityCaches.get(repos);
+  if (!cache) {
+    cache = new Map();
+    identityCaches.set(repos, cache);
+  }
+  return cache;
+}
+
+/** Forget a cached identity lookup (right after linking one). */
+function forgetIdentity(subject) {
+  identityCache().delete(subject);
+}
+
+async function resolveSupabaseUser(payload) {
+  if (!payload || !payload.supabase) return payload;
+  const cache = identityCache();
+  let hit = cache.get(payload.id);
+  if (!hit || Date.now() - hit.at >= (hit.userId ? IDENTITY_TTL_MS : UNLINKED_TTL_MS)) {
+    hit = { userId: await getRepos().identities.getUserId('supabase', payload.id), at: Date.now() };
+    if (cache.size > 5000) cache.clear();
+    cache.set(payload.id, hit);
+  }
+  return hit.userId ? { ...payload, id: hit.userId, subject: payload.id } : payload;
+}
+
 /** @returns the token payload, or null if the token is missing, expired or forged */
 async function verifyToken(token) {
   if (!token) return null;
   let payload;
   try {
+    // With LEGACY_AUTH=off our own tokens are not accepted at all.
+    if (!config.legacyAuth) throw new Error('legacy sign-in is off');
     payload = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] });
   } catch {
     // Not one of ours: it may be a Supabase access token.
     // Read-only: a first-time Supabase user is created by POST /api/auth/session.
-    return verifySupabaseToken(token);
+    return resolveSupabaseUser(verifySupabaseToken(token));
   }
 
   // Resetting a password signs out every session started before it, so a
@@ -123,4 +158,5 @@ module.exports.requireRegistered = requireRegistered;
 module.exports.signToken = signToken;
 module.exports.verifyToken = verifyToken;
 module.exports.forgetUser = forgetUser;
+module.exports.forgetIdentity = forgetIdentity;
 module.exports.safeEqual = safeEqual;
