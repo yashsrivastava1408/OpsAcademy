@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeApiBase, wsBase, DEFAULT_API_URL } from '../src/lib/apiBase.js';
+import { normalizeApiBase, wsBase, DEFAULT_API_URL } from '../src/shared/lib/apiBase.js';
 
 test('unset falls back to local development', () => {
   assert.equal(normalizeApiBase(undefined), DEFAULT_API_URL);

@@ -1,0 +1,184 @@
+import { useState } from 'react';
+import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom';
+import { Loader, LogIn, UserPlus, FlaskConical } from 'lucide-react';
+import useAuth from './useAuth';
+import { authApi, errorMessage } from '../../shared/services/api';
+import { isSupabaseMode } from './authMode';
+import { sendPasswordReset, signInWithProvider } from './supabaseIdentity';
+
+// College single sign-on: VITE_SSO_PROVIDERS=google,azure (Supabase provider ids). Needs each provider enabled in Supabase.
+const SSO_LABELS = { google: 'Google Workspace', azure: 'Microsoft' };
+const SSO_PROVIDERS = isSupabaseMode
+  ? (import.meta.env.VITE_SSO_PROVIDERS || '').split(',').map((p) => p.trim()).filter((p) => SSO_LABELS[p])
+  : [];
+import './AuthPage.css';
+
+export default function AuthPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isRegistered, login, loginWithLabId, register } = useAuth();
+
+  const [mode, setMode] = useState(searchParams.get('tab') === 'lab' ? 'lab' : 'register'); // register | login | lab | forgot
+  const [resetNotice, setResetNotice] = useState(null);
+  const [confirmNotice, setConfirmNotice] = useState(null);
+  const [form, setForm] = useState({ name: '', email: '', labId: '', password: '' });
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  if (isRegistered) return <Navigate to={mode === 'lab' ? '/lab' : '/dashboard'} replace />;
+
+  if (confirmNotice) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card glass-card animate-scale-in" role="status">
+          <h1 className="auth-title">Check your email</h1>
+          <p className="auth-lead">We sent a confirmation link to <span className="mono">{confirmNotice}</span>. Open it to finish creating your account. Anything you have done as a guest stays with you.</p>
+          <button type="button" className="auth-link" onClick={() => { setConfirmNotice(null); setMode('login'); }}>Back to log in</button>
+        </div>
+      </div>
+    );
+  }
+
+  const update = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (mode === 'forgot') {
+        if (isSupabaseMode) {
+          await sendPasswordReset(form.email);
+          setResetNotice({ message: 'If an account uses that email address, a reset link is on its way.', emailConfigured: true });
+        } else {
+          const res = await authApi.forgotPassword(form.email);
+          setResetNotice(res.data);
+        }
+        return;
+      }
+      if (mode === 'register') {
+        const result = await register(form.name, form.email, form.password);
+        if (result?.needsConfirmation) {
+          setConfirmNotice(form.email);
+          return;
+        }
+      } else if (mode === 'lab') {
+        await loginWithLabId(form.labId, form.password);
+      } else {
+        await login(form.email, form.password);
+      }
+      navigate(mode === 'lab' ? '/lab' : '/dashboard');
+    } catch (err) {
+      setError(errorMessage(err, 'Could not reach the server. Please try again.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="auth-page">
+      <form className="auth-card glass-card animate-scale-in" onSubmit={submit}>
+        <div className="auth-tabs">
+          <button type="button" className={`auth-tab ${mode === 'register' ? 'active' : ''}`} onClick={() => { setMode('register'); setError(null); }}>
+            <UserPlus size={15} /> Sign up
+          </button>
+          <button type="button" className={`auth-tab ${mode === 'login' || mode === 'forgot' ? 'active' : ''}`} onClick={() => { setMode('login'); setError(null); }}>
+            <LogIn size={15} /> Log in
+          </button>
+          <button type="button" className={`auth-tab ${mode === 'lab' ? 'active' : ''}`} onClick={() => { setMode('lab'); setError(null); }}>
+            <FlaskConical size={15} /> Lab login
+          </button>
+        </div>
+
+        <p className="auth-lead">
+          {mode === 'register' && 'Keep your progress across devices and earn certificates in your name. Anything you have done as a guest comes with you.'}
+          {mode === 'login' && 'Welcome back. Log in to pick up where you left off.'}
+          {mode === 'lab' && 'Use the Lab ID and password your college or OpsAcademy admin gave you. Labs are only open to Lab IDs.'}
+          {mode === 'forgot' && 'Enter the email address of your account and we will send a link to choose a new password.'}
+        </p>
+
+        {mode === 'register' && (
+          <label className="auth-field">
+            <span>Name (as it should appear on certificates)</span>
+            <input className="input" type="text" value={form.name} onChange={update('name')} autoComplete="name" maxLength={80} required />
+          </label>
+        )}
+
+        {mode === 'lab' ? (
+          <label className="auth-field">
+            <span>Lab ID</span>
+            <input className="input mono" type="text" value={form.labId} onChange={update('labId')} autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={64} required />
+          </label>
+        ) : (
+          <label className="auth-field">
+            <span>Email</span>
+            <input className="input" type="email" value={form.email} onChange={update('email')} autoComplete="email" required />
+          </label>
+        )}
+
+        {mode !== 'forgot' && (
+        <label className="auth-field">
+          <span>Password{mode === 'register' ? ' (at least 8 characters)' : ''}</span>
+          <input
+            className="input"
+            type="password"
+            value={form.password}
+            onChange={update('password')}
+            autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+            minLength={mode === 'register' ? 8 : undefined}
+            required
+          />
+        </label>
+        )}
+
+        {error && <p className="auth-error" role="alert">{error}</p>}
+
+        {mode === 'forgot' && resetNotice && (
+          <div className="auth-notice" role="status">
+            <p>{resetNotice.message}</p>
+            {!resetNotice.emailConfigured && !resetNotice.devResetLink && (
+              <p>This server is not set up to send email, so the link cannot reach you. Ask whoever runs it.</p>
+            )}
+            {resetNotice.devResetLink && (
+              <p>
+                Email is not set up on this development server, so here is the link it would have sent:{' '}
+                <Link to={resetNotice.devResetLink.replace(/^https?:\/\/[^/]+/, '')}>choose a new password</Link>
+              </p>
+            )}
+          </div>
+        )}
+
+        {(mode === 'register' || mode === 'login') && SSO_PROVIDERS.length > 0 && (
+          <div className="auth-sso">
+            {SSO_PROVIDERS.map((provider) => (
+              <button
+                key={provider}
+                type="button"
+                className="btn btn-secondary auth-submit"
+                disabled={submitting}
+                onClick={() => signInWithProvider(provider).catch((err) => setError(errorMessage(err, 'Could not start single sign-on.')))}
+              >
+                Continue with {SSO_LABELS[provider]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button type="submit" className="btn btn-primary auth-submit" disabled={submitting}>
+          {submitting ? <Loader size={16} className="spin" /> : mode === 'register' ? 'Create account' : mode === 'login' ? 'Log in' : mode === 'lab' ? 'Enter with Lab ID' : 'Send reset link'}
+        </button>
+
+        {mode === 'login' && (
+          <button type="button" className="auth-link" onClick={() => { setMode('forgot'); setError(null); setResetNotice(null); }}>
+            Forgot your password?
+          </button>
+        )}
+        {mode === 'forgot' && (
+          <button type="button" className="auth-link" onClick={() => { setMode('login'); setError(null); }}>
+            Back to log in
+          </button>
+        )}
+      </form>
+    </div>
+  );
+}

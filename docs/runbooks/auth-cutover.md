@@ -1,12 +1,14 @@
 # Runbook: cut over to Supabase Auth
 
+> **Done on 2026-11-06.** Production now signs users in with Supabase Auth only. The gateway's own sign-in is a development and test aid that is always off in production (`LEGACY_AUTH=on` there is a startup error), so there is no switch left to flip and no rollback to the old sign-in. This page stays as the record of how the cutover was done and as the checklist for a new environment (a staging stack, say).
+
 Follows ADR 0003. Do this once, in a quiet hour, after the code is deployed. Nothing here changes by itself:
 both switches default to the old sign-in.
 
 | Switch | Where | Old | New |
 | --- | --- | --- | --- |
 | `LEGACY_AUTH` | gateway env | on (default) | `off` |
-| `VITE_AUTH_MODE` | client build env | unset | `supabase` |
+| Client build | `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` | not set | set (compose passes `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY`) |
 
 ## 0. Before you start
 
@@ -22,7 +24,7 @@ both switches default to the old sign-in.
 4. Gateway env also needs `SUPABASE_SECRET_KEY` (server only). With `LEGACY_AUTH=off` the gateway uses it to create, reset and
    disable **Lab ID** accounts in Supabase Auth. A Lab ID has no email, so each one is registered under the made-up address
    `<lab-id>@lab.opsacademy.invalid` (never mailed); the browser builds the same address when the student signs in on the
-   Lab login tab. See `server/lib/labIdentity.js` and `client/src/lib/labEmail.js`.
+   Lab login tab. See `server/lib/labIdentity.js` and `client/src/features/auth/labEmail.js`.
 5. First operator: set `PLATFORM_ADMIN_EMAILS=<your verified email>` (or run `npm run grant-role` later).
 
 ## 1. Move existing accounts
@@ -37,7 +39,7 @@ same confirmed email. Failures are listed; fix and re-run (it skips accounts alr
 
 ## 2. Flip the switches
 
-1. Rebuild the client with `VITE_AUTH_MODE=supabase`. With `docker-compose.prod.yml` set `VITE_AUTH_MODE=supabase` in `.env.production`; the Supabase URL and publishable key are taken from `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. The browser build bakes these in, so run `docker compose … up -d --build client`.
+1. Rebuild the client. A build that is given a Supabase URL and key signs in through Supabase; with `docker-compose.prod.yml` they are taken from `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. The browser build bakes these in, so run `docker compose … up -d --build client`.
 2. Set `LEGACY_AUTH=off` on the gateway and restart. The old `/login`, `/register`, `/guest`, `/forgot`, `/reset`,
    `/verify-email` endpoints now answer 404 and old tokens are rejected.
 3. Everyone signs in once; old guests are simply new guests.
@@ -51,7 +53,7 @@ same confirmed email. Failures are listed; fix and re-run (it skips accounts alr
 
 ## Rollback
 
-Set `LEGACY_AUTH=on`, rebuild the client without `VITE_AUTH_MODE`, redeploy. The legacy columns are untouched until a
+(Historical: before 2026-11-06 the rollback was `LEGACY_AUTH=on` and a client build without Supabase settings. That is no longer possible in production.) The legacy columns are untouched until a
 later cleanup migration, so old passwords keep working. Accounts created in Supabase only (new sign-ups) remain in Supabase.
 
 ## After a quiet release

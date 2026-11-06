@@ -1,31 +1,31 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Loader } from 'lucide-react';
-import { AuthProvider } from './context/AuthContext';
-import Navbar from './components/Navbar/Navbar';
+import { AuthProvider } from './features/auth/AuthContext';
+import Navbar from './shared/components/Navbar/Navbar';
 
 // Each page is its own chunk, so a visitor downloads only the page they open
 // (the terminal and diagram libraries are large and most pages need neither).
 const pages = {
-  landing: () => import('./pages/LandingPage'),
-  dashboard: () => import('./pages/DashboardPage'),
-  roadmap: () => import('./pages/RoadmapPage'),
-  caseStudies: () => import('./pages/CaseStudiesPage'),
-  auth: () => import('./pages/AuthPage'),
-  verify: () => import('./pages/VerifyPage'),
-  learn: () => import('./pages/LearnPage'),
-  lab: () => import('./pages/LabPage'),
-  prepare: () => import('./pages/PreparePage'),
-  caseStudy: () => import('./pages/CaseStudyPage'),
-  profile: () => import('./pages/ProfilePage'),
-  admin: () => import('./pages/AdminPage'),
-  resetPassword: () => import('./pages/ResetPasswordPage'),
-  verifyEmail: () => import('./pages/VerifyEmailPage'),
-  authCallback: () => import('./pages/AuthCallbackPage'),
-  labHome: () => import('./pages/LabHomePage'),
-  labTransition: () => import('./pages/LabTransitionPage'),
-  adminLab: () => import('./pages/AdminLabPage'),
-  collegeSlots: () => import('./pages/CollegeSlotsPage'),
+  landing: () => import('./features/landing/LandingPage'),
+  dashboard: () => import('./features/dashboard/DashboardPage'),
+  roadmap: () => import('./features/roadmap/RoadmapPage'),
+  caseStudies: () => import('./features/case-studies/CaseStudiesPage'),
+  auth: () => import('./features/auth/AuthPage'),
+  verify: () => import('./features/certificates/VerifyPage'),
+  learn: () => import('./features/learn/LearnPage'),
+  lab: () => import('./features/lab/LabPage'),
+  prepare: () => import('./features/prepare/PreparePage'),
+  caseStudy: () => import('./features/case-studies/CaseStudyPage'),
+  profile: () => import('./features/profile/ProfilePage'),
+  admin: () => import('./features/admin/AdminPage'),
+  resetPassword: () => import('./features/auth/ResetPasswordPage'),
+  verifyEmail: () => import('./features/auth/VerifyEmailPage'),
+  authCallback: () => import('./features/auth/AuthCallbackPage'),
+  labHome: () => import('./features/lab/LabHomePage'),
+  labTransition: () => import('./features/lab/LabTransitionPage'),
+  adminLab: () => import('./features/admin/AdminLabPage'),
+  collegeSlots: () => import('./features/college/CollegeSlotsPage'),
 };
 
 const LandingPage = lazy(pages.landing);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { labEmail } from '../src/lib/labEmail.js';
+import { labEmail } from '../src/features/auth/labEmail.js';
 
 // server/lib/labIdentity.js must build the same address (its test checks the same string).
 test('a Lab ID maps to the address the gateway registers', () => {

@@ -31,6 +31,6 @@ function contentSecurityPolicy(apiUrl, supabaseUrl) {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   return {
-    plugins: [react(), contentSecurityPolicy(env.VITE_API_URL ?? DEFAULT_API_URL, env.VITE_AUTH_MODE === 'supabase' ? env.VITE_SUPABASE_URL : '')],
+    plugins: [react(), contentSecurityPolicy(env.VITE_API_URL ?? DEFAULT_API_URL, env.VITE_SUPABASE_URL || '')],
   }
 })

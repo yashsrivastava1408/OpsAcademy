@@ -453,7 +453,7 @@ Two honest notes. Most of this was added after the workflow last ran on GitHub, 
 ## Deploying
 
 - **Client (Vercel or any static host).** Set `VITE_API_URL` to the gateway's public URL at build time. It is compiled into the bundle and into the page's Content-Security-Policy; without it the browser will only talk to `localhost:4000`.
-- **Gateway.** Needs `JWT_SECRET` (it refuses to start in production without one). Set `CORS_ORIGINS` to the client's URL and `DATABASE_URL` to a Postgres (required in production; see `docs/BACKUP_AND_RESTORE.md`).
+- **Gateway.** Needs `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `CERT_SECRET` (it refuses to start in production without them). Set `CORS_ORIGINS` to the client's URL and `DATABASE_URL` to a Postgres (required in production; see `docs/BACKUP_AND_RESTORE.md`).
 - **Put the gateway near its students.** Every terminal keystroke is a round trip to it. Measured from India, a gateway in Render's Oregon region took 0.3 to 1.1 s to answer a trivial request. Local echo hides that for typing, but command output still waits for the network.
 - **Render (`render.yaml`).** A demo deployment: sandboxes are PTY shells inside the gateway's container, and without `DATABASE_URL` accounts live only in memory. The blueprint asks for the Singapore region. Render cannot move an existing service, so changing region means creating new services from the blueprint and pointing `VITE_API_URL` at the new URL.
 - **Deploying only what passed CI.** By default Render and Vercel deploy every push to `main`, whether or not the checks passed. To gate it: create a Deploy Hook for each service (Render: service Settings, Deploy Hook; Vercel: project Settings, Git, Deploy Hooks), save the three URLs as repository secrets named `RENDER_HUB_DEPLOY_HOOK`, `RENDER_GATEWAY_DEPLOY_HOOK` and `VERCEL_DEPLOY_HOOK`, then switch off auto-deploy in Render and Vercel. The `deploy` job in CI then triggers them after every other job is green.
@@ -473,7 +473,7 @@ Optional gateway settings (all in `server/.env.example`):
 | `RESEND_API_KEY`, `MAIL_FROM` | Password-reset and confirmation emails are really sent | Links are only written to the server log |
 | `APP_URL` | The web app's address, used to build the links in those emails | `CLIENT_URL`, else `http://localhost:5173` |
 | `PLATFORM_ADMIN_EMAILS` | Comma-separated confirmed emails that are platform admins (the first operator) | Admins are only those granted with `npm run grant-role` |
-| `LEGACY_AUTH` | `off` completes the move to Supabase Auth: the gateway's own sign-in endpoints and tokens stop working ([runbook](docs/runbooks/auth-cutover.md)) | `on` |
+| `LEGACY_AUTH` | Local development and tests only. The gateway's own sign-in (email + password, guests, HS256 tokens) is on unless this is `off`, and is always off in production, where `LEGACY_AUTH=on` stops the gateway from starting. |
 | `SANDBOX_MODE` | `pty`, `docker`, or `remote` (sandboxes on lab nodes; the gateway needs no Docker socket) | `pty` |
 | `NODE_TOKEN` | Shared secret between the gateway and lab node agents (32+ characters; required with `remote`) | none |
 | `NODE_ID`, `NODE_CAPACITY`, `NODE_BASE_URL`, `GATEWAY_URL` | On a lab node: its name, how many sandboxes it runs, where the gateway reaches it, where it sends heartbeats | `local`, 50, `http://localhost:7000`, none |

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { safeInternalPath } from '../src/lib/safePath.js';
+import { safeInternalPath } from '../src/shared/lib/safePath.js';
 
 test('keeps ordinary internal paths', () => {
   assert.equal(safeInternalPath('/dashboard'), '/dashboard');

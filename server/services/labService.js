@@ -60,7 +60,11 @@ async function evaluate(user, { create = false, unitId = null } = {}) {
   const repos = getRepos();
 
   const running = (await repos.sessions.listByUser(user.id))[0];
-  if (running) return { ...base, state: 'running', sessionId: running.sessionId, labId: running.labId, slotId: running.slotId || null };
+  if (running) {
+    // The slot's end time lets the lab page count down to it.
+    const slot = running.slotId ? await repos.slots.getSlot(running.slotId) : null;
+    return { ...base, state: 'running', sessionId: running.sessionId, labId: running.labId, slotId: running.slotId || null, slot: slotView(slot) };
+  }
   if (config.labPolicy === 'open') return { ...base, state: 'open' };
 
   const access = await loadAccess(user);

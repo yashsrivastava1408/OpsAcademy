@@ -1,7 +1,7 @@
 /* eslint-disable no-control-regex */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTypeahead } from '../src/components/Terminal/typeahead.js';
+import { createTypeahead } from '../src/features/lab/Terminal/typeahead.js';
 
 /**
  * A one-line model of a terminal: enough to check that what ends up on

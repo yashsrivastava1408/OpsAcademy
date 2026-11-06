@@ -34,19 +34,23 @@ function normaliseUrl(raw, defaultPort) {
   return url;
 }
 
-// Our own sign-in (email + password, guests, HS256 tokens) is the legacy path. LEGACY_AUTH=off
-// completes the move to Supabase Auth (ADR 0003): the gateway then only verifies Supabase sessions.
-const legacyAuth = process.env.LEGACY_AUTH !== 'off';
+// Production signs users in with Supabase Auth only (ADR 0003): the gateway verifies Supabase sessions and nothing else.
+// Our own sign-in (email + password, guests, HS256 tokens) is a local-development and test aid, so it is always off in
+// production, and LEGACY_AUTH=off turns it off elsewhere too.
+if (isProd && process.env.LEGACY_AUTH === 'on') {
+  throw new Error('LEGACY_AUTH=on is not allowed in production: sign-in goes through Supabase Auth');
+}
+const legacyAuth = !isProd && process.env.LEGACY_AUTH !== 'off';
 
 const jwtSecret = process.env.JWT_SECRET || DEV_JWT_SECRET;
 // A lab node agent signs nothing and holds no secrets of the gateway's, so it needs neither.
 const isLabNode = process.env.LAB_NODE === 'on';
-if (isProd && !isLabNode && jwtSecret === DEV_JWT_SECRET && (legacyAuth || !process.env.CERT_SECRET)) {
-  // Signing tokens and certificates with a public default would let anyone forge them.
-  throw new Error(legacyAuth ? 'JWT_SECRET must be set when NODE_ENV=production' : 'CERT_SECRET must be set when NODE_ENV=production');
+if (isProd && !isLabNode && !process.env.CERT_SECRET) {
+  // Signing certificates with a public default would let anyone forge them.
+  throw new Error('CERT_SECRET must be set when NODE_ENV=production');
 }
-if (isProd && !isLabNode && !legacyAuth && !(process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY)) {
-  throw new Error('LEGACY_AUTH=off needs SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (nothing else can sign users in)');
+if (isProd && !isLabNode && !(process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY)) {
+  throw new Error('Production needs SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (nothing else can sign users in)');
 }
 
 if (isProd && (process.env.SANDBOX_MODE === 'remote' || process.env.LAB_NODE === 'on') && (process.env.NODE_TOKEN || '').length < 32) {

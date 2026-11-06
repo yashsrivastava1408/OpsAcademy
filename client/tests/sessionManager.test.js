@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSessionManager } from '../src/lib/sessionManager.js';
+import { createSessionManager } from '../src/features/lab/sessionManager.js';
 
 function harness({ responses }) {
   const calls = [];

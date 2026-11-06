@@ -12,7 +12,7 @@ Two login systems are half joined today:
   verified locally against the project JWKS), and `POST /api/auth/session` creates the
   local record on first sign-in.
 - The browser still uses only the custom JWT, kept in `localStorage`
-  (`client/src/services/api.js`). `client/src/lib/supabase.js` exists but nothing signs in with it.
+  (`client/src/shared/services/api.js`). `client/src/features/auth/supabase.js` exists but nothing signs in with it.
 
 Consequences: two places to secure and rotate, password reset and email verification
 implemented by hand, no SSO path for colleges, tokens readable by any script on the page,
@@ -99,7 +99,7 @@ restores the old flow. After step 5 rollback is a revert plus a restore from the
 
 ## Implementation notes
 
-- Two switches make the cutover deliberate: `LEGACY_AUTH=off` on the gateway and `VITE_AUTH_MODE=supabase` in the client build. Both default to the old sign-in so a deploy never changes login by itself; local development and CI keep using the old sign-in (no Supabase project needed).
+- The cutover was done on 2026-11-06 by turning on `LEGACY_AUTH=off` on the gateway and giving the client build the Supabase settings. Since then production always uses Supabase (`LEGACY_AUTH=on` in production is a startup error); local development and CI still use the gateway's own sign-in, which needs no Supabase project.
 - The refresh token is stored by the gateway in an HttpOnly cookie (`/api/auth/cookie`, `/refresh`, `/logout`); the browser keeps only the short-lived access token in memory. `Content-Security-Policy` allows scripts from the app's own files only.
 - A guest upgrades by adding an email and password to the anonymous Supabase user; the address becomes permanent when confirmed, and the app user (same id) is upgraded on the next `POST /api/auth/session`.
 - Migrated accounts keep their app user id; `identities` maps the Supabase user id to it, and a confirmed Supabase email also claims a matching old account on first sign-in.
