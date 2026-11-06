@@ -9,6 +9,7 @@
 const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
+const { rateLimit } = require('express-rate-limit');
 const logger = require('../lib/logger');
 const { safeEqual } = require('../middleware/auth');
 const { createPool } = require('../services/sandboxPoolService');
@@ -42,6 +43,16 @@ function createAgent({ engine, settings, fetchImpl = (...args) => fetch(...args)
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '100kb' }));
+
+  // Only the gateway and worker call this API, all from a few addresses, so the ceiling is high: it
+  // exists to cap what a stolen token or a runaway caller can do, not to shape normal traffic.
+  app.use('/v1', rateLimit({
+    windowMs: 60 * 1000,
+    limit: 12000,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    handler: (req, res) => res.status(429).json({ error: 'rate_limited' }),
+  }));
 
   app.get('/v1/health', (req, res) => {
     if (!authorised(req.headers)) return res.status(401).json({ error: 'unauthorized' });
