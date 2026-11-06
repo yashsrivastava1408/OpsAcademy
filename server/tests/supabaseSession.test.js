@@ -67,11 +67,4 @@ describe('Supabase sign-in (#56)', () => {
     expect((await request(app).post('/api/auth/session')).status).toBe(401);
     expect((await request(app).post('/api/auth/session').set({ Authorization: 'Bearer nope' })).status).toBe(401);
   });
-
-  test('/session works for ordinary gateway tokens too', async () => {
-    const guest = await request(app).post('/api/auth/guest');
-    const res = await request(app).post('/api/auth/session').set({ Authorization: `Bearer ${guest.body.token}` });
-    expect(res.status).toBe(200);
-    expect(res.body.user.id).toBe(guest.body.user.id);
-  });
 });

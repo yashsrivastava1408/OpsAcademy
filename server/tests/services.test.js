@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { setRepos } = require('../repositories');
 const { newRepos, backdateUser } = require('./helpers');
 const units = require('../lib/units');
@@ -407,7 +408,7 @@ describe('config', () => {
   });
 
   test('production refuses to start without a certificate secret or without Supabase', () => {
-    const keys = ['NODE_ENV', 'CERT_SECRET', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'LEGACY_AUTH'];
+    const keys = ['NODE_ENV', 'CERT_SECRET', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY'];
     const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
     const load = (env) => {
       for (const k of keys) delete process.env[k];
@@ -423,9 +424,8 @@ describe('config', () => {
     try {
       for (const k of keys) delete process.env[k];
       expect(load({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'k' })).toEqual(expect.objectContaining({ message: expect.stringMatching(/CERT_SECRET must be set/) }));
-      expect(load({ CERT_SECRET: 'c' })).toEqual(expect.objectContaining({ message: expect.stringMatching(/needs SUPABASE_URL/) }));
+      expect(load({ CERT_SECRET: 'c' })).toEqual(expect.objectContaining({ message: expect.stringMatching(/Production needs SUPABASE_URL/) }));
       expect(load({ CERT_SECRET: 'c', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'k' })).toBeNull();
-      expect(load({ CERT_SECRET: 'c', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'k', LEGACY_AUTH: 'on' })).toEqual(expect.objectContaining({ message: expect.stringMatching(/not allowed in production/) }));
     } finally {
       for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
     }
@@ -461,10 +461,12 @@ describe('expired guests', () => {
     const now = Date.now();
     const backdate = (user, days) => backdateUser(repos, user.id, days, now);
 
-    const oldGuest = await users.createGuest();
-    const oldGuestWithXp = await users.createGuest();
-    const recentGuest = await users.createGuest();
-    const upgraded = await users.register({ name: 'Asha Rao', email: 'asha@example.com', password: 'correct-horse' }, (await users.createGuest()).id);
+    const newGuest = () => users.ensureSupabaseUser({ id: crypto.randomUUID(), name: 'Learner', guest: true });
+    const oldGuest = await newGuest();
+    const oldGuestWithXp = await newGuest();
+    const recentGuest = await newGuest();
+    // a guest who signed up: same id, now an account
+    const upgraded = await users.ensureSupabaseUser({ id: (await newGuest()).id, name: 'Asha Rao', email: 'asha@example.com', emailVerified: true, guest: false });
     await backdate(oldGuest, 40);
     await backdate(oldGuestWithXp, 32);
     await backdate(recentGuest, 29);
@@ -482,7 +484,6 @@ describe('expired guests', () => {
     expect((await progress.summary(oldGuestWithXp.id)).xp).toBe(0);
     expect((await progress.summary(upgraded.id)).xp).toBe(progress.XP.quiz);
     expect((await progress.leaderboard()).map((row) => row.name)).toEqual(['Asha Rao']);
-    await expect(users.login({ email: 'asha@example.com', password: 'correct-horse' })).resolves.toMatchObject({ id: upgraded.id });
 
     // Nothing left to remove on the next run.
     expect(await users.pruneExpiredGuests(now)).toBe(0);

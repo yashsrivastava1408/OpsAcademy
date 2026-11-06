@@ -347,13 +347,17 @@ cd ai-hub
 pip install -r requirements.txt
 python app.py
 
-# 2. API gateway (port 4000)
+# 2. Sign-in stand-in for Supabase Auth (port 54321), so no real project is needed
 cd server
-cp .env.example .env        # then set JWT_SECRET
 npm install
+npm run auth                # leave it running
+
+# 3. API gateway (port 4000), in another terminal
+cd server
+cp .env.example .env        # then uncomment the three local SUPABASE_ lines
 npm run dev
 
-# 3. Client (port 5173)
+# 4. Client (port 5173)
 cd client
 npm install
 npm run dev
@@ -364,7 +368,7 @@ Open `http://localhost:5173`. In this mode the "sandbox" is a shell on your own 
 ### Full stack with Docker sandboxes
 
 ```bash
-export JWT_SECRET=$(openssl rand -hex 48) AI_HUB_TOKEN=$(openssl rand -hex 24)
+export AI_HUB_TOKEN=$(openssl rand -hex 24)
 docker compose build
 docker compose up -d
 # with Prometheus (:9090) and Grafana (:3000):
@@ -453,7 +457,7 @@ Two honest notes. Most of this was added after the workflow last ran on GitHub, 
 ## Deploying
 
 - **Client (Vercel or any static host).** Set `VITE_API_URL` to the gateway's public URL at build time. It is compiled into the bundle and into the page's Content-Security-Policy; without it the browser will only talk to `localhost:4000`.
-- **Gateway.** Needs `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `CERT_SECRET` (it refuses to start in production without them). Set `CORS_ORIGINS` to the client's URL and `DATABASE_URL` to a Postgres (required in production; see `docs/BACKUP_AND_RESTORE.md`).
+- **Gateway.** Needs `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `CERT_SECRET` (it refuses to start in production without them), plus `SUPABASE_SECRET_KEY` to make Lab IDs. Set `CORS_ORIGINS` to the client's URL and `DATABASE_URL` to a Postgres (required in production; see `docs/BACKUP_AND_RESTORE.md`).
 - **Put the gateway near its students.** Every terminal keystroke is a round trip to it. Measured from India, a gateway in Render's Oregon region took 0.3 to 1.1 s to answer a trivial request. Local echo hides that for typing, but command output still waits for the network.
 - **Render (`render.yaml`).** A demo deployment: sandboxes are PTY shells inside the gateway's container, and without `DATABASE_URL` accounts live only in memory. The blueprint asks for the Singapore region. Render cannot move an existing service, so changing region means creating new services from the blueprint and pointing `VITE_API_URL` at the new URL.
 - **Deploying only what passed CI.** By default Render and Vercel deploy every push to `main`, whether or not the checks passed. To gate it: create a Deploy Hook for each service (Render: service Settings, Deploy Hook; Vercel: project Settings, Git, Deploy Hooks), save the three URLs as repository secrets named `RENDER_HUB_DEPLOY_HOOK`, `RENDER_GATEWAY_DEPLOY_HOOK` and `VERCEL_DEPLOY_HOOK`, then switch off auto-deploy in Render and Vercel. The `deploy` job in CI then triggers them after every other job is green.
@@ -469,11 +473,11 @@ Optional gateway settings (all in `server/.env.example`):
 | Variable | What it turns on | Without it |
 | :--- | :--- | :--- |
 | `DATABASE_URL` (+ optional `MIGRATION_DATABASE_URL`, `DATABASE_POOL_SIZE`) | Data lives in Postgres: use the transaction-pooler string for the gateway and the direct string for migrations. Apply the schema with `npm run migrate`. | In-memory store (development only); production refuses to start |
-| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` | The gateway accepts Supabase Auth access tokens (verified locally against the project's JWKS). | Only gateway-issued tokens |
-| `RESEND_API_KEY`, `MAIL_FROM` | Password-reset and confirmation emails are really sent | Links are only written to the server log |
-| `APP_URL` | The web app's address, used to build the links in those emails | `CLIENT_URL`, else `http://localhost:5173` |
+| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` | Required. The gateway accepts Supabase Auth access tokens (verified locally against the project's signing keys). Locally, `npm run auth` provides a stand-in. | The gateway refuses to start in production |
+| `SUPABASE_SECRET_KEY` | Server-only. Lets the gateway make, reset and ban Lab ID accounts in Supabase Auth | Lab IDs cannot be made |
+| `CERT_SECRET` | Signs certificates. Required in production | A fixed development key |
+| `APP_URL` | The web app's address | `CLIENT_URL`, else `http://localhost:5173` |
 | `PLATFORM_ADMIN_EMAILS` | Comma-separated confirmed emails that are platform admins (the first operator) | Admins are only those granted with `npm run grant-role` |
-| `LEGACY_AUTH` | Local development and tests only. The gateway's own sign-in (email + password, guests, HS256 tokens) is on unless this is `off`, and is always off in production, where `LEGACY_AUTH=on` stops the gateway from starting. |
 | `SANDBOX_MODE` | `pty`, `docker`, or `remote` (sandboxes on lab nodes; the gateway needs no Docker socket) | `pty` |
 | `NODE_TOKEN` | Shared secret between the gateway and lab node agents (32+ characters; required with `remote`) | none |
 | `NODE_ID`, `NODE_CAPACITY`, `NODE_BASE_URL`, `GATEWAY_URL` | On a lab node: its name, how many sandboxes it runs, where the gateway reaches it, where it sends heartbeats | `local`, 50, `http://localhost:7000`, none |
@@ -492,7 +496,7 @@ On the AI hub, `ANTHROPIC_API_KEY` or `GROQ_API_KEY` switches hint writing and i
 - **The Docker, Kubernetes and AWS labs use simulators, not the real tools.** They cover the commands the labs teach and refuse anything else with a clear message. They teach the workflow and the output; they are not a cluster.
 - **PTY mode is not a sandbox.** Do not expose it to people you do not trust. (Each PTY shell does get its own block of ports for the labs, so students no longer collide on `-p 8080:80`; that is convenience, not isolation.)
 - **Single-node gateway host.** Sessions are persisted in Postgres and reconciled with running Docker containers across server restarts. The gateway supports process role separation via `SERVICE_ROLE=api|terminal|all` so WebSocket terminal streaming can be decoupled from the REST API. Multi-node clustering across multiple physical hosts requires a network database and distributed pub/sub.
-- **Email is not sent unless `RESEND_API_KEY` is set.** Without it, password-reset and confirmation links are only written to the server log (and returned by the API outside production so the flow can be tried). The Resend path has never been run against the real service.
+- **Sign-in emails come from Supabase.** Confirmation and password-reset emails are sent by Supabase Auth, so its email settings (a custom SMTP sender for real volume) are configured in the Supabase dashboard, not here.
 - **Typing lag depends on where the gateway runs.** Every keystroke is a round trip. Local echo hides it when the round trip is over 50 ms, but output still arrives at network speed; deploy the gateway near its students.
 - **Section-level retrieval is still imperfect.** With the embedding ranker the right section is ranked first only 61% of the time (in the top 3: 92%). Without it, on a small host, it is 55% and 75%.
 - **The default interview scorer matches words, not meaning.** A correct answer phrased differently from the key points scores about 21 out of 100. The fix that works is the LLM judge, which needs an API key and has not been measured against a live model. Embeddings were measured and do not fix it.

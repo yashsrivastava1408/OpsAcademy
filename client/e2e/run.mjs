@@ -19,7 +19,8 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const client = path.join(here, '..');
 const root = path.join(client, '..');
-const PORTS = { hub: 5105, gateway: 4100, app: 4173 };
+const PORTS = { hub: 5105, gateway: 4100, app: 4173, auth: 54399 };
+const AUTH_URL = `http://127.0.0.1:${PORTS.auth}`;
 const API_URL = `http://localhost:${PORTS.gateway}`;
 const APP_URL = `http://localhost:${PORTS.app}`;
 const TESTS = ['walkthrough.mjs', 'slow-link.mjs', 'features.mjs', 'lab-studio.mjs', 'screenshots.mjs'].filter((file) => !process.argv[2] || file.includes(process.argv[2]));
@@ -62,8 +63,10 @@ async function waitFor(url, accept, seconds = 60) {
 let failed = false;
 try {
   console.log('Building the client...');
-  // Blank Supabase settings: the browser tests use the gateway's own development sign-in, never a real project.
-  const buildEnv = { ...process.env, VITE_API_URL: API_URL, VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' };
+  // The stand-in for Supabase Auth (the one CI and local development use): no real project is ever touched.
+  start('auth', 'node', [path.join(root, 'server', 'test-support', 'fakeSupabaseAuth.js'), String(PORTS.auth)], {});
+  await waitFor(`${AUTH_URL}/auth/v1/.well-known/jwks.json`, (res) => res.ok);
+  const buildEnv = { ...process.env, VITE_API_URL: API_URL, VITE_SUPABASE_URL: AUTH_URL, VITE_SUPABASE_ANON_KEY: 'e2e-publishable-key' };
   const build = spawnSync('npx', ['vite', 'build'], { cwd: client, env: buildEnv, encoding: 'utf8' });
   if (build.status !== 0) throw new Error(`client build failed\n${build.stdout}${build.stderr}`);
 
@@ -85,8 +88,13 @@ try {
       // the browser tests create and delete accounts. Opt in to Postgres with E2E_DATABASE_URL.
       DATABASE_URL: process.env.E2E_DATABASE_URL || '',
       MIGRATION_DATABASE_URL: '',
-      SUPABASE_URL: '',
-      SUPABASE_PUBLISHABLE_KEY: '',
+      SUPABASE_URL: AUTH_URL,
+      SUPABASE_PUBLISHABLE_KEY: 'e2e-publishable-key',
+      SUPABASE_SECRET_KEY: 'e2e-secret-key',
+      // One browser plays many people from one address; the limits have their own server tests.
+      RATE_LIMIT_AUTH: '100000',
+      CORS_ORIGINS: APP_URL,
+      CLIENT_URL: APP_URL,
       PLATFORM_ADMIN_EMAILS: 'e2e-admin@example.com',
       ...extraGatewayEnv,
     },
@@ -99,7 +107,7 @@ try {
 
   for (const file of TESTS) {
     console.log(`── ${file} ──`);
-    const run = spawnSync('node', [path.join(here, file)], { stdio: 'inherit', env: { ...process.env, APP_URL, API_URL, E2E_ARTIFACTS: artifacts } });
+    const run = spawnSync('node', [path.join(here, file)], { stdio: 'inherit', env: { ...process.env, APP_URL, API_URL, AUTH_URL, E2E_ARTIFACTS: artifacts } });
     if (run.status !== 0) failed = true;
     console.log('');
   }

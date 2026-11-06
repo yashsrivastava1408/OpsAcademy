@@ -105,10 +105,8 @@ describeDb('schema constraints (real Postgres)', () => {
   });
 
   test('deleting a user removes their dependent rows', async () => {
-    await q("insert into one_time_tokens (hash, user_id, kind, expires_at) values ('h', 'u1', 'reset', now() + interval '1 hour')");
     await q("delete from users where id = 'u1'");
     expect((await q("select count(*)::int as n from progress where user_id = 'u1'")).rows[0].n).toBe(0);
-    expect((await q("select count(*)::int as n from one_time_tokens where user_id = 'u1'")).rows[0].n).toBe(0);
     expect((await q("select count(*)::int as n from certificates where user_id = 'u1'")).rows[0].n).toBe(0);
   });
 });

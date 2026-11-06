@@ -86,8 +86,6 @@ services:
       - AI_HUB_URL=http://ai-hub:5000
       - AI_HUB_TOKEN=${AI_HUB_TOKEN:?AI_HUB_TOKEN is required}
       - AI_HUB_TIMEOUT_MS=${AI_HUB_TIMEOUT_MS:-10000}
-      - RESEND_API_KEY=${RESEND_API_KEY:-}
-      - MAIL_FROM=${MAIL_FROM:-OpsAcademy <noreply@opsacademy.in>}
       - APP_URL=${APP_URL:-https://${DOMAIN:-localhost}}
       - CLIENT_URL=${CLIENT_URL:-https://${DOMAIN:-localhost}}
       - CORS_ORIGINS=${CORS_ORIGINS:-https://${DOMAIN:-localhost}}

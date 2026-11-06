@@ -17,7 +17,6 @@ function emptyProgress(userId) {
 
 function createMemoryRepos() {
   const users = new Map(); // id -> user
-  const tokens = new Map(); // hash -> token
   const progress = new Map(); // userId -> doc
   const certificates = new Map(); // id -> certificate
   const sessions = new Map(); // sessionId -> session
@@ -65,7 +64,6 @@ function createMemoryRepos() {
   function cascadeDelete(id) {
     users.delete(id);
     progress.delete(id);
-    for (const [hash, t] of tokens) if (t.userId === id) tokens.delete(hash);
     for (const [cid, c] of certificates) if (c.userId === id) certificates.delete(cid);
     for (const [sid, s] of sessions) if (s.userId === id) sessions.delete(sid);
     for (let i = memberships.length - 1; i >= 0; i -= 1) if (memberships[i].userId === id) memberships.splice(i, 1);
@@ -126,11 +124,6 @@ function createMemoryRepos() {
         users.set(id, next);
         return clone(next);
       },
-      /** Registered accounts with a password that have no Supabase identity yet (for the auth migration). */
-      async listForAuthMigration() {
-        const linked = new Set(identities.values());
-        return [...users.values()].filter((u) => !u.guest && u.email && u.password && !linked.has(u.id)).map(clone);
-      },
       /** @returns { [id]: name } for the ids that exist */
       async namesByIds(ids) {
         const out = {};
@@ -147,32 +140,6 @@ function createMemoryRepos() {
         const stale = [...users.values()].filter((u) => u.guest && Date.parse(u.createdAt) < cutoffMs);
         for (const u of stale) cascadeDelete(u.id);
         return stale.length;
-      },
-    },
-
-    tokens: {
-      /** Store a token, replacing older ones of the same kind for that user. */
-      async issue({ hash, userId, kind, expiresAt }) {
-        requireUser(userId);
-        for (const [h, t] of tokens) if (t.userId === userId && t.kind === kind) tokens.delete(h);
-        tokens.set(hash, { hash, userId, kind, expiresAt });
-      },
-      /** Use a token once. @returns the user id, or null if unknown, of another kind or expired. */
-      async redeem(hash, kind, now = Date.now()) {
-        const t = tokens.get(hash);
-        if (!t || t.kind !== kind) return null;
-        tokens.delete(hash);
-        return t.expiresAt > now ? t.userId : null;
-      },
-      async pruneExpired(now = Date.now()) {
-        let removed = 0;
-        for (const [h, t] of tokens) {
-          if (t.expiresAt <= now) {
-            tokens.delete(h);
-            removed += 1;
-          }
-        }
-        return removed;
       },
     },
 

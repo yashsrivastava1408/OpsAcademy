@@ -1,4 +1,5 @@
 const request = require('supertest');
+const { accessToken, bearer, newId, trustTestKey } = require('./auth');
 
 function appWith(env) {
   const saved = {};
@@ -9,6 +10,7 @@ function appWith(env) {
   let app;
   let mod;
   jest.isolateModules(() => {
+    trustTestKey();
     app = require('../app').createApp();
     mod = require('../middleware/rateLimit');
   });
@@ -19,7 +21,8 @@ function appWith(env) {
   return { app, mod };
 }
 
-const login = (app) => request(app).post('/api/auth/login').send({ email: 'a@example.com', password: 'x' });
+// A sign-in attempt: opening a session with a valid token, which is what the browser does after Supabase signs it in.
+const login = (app) => request(app).post('/api/auth/session').set(bearer(accessToken({ sub: newId() })));
 
 describe('campus-friendly rate limits (#61)', () => {
   test('matches single addresses, CIDR ranges and IPv4-mapped IPv6', () => {
@@ -42,13 +45,13 @@ describe('campus-friendly rate limits (#61)', () => {
     const base = appWith({ RATE_LIMIT_AUTH: '3', CAMPUS_IPS: '' });
     const baseStatuses = [];
     for (let i = 0; i < 6; i += 1) baseStatuses.push((await login(base.app)).status);
-    expect(baseStatuses).toEqual([401, 401, 401, 429, 429, 429]);
+    expect(baseStatuses).toEqual([200, 200, 200, 429, 429, 429]);
 
     // supertest connects from loopback; treat it as the campus.
     const campus = appWith({ RATE_LIMIT_AUTH: '3', CAMPUS_IPS: '127.0.0.1,::1', CAMPUS_RATE_MULTIPLIER: '4' });
     const campusStatuses = [];
     for (let i = 0; i < 14; i += 1) campusStatuses.push((await login(campus.app)).status);
-    expect(campusStatuses.slice(0, 12).every((s) => s === 401)).toBe(true); // 3 x 4 = 12 allowed
+    expect(campusStatuses.slice(0, 12).every((s) => s === 200)).toBe(true); // 3 x 4 = 12 allowed
     expect(campusStatuses.slice(12)).toEqual([429, 429]);
   });
 

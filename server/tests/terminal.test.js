@@ -10,7 +10,7 @@ const config = require('../config');
 const pty = require('../services/ptyService');
 const { createApp } = require('../app');
 const { attachTerminalWebSocket, isAllowedOrigin } = require('../services/terminalService');
-const { signToken } = require('../middleware/auth');
+const { tokenForUser: signToken } = require('./auth');
 const { install, waitFor } = require('./helpers');
 
 let server;
@@ -134,7 +134,7 @@ describe('terminal tickets', () => {
 describe('connection authentication', () => {
   test.each([
     ['no token', () => ({ token: undefined }), 401],
-    ['a forged token', () => ({ token: require('jsonwebtoken').sign(alice, 'wrong-secret') }), 401],
+    ['a forged token', () => ({ token: require('jsonwebtoken').sign({ sub: alice.id, aud: 'authenticated' }, 'wrong-secret') }), 401],
     ["someone else's session", () => ({ token: signToken(bob) }), 403],
   ])('rejects %s before upgrading', async (_label, overrides, status) => {
     const session = await ctx.manager.createSession(alice.id);

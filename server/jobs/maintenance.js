@@ -10,12 +10,11 @@ const userService = require('../services/userService');
 
 const MINUTE = 60 * 1000;
 
-/** Delete expired guests (with their progress) and expired one-time tokens. */
+/** Delete guests nobody has used for a month (with their progress). */
 async function pruneExpired() {
   const guests = await userService.pruneExpiredGuests();
-  const tokens = await userService.pruneExpiredTokens();
-  if (guests > 0 || tokens > 0) logger.info({ guests, tokens }, 'pruned expired records');
-  return { guests, tokens };
+  if (guests > 0) logger.info({ guests }, 'pruned expired guests');
+  return { guests };
 }
 
 /** Rebuild the per-college leaderboard view. */

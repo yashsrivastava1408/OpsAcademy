@@ -115,8 +115,15 @@ function verifySupabaseToken(token) {
   }
 }
 
+/** Tests only: trust this public key without fetching the project's JWKS, so a test can sign its own tokens. */
+function setSigningKeyForTests(kid, key) {
+  if (!config.isTest) throw new Error('setSigningKeyForTests is for tests only');
+  JWKS_CACHE.set(kid, key);
+}
+
 module.exports = {
   verifySupabaseToken,
+  setSigningKeyForTests,
   refreshJwks,
   ready,
 };

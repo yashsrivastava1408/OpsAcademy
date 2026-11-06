@@ -91,7 +91,6 @@ export default function AdminPage() {
           <dl className="admin-facts">
             <dt>AI hub reachable</dt><dd className={services.aiHub ? 'ok' : 'bad'}>{yesNo(services.aiHub)}</dd>
             <dt>Store</dt><dd className={services.storeWritable ? 'ok' : 'bad'}>{services.storeDriver}, {services.storeWritable ? 'writable' : 'NOT writable'}</dd>
-            <dt>Email is delivered</dt><dd className={services.emailDelivers ? 'ok' : ''}>{services.emailDelivers ? 'yes' : 'no (links go to the server log)'}</dd>
             <dt>Sandbox start time</dt>
             <dd>
               pool p50 {sandbox.claimLatencyMs.pool.p50 ?? 'n/a'} ms ({sandbox.claimLatencyMs.pool.samples} samples),

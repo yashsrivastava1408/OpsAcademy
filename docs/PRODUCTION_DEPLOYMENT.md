@@ -100,7 +100,7 @@ sudo ./scripts/deploy-ec2.sh
 The script automatically:
 1. Installs official Docker Engine and Compose plugin.
 2. Applies Linux kernel parameters for high WebSocket concurrency (`fs.file-max`, `inotify` watches, `somaxconn`).
-3. Generates `.env.production` with cryptographically secure random secrets for `JWT_SECRET`, `CERT_SECRET`, and `AI_HUB_TOKEN`.
+3. Generates `.env.production` with cryptographically secure random secrets for `CERT_SECRET` and `AI_HUB_TOKEN`. You add the Supabase keys yourself.
 4. Creates a `systemd` service (`opsacademy.service`) for automatic boot and failure recovery.
 5. Builds and launches the complete container stack using `docker-compose.prod.yml`.
 

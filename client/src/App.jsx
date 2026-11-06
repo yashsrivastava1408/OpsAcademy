@@ -20,7 +20,6 @@ const pages = {
   profile: () => import('./features/profile/ProfilePage'),
   admin: () => import('./features/admin/AdminPage'),
   resetPassword: () => import('./features/auth/ResetPasswordPage'),
-  verifyEmail: () => import('./features/auth/VerifyEmailPage'),
   authCallback: () => import('./features/auth/AuthCallbackPage'),
   labHome: () => import('./features/lab/LabHomePage'),
   labTransition: () => import('./features/lab/LabTransitionPage'),
@@ -41,7 +40,6 @@ const CaseStudyPage = lazy(pages.caseStudy);
 const ProfilePage = lazy(pages.profile);
 const AdminPage = lazy(pages.admin);
 const ResetPasswordPage = lazy(pages.resetPassword);
-const VerifyEmailPage = lazy(pages.verifyEmail);
 const AuthCallbackPage = lazy(pages.authCallback);
 const LabHomePage = lazy(pages.labHome);
 const LabTransitionPage = lazy(pages.labTransition);
@@ -66,7 +64,6 @@ function pageFor(pathname) {
   if (pathname.startsWith('/u/')) return pages.profile;
   if (pathname.startsWith('/admin')) return pages.admin;
   if (pathname.startsWith('/reset-password')) return pages.resetPassword;
-  if (pathname.startsWith('/verify-email')) return pages.verifyEmail;
   if (pathname.startsWith('/auth/callback')) return pages.authCallback;
   return null;
 }
@@ -141,7 +138,6 @@ function AppRoutes() {
           <Route path="/unit/:unitId/prepare" element={<PreparePage />} />
           <Route path="/unit/:unitId/casestudy" element={<CaseStudyPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/u/:slug" element={<ProfilePage />} />
           <Route path="/admin" element={<AdminPage />} />

@@ -144,7 +144,6 @@ jobs:
 
       - name: Validate the Docker Compose files
         env:
-          JWT_SECRET: ci
           AI_HUB_TOKEN: ci
           DATABASE_URL: postgres://ci@localhost/ci
           MIGRATION_DATABASE_URL: postgres://ci@localhost/ci
@@ -369,13 +368,14 @@ jobs:
         env:
           AI_HUB_TOKEN: ci-shared-token
         run: |
+          (cd server && node test-support/fakeSupabaseAuth.js 54321 > ../auth.log 2>&1 &)
           (cd ai-hub && PORT=5005 gunicorn --bind 127.0.0.1:5005 --workers 1 --threads 8 --keep-alive 15 app:app > ../hub.log 2>&1 &)
-          (cd server && SANDBOX_MODE=docker PORT=4000 AI_HUB_URL=http://127.0.0.1:5005 node server.js > ../gateway.log 2>&1 &)
+          (cd server && SANDBOX_MODE=docker PORT=4000 AI_HUB_URL=http://127.0.0.1:5005 SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_PUBLISHABLE_KEY=ci node server.js > ../gateway.log 2>&1 &)
           for _ in $(seq 1 30); do
             curl -sf http://127.0.0.1:4000/api/ready | grep -q '"status":"ready"' && exit 0
             sleep 2
           done
-          cat hub.log gateway.log
+          cat auth.log hub.log gateway.log
           exit 1
 
       # A student's whole journey: terminal, lab checks, hints, certificate.
@@ -389,6 +389,7 @@ jobs:
         with:
           name: sandbox-e2e-logs
           path: |
+            auth.log
             hub.log
             gateway.log
           retention-days: 7

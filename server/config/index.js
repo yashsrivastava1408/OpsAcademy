@@ -7,7 +7,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const env = process.env.NODE_ENV || 'development';
 const isProd = env === 'production';
 
-const DEV_JWT_SECRET = 'dev-only-insecure-default-do-not-use-in-production';
+const DEV_CERT_SECRET = 'dev-only-insecure-certificate-key-do-not-use-in-production';
 
 function int(name, fallback) {
   const parsed = parseInt(process.env[name], 10);
@@ -34,16 +34,8 @@ function normaliseUrl(raw, defaultPort) {
   return url;
 }
 
-// Production signs users in with Supabase Auth only (ADR 0003): the gateway verifies Supabase sessions and nothing else.
-// Our own sign-in (email + password, guests, HS256 tokens) is a local-development and test aid, so it is always off in
-// production, and LEGACY_AUTH=off turns it off elsewhere too.
-if (isProd && process.env.LEGACY_AUTH === 'on') {
-  throw new Error('LEGACY_AUTH=on is not allowed in production: sign-in goes through Supabase Auth');
-}
-const legacyAuth = !isProd && process.env.LEGACY_AUTH !== 'off';
-
-const jwtSecret = process.env.JWT_SECRET || DEV_JWT_SECRET;
-// A lab node agent signs nothing and holds no secrets of the gateway's, so it needs neither.
+// Users sign in with Supabase Auth only (ADR 0003): the gateway verifies Supabase sessions and issues no tokens of its own.
+// A lab node agent holds none of the gateway's secrets, so it needs neither of the settings below.
 const isLabNode = process.env.LAB_NODE === 'on';
 if (isProd && !isLabNode && !process.env.CERT_SECRET) {
   // Signing certificates with a public default would let anyone forge them.
@@ -102,30 +94,14 @@ const config = {
   // 'pty' = local shell via node-pty | 'docker' = Docker containers via dockerode
   sandboxMode: process.env.SANDBOX_MODE || 'pty',
 
-  legacyAuth,
-
-  // JWT (legacy sign-in only)
-  jwtSecret,
-  jwtExpiry: process.env.JWT_EXPIRY || '7d',
-  guestJwtExpiry: '30d',
-
   // Certificates are signed with their own key so it can be rotated separately.
-  certSecret: process.env.CERT_SECRET || `${jwtSecret}:certificates`,
+  certSecret: process.env.CERT_SECRET || DEV_CERT_SECRET,
 
   // Verified emails that are platform admins (the first operator). More are granted
   // with `npm run grant-role`. Comma separated.
   platformAdminEmails: (process.env.PLATFORM_ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
   // If set, /metrics requires `Authorization: Bearer <token>`.
   metricsToken: process.env.METRICS_TOKEN || null,
-
-  // Email. Without a provider key the links are only written to the log.
-  mail: {
-    driver: (process.env.MAIL_DRIVER || (process.env.RESEND_API_KEY ? 'resend' : (env === 'test' ? 'memory' : 'log'))).toLowerCase(),
-    resendApiKey: process.env.RESEND_API_KEY || null,
-    from: process.env.MAIL_FROM || 'OpsAcademy <onboarding@resend.dev>',
-  },
-  // Where links in emails point (the web app, not this API).
-  appUrl: (process.env.APP_URL || process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, ''),
 
   // AI Hub
   aiHubUrl: normaliseUrl(process.env.AI_HUB_URL, int('AI_HUB_PORT', 5000)),
@@ -170,7 +146,6 @@ const config = {
     apiPerWindow: int('RATE_LIMIT_API', 300),
     authPerWindow: int('RATE_LIMIT_AUTH', 20),
     // Higher than sign-in: a whole classroom can share one public IP.
-    guestPerWindow: int('RATE_LIMIT_GUEST', 60),
     sandboxStartPerWindow: int('RATE_LIMIT_SANDBOX_START', 10),
     agentPerWindow: int('RATE_LIMIT_AGENT', 30),
     // A campus shares one public IP. Requests from these addresses or CIDR
