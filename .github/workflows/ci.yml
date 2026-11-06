@@ -151,6 +151,16 @@ jobs:
         run: |
           docker compose -f docker-compose.yml config --quiet
           docker compose -f docker-compose.prod.yml config --quiet
+          # The lab-node overlay must leave the gateway without the Docker socket.
+          NODE_TOKEN=ci-node-token-ci-node-token-ci-node-token docker compose -f docker-compose.prod.yml -f docker-compose.nodes.yml config > "$RUNNER_TEMP/nodes.yml"
+          python3 - "$RUNNER_TEMP/nodes.yml" <<'PY'
+          import sys, re
+          text = open(sys.argv[1]).read()
+          server = re.search(r"^  server:\n(.*?)^  \S", text + "\n  x:", re.S | re.M).group(1)
+          assert "docker.sock" not in server, "the gateway must not mount the Docker socket in the lab-node overlay"
+          assert "docker.sock" in re.search(r"^  lab-node:\n(.*?)^  \S", text + "\n  x:", re.S | re.M).group(1), "the lab node needs the Docker socket"
+          print("lab-node overlay: gateway has no Docker socket")
+          PY
 
       - name: Backup and restore drill (dump, restore into a scratch database, compare)
         env:

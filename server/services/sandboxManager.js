@@ -23,6 +23,7 @@ class SandboxError extends Error {
 }
 
 function loadEngine(mode) {
+  if (mode === 'remote') return require('./remoteEngine');
   return mode === 'docker' ? require('./dockerService') : require('./ptyService');
 }
 
@@ -32,60 +33,64 @@ function percentile(sorted, p) {
   return sorted[Math.max(0, index)];
 }
 
-function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, pool: poolOptions } = {}) {
+function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, pool: poolOptions, nodeId = config.nodeId } = {}) {
   const settings = {
     maxPerUser: config.sandbox.maxPerUser,
     maxTotal: config.sandbox.maxTotal,
     maxSessionMs: config.sandbox.maxSessionMinutes * 60 * 1000,
     maxIdleMs: config.sandbox.maxInactivityMinutes * 60 * 1000,
     historyLimit: config.sandbox.historyLimit,
-    // Session records are rewritten at most this often (create/destroy are immediate).
+    // Activity is written to the registry at most this often per session (create/destroy are immediate).
     persistIntervalMs: 30 * 1000,
     ...limits,
   };
 
-  const pool = createPool(engine, poolOptions);
-  // Map<sessionId, session>
-  const sessions = new Map();
+  // Lab nodes keep their own warm pools; a gateway has no containers to pre-warm.
+  const pool = createPool(engine, engine.remote ? { ...poolOptions, enabled: false } : poolOptions);
+  // Remote engines need to know which node a sandbox is on.
+  const where = (row) => (engine.remote ? { nodeId: row.nodeId } : undefined);
+  const registry = () => getRepos().sessions;
+
+  // Everything about a session (owner, node, history, strikes, activity) lives in the registry, so
+  // any gateway instance can answer for it. What stays in this process is only what cannot be shared:
+  // the sockets listening for a close, writes already in flight, and counters that smooth hot paths.
+  const closeListeners = new Map(); // sessionId -> Set<fn>
+  const lastWrite = new Map(); // sessionId -> ms of the last activity write
+  const strikeCounts = new Map(); // sessionId -> strikes seen by this process
+  const historyQueue = new Map(); // sessionId -> tail of the in-order history writes
   // Slots reserved by createSession calls that are still starting a sandbox.
   const pending = new Map();
   const claimLatencies = { pool: [], cold: [] };
 
-  // Session records are bookkeeping for reconciliation after a restart; a failed
-  // write is logged and must never break the lab, so none of these are awaited.
-  function persist(session, { force = false } = {}) {
-    const now = Date.now();
-    if (!force && session.persistedAt && now - session.persistedAt < settings.persistIntervalMs) return;
-    session.persistedAt = now;
-    getRepos().sessions.upsert({
-      sessionId: session.sessionId,
-      engineId: session.engineId,
-      userId: session.userId,
-      labId: session.labId,
-      createdAt: session.createdAt,
-      lastActiveAt: session.lastActiveAt,
-      fromPool: session.fromPool,
-      claimMs: session.claimMs,
-      history: session.history,
-      strikes: session.strikes,
-    }).catch((err) => logger.warn({ err: err.message, sessionId: session.sessionId }, 'could not persist sandbox session'));
+  const settle = (promise, what, sessionId) => promise.catch((err) => logger.warn({ err: err.message, sessionId }, `could not ${what}`));
+
+  const pendingTotal = () => [...pending.values()].reduce((n, v) => n + v, 0);
+
+  function refreshGauge() {
+    settle(registry().count().then((n) => metrics.sandboxesActive.set(n)), 'count sandboxes');
   }
 
-  function unpersist(sessionId) {
-    getRepos().sessions.delete(sessionId)
-      .catch((err) => logger.warn({ err: err.message, sessionId }, 'could not remove sandbox session record'));
-  }
+  /** The engine can only operate sandboxes on its own node (a remote engine covers every node). */
+  const owns = (row) => (engine.owns ? engine.owns(row.nodeId) : (row.nodeId || nodeId) === nodeId);
 
-  function countFor(userId) {
-    let count = pending.get(userId) || 0;
-    for (const session of sessions.values()) if (session.userId === userId) count += 1;
-    return count;
-  }
-
-  function totalCount() {
-    let count = sessions.size;
-    for (const reserved of pending.values()) count += reserved;
-    return count;
+  // Admission checks run one at a time in this process, so a burst of starts from one user cannot all
+  // pass the limit before any of them is counted. (Across instances the lab nodes enforce their own cap.)
+  let admission = Promise.resolve();
+  function admit(userId) {
+    const run = admission.then(async () => {
+      const mine = (await registry().countByUser(userId)) + (pending.get(userId) || 0);
+      if (mine >= settings.maxPerUser) {
+        throw new SandboxError(`You already have ${settings.maxPerUser} sandboxes running. Stop one first.`, 429);
+      }
+      // With lab nodes the nodes' own capacity is the limit; otherwise this host's.
+      const full = engine.freeSeats
+        ? (await engine.freeSeats()) <= 0
+        : (await registry().count()) + pendingTotal() >= settings.maxTotal;
+      if (full) throw new SandboxError('All sandboxes are in use. Please try again in a few minutes.', 503);
+      pending.set(userId, (pending.get(userId) || 0) + 1);
+    });
+    admission = run.catch(() => {});
+    return run;
   }
 
   function recordLatency(source, ms) {
@@ -100,31 +105,30 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
    * @throws {SandboxError} 429 when the user is at their limit, 503 when the host is full
    */
   async function createSession(userId, labId = 'sandbox') {
-    if (countFor(userId) >= settings.maxPerUser) {
-      throw new SandboxError(`You already have ${settings.maxPerUser} sandboxes running. Stop one first.`, 429);
-    }
-    if (totalCount() >= settings.maxTotal) {
-      throw new SandboxError('All sandboxes are in use. Please try again in a few minutes.', 503);
-    }
-
-    pending.set(userId, (pending.get(userId) || 0) + 1);
+    await admit(userId);
     const startedAt = process.hrtime.bigint();
-    let acquired;
-    try {
-      acquired = await pool.acquire({ labId });
-    } finally {
+    // The reserved slot is held until the session is recorded, so it is never counted twice or not at all.
+    const release = () => {
       const left = pending.get(userId) - 1;
       if (left > 0) pending.set(userId, left);
       else pending.delete(userId);
+    };
+    let acquired;
+    try {
+      acquired = await pool.acquire({ labId });
+    } catch (err) {
+      release();
+      throw err;
     }
 
     const claimMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
     recordLatency(acquired.fromPool ? 'pool' : 'cold', claimMs);
 
     const now = Date.now();
-    const session = {
+    const row = {
       sessionId: randomUUID(),
       engineId: acquired.engineId,
+      nodeId: acquired.nodeId || nodeId,
       userId,
       labId,
       createdAt: now,
@@ -133,97 +137,122 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
       claimMs: Math.round(claimMs * 100) / 100,
       history: [],
       strikes: 0,
-      closeListeners: new Set(),
     };
-    sessions.set(session.sessionId, session);
-    persist(session, { force: true });
-    metrics.sandboxesActive.set(sessions.size);
+    try {
+      await registry().upsert(row);
+    } catch (err) {
+      // Without a record nobody could ever find this sandbox again.
+      await engine.destroy(row.engineId, where(row)).catch(() => {});
+      throw err;
+    } finally {
+      release();
+    }
+    lastWrite.set(row.sessionId, now);
+    strikeCounts.set(row.sessionId, 0);
+    refreshGauge();
 
     // If the shell or container exits on its own, drop the session too.
-    engine.onExit(session.engineId, () => {
-      destroySession(session.sessionId, 'exited').catch(() => {});
-    });
+    watchExit(row);
 
-    logger.info({ sessionId: session.sessionId, userId, labId, fromPool: session.fromPool, claimMs: session.claimMs }, 'sandbox started');
-    return describe(session);
+    logger.info({ sessionId: row.sessionId, userId, labId, nodeId: row.nodeId, fromPool: row.fromPool, claimMs: row.claimMs }, 'sandbox started');
+    return describe(row);
   }
 
-  function describe(session) {
+  function watchExit(row) {
+    if (engine.onExit) {
+      engine.onExit(row.engineId, () => {
+        destroySession(row.sessionId, 'exited').catch(() => {});
+      });
+    }
+  }
+
+  function describe(row) {
     const now = Date.now();
     return {
-      sessionId: session.sessionId,
-      userId: session.userId,
-      labId: session.labId,
-      createdAt: session.createdAt,
-      lastActiveAt: session.lastActiveAt,
-      idleMs: now - session.lastActiveAt,
-      uptime: now - session.createdAt,
-      expiresAt: session.createdAt + settings.maxSessionMs,
-      idleExpiresAt: session.lastActiveAt + settings.maxIdleMs,
-      fromPool: session.fromPool,
-      claimMs: session.claimMs,
-      ...engine.info(session.engineId),
+      sessionId: row.sessionId,
+      userId: row.userId,
+      labId: row.labId,
+      nodeId: row.nodeId,
+      createdAt: row.createdAt,
+      lastActiveAt: row.lastActiveAt,
+      idleMs: now - row.lastActiveAt,
+      uptime: now - row.createdAt,
+      expiresAt: row.createdAt + settings.maxSessionMs,
+      idleExpiresAt: row.lastActiveAt + settings.maxIdleMs,
+      fromPool: row.fromPool,
+      claimMs: row.claimMs,
+      ...(owns(row) ? engine.info(row.engineId) : {}),
     };
   }
 
-  function getSession(sessionId) {
-    const session = sessions.get(sessionId);
-    return session ? describe(session) : null;
+  async function getSession(sessionId) {
+    const row = await registry().get(sessionId);
+    return row ? describe(row) : null;
   }
 
   /** True when the session exists and belongs to this user. */
-  function isOwner(sessionId, userId) {
-    const session = sessions.get(sessionId);
-    return Boolean(session && session.userId === userId);
+  async function isOwner(sessionId, userId) {
+    const row = await registry().get(sessionId);
+    return Boolean(row && row.userId === userId);
   }
 
-  function listSessions() {
-    return [...sessions.values()].map(describe);
+  async function listSessions() {
+    return (await registry().all()).map(describe);
   }
 
   /** The user's running sandbox for a lab, if they have one. */
-  function findSession(userId, labId) {
-    for (const session of sessions.values()) {
-      if (session.userId === userId && session.labId === labId) return describe(session);
-    }
-    return null;
+  async function findSession(userId, labId) {
+    const row = (await registry().listByUser(userId)).find((r) => r.labId === labId);
+    return row ? describe(row) : null;
   }
 
-  function touch(sessionId) {
-    const session = sessions.get(sessionId);
-    if (session) {
-      session.lastActiveAt = Date.now();
-      persist(session);
-    }
+  /**
+   * Record activity. The registry write is throttled per session (the terminal calls this on every
+   * keystroke); pass `force` for an explicit "I'm still here". Returns a promise that settles when the write does.
+   */
+  function touch(sessionId, { force = false } = {}) {
+    const now = Date.now();
+    if (!force && now - (lastWrite.get(sessionId) || 0) < settings.persistIntervalMs) return Promise.resolve();
+    lastWrite.set(sessionId, now);
+    return settle(registry().touch(sessionId, now), 'record sandbox activity', sessionId);
   }
 
   async function destroySession(sessionId, reason = 'stopped') {
-    const session = sessions.get(sessionId);
-    if (!session) return false;
-    sessions.delete(sessionId);
-    unpersist(sessionId);
-    metrics.sandboxesActive.set(sessions.size);
+    const row = await registry().get(sessionId);
+    if (!row) return false;
+    if (!owns(row)) throw new SandboxError('This sandbox is running on another node', 503);
+    // Deleting the record is the claim: when two instances race to end a session, one wins.
+    if (!(await registry().delete(sessionId))) return false;
+    lastWrite.delete(sessionId);
+    strikeCounts.delete(sessionId);
+    refreshGauge();
 
-    for (const listener of session.closeListeners) listener(reason);
-    session.closeListeners.clear();
+    const listeners = closeListeners.get(sessionId);
+    closeListeners.delete(sessionId);
+    if (listeners) for (const listener of listeners) listener(reason);
 
-    await engine.destroy(session.engineId);
+    await engine.destroy(row.engineId, where(row));
     logger.info({ sessionId, reason }, 'sandbox destroyed');
     return true;
   }
 
-  /** Be told when the session ends, e.g. to close its terminal sockets. Returns an unsubscribe function. */
+  /** Be told when the session ends on this instance, e.g. to close its terminal sockets. Returns an unsubscribe function. */
   function onClose(sessionId, listener) {
-    const session = sessions.get(sessionId);
-    if (!session) return () => {};
-    session.closeListeners.add(listener);
-    return () => session.closeListeners.delete(listener);
+    if (!closeListeners.has(sessionId)) closeListeners.set(sessionId, new Set());
+    closeListeners.get(sessionId).add(listener);
+    return () => {
+      const set = closeListeners.get(sessionId);
+      if (!set) return;
+      set.delete(listener);
+      if (set.size === 0) closeListeners.delete(sessionId);
+    };
   }
 
-  function requireSession(sessionId) {
-    const session = sessions.get(sessionId);
-    if (!session) throw new SandboxError('Sandbox session not found', 404);
-    return session;
+  async function requireRow(sessionId) {
+    const row = await registry().get(sessionId);
+    if (!row) throw new SandboxError('Sandbox session not found', 404);
+    if (!owns(row)) throw new SandboxError('This sandbox is running on another node', 503);
+    return row;
   }
 
   /**
@@ -231,43 +260,55 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
    * (the inspector's polling), so an open but unused tab still goes idle.
    */
   async function exec(sessionId, command, { touch: countsAsActivity = true, ...options } = {}) {
-    const session = requireSession(sessionId);
-    if (countsAsActivity) session.lastActiveAt = Date.now();
-    return engine.exec(session.engineId, command, options);
+    const row = await requireRow(sessionId);
+    if (countsAsActivity) touch(sessionId);
+    return engine.exec(row.engineId, command, engine.remote ? { ...options, nodeId: row.nodeId } : options);
   }
 
   async function attach(sessionId) {
-    const session = sessions.get(sessionId);
-    return session ? engine.attach(session.engineId) : null;
+    const row = await registry().get(sessionId);
+    if (!row || !owns(row)) return null;
+    strikeCounts.set(sessionId, Math.max(strikeCounts.get(sessionId) || 0, row.strikes || 0));
+    return engine.attach(row.engineId, where(row));
   }
 
   async function reset(sessionId) {
-    const session = requireSession(sessionId);
-    session.lastActiveAt = Date.now();
-    session.history = [];
-    await engine.reset(session.engineId);
+    const row = await requireRow(sessionId);
+    await touch(sessionId, { force: true });
+    await settle(registry().clearHistory(sessionId), 'clear command history', sessionId);
+    await engine.reset(row.engineId, where(row));
   }
 
+  /**
+   * Remember a command in the session's capped history. Written in the background, one at a time per
+   * session, so commands typed quickly are stored in the order they were entered.
+   */
   function recordCommand(sessionId, command) {
-    const session = sessions.get(sessionId);
-    if (!session) return;
-    session.history.push({ command, at: Date.now() });
-    if (session.history.length > settings.historyLimit) session.history.shift();
-    persist(session); // throttled: at most one write per persistIntervalMs
+    const entry = { command, at: Date.now() };
+    const previous = historyQueue.get(sessionId) || Promise.resolve();
+    const next = previous.then(() => settle(registry().appendCommand(sessionId, entry, settings.historyLimit), 'record command', sessionId));
+    historyQueue.set(sessionId, next);
+    next.then(() => { if (historyQueue.get(sessionId) === next) historyQueue.delete(sessionId); });
   }
 
-  function getHistory(sessionId) {
-    const session = sessions.get(sessionId);
-    return session ? session.history.slice() : [];
+  async function getHistory(sessionId) {
+    await historyQueue.get(sessionId); // include commands still being written
+    const row = await registry().get(sessionId);
+    return row ? row.history || [] : [];
   }
 
-  /** Count a blocked command. Returns the running total for the session. */
+  /**
+   * Count a blocked command. Returns the running total at once (from this process's count) and
+   * reconciles with the registry in the background, so several tabs or instances cannot undercount.
+   */
   function addStrike(sessionId) {
-    const session = sessions.get(sessionId);
-    if (!session) return 0;
-    session.strikes += 1;
-    persist(session, { force: true }); // rare, and the reaper reads strikes
-    return session.strikes;
+    if (!strikeCounts.has(sessionId)) return 0; // not a session this process has created or attached to
+    const strikes = (strikeCounts.get(sessionId) || 0) + 1;
+    strikeCounts.set(sessionId, strikes);
+    settle(registry().addStrike(sessionId).then((stored) => {
+      if (stored > (strikeCounts.get(sessionId) || 0)) strikeCounts.set(sessionId, stored);
+    }), 'record strike', sessionId);
+    return strikes;
   }
 
   /**
@@ -276,23 +317,21 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
    */
   async function sweep(now = Date.now()) {
     const reaped = [];
-    for (const session of [...sessions.values()]) {
-      let reason = null;
-      if (now - session.createdAt > settings.maxSessionMs) reason = 'max_age';
-      else if (now - session.lastActiveAt > settings.maxIdleMs) reason = 'idle';
-      if (!reason) continue;
-
-      await destroySession(session.sessionId, reason).catch((err) => {
-        logger.warn({ sessionId: session.sessionId, err: err.message }, 'reaper failed to destroy sandbox');
+    const expired = await registry().listExpired({ createdBefore: now - settings.maxSessionMs, activeBefore: now - settings.maxIdleMs });
+    for (const row of expired) {
+      if (!owns(row)) continue;
+      const reason = now - row.createdAt > settings.maxSessionMs ? 'max_age' : 'idle';
+      await destroySession(row.sessionId, reason).catch((err) => {
+        logger.warn({ sessionId: row.sessionId, err: err.message }, 'reaper failed to destroy sandbox');
       });
       metrics.sandboxesReaped.inc({ reason });
-      reaped.push({ sessionId: session.sessionId, reason });
+      reaped.push({ sessionId: row.sessionId, reason });
     }
     return reaped;
   }
 
-  /** Aggregate numbers that are safe to show publicly (no session ids). */
-  function stats() {
+  /** Aggregate numbers that are safe to show publicly (no session ids). Latencies are this instance's own. */
+  async function stats() {
     const summarise = (samples) => {
       const sorted = samples.slice().sort((a, b) => a - b);
       const round = (v) => (v === null ? null : Math.round(v * 100) / 100);
@@ -300,13 +339,17 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     };
     return {
       mode: engine.name,
-      activeSessions: sessions.size,
-      capacity: settings.maxTotal,
+      activeSessions: await registry().count(),
+      capacity: engine.totalCapacity ? await engine.totalCapacity() : settings.maxTotal,
       pool: pool.stats(),
       claimLatencyMs: { pool: summarise(claimLatencies.pool), cold: summarise(claimLatencies.cold) },
     };
   }
 
+  /**
+   * Start-up: let the engine find what it still runs, then make the registry and the engine agree for
+   * this node's sessions. Records of sessions that expired or whose sandbox died are dropped.
+   */
   async function init() {
     if (engine.reconcile) {
       await engine.reconcile().catch((err) => {
@@ -314,43 +357,31 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
       });
     }
 
-    const activeEngineIds = new Set();
+    const keepEngineIds = new Set();
     try {
-      {
-        const repos = getRepos();
-        const stored = await repos.sessions.all();
-        const now = Date.now();
-        for (const s of stored) {
-          const isExpired = (now - s.createdAt > settings.maxSessionMs) || (now - s.lastActiveAt > settings.maxIdleMs);
-          const alive = engine.isAlive ? engine.isAlive(s.engineId) : true;
-          if (!isExpired && alive) {
-            const restored = {
-              ...s,
-              closeListeners: new Set(),
-            };
-            sessions.set(s.sessionId, restored);
-            activeEngineIds.add(s.engineId);
-            if (engine.onExit) {
-              engine.onExit(s.engineId, () => {
-                destroySession(s.sessionId, 'exited').catch(() => {});
-              });
-            }
-          } else {
-            if (engine.destroy && alive) await engine.destroy(s.engineId).catch(() => {});
-            await repos.sessions.delete(s.sessionId);
-          }
-        }
-        if (sessions.size > 0) {
-          logger.info({ count: sessions.size }, 'restored active student sessions after restart');
-          metrics.sandboxesActive.set(sessions.size);
+      const now = Date.now();
+      let kept = 0;
+      for (const row of await registry().all()) {
+        if (!owns(row)) continue;
+        const isExpired = (now - row.createdAt > settings.maxSessionMs) || (now - row.lastActiveAt > settings.maxIdleMs);
+        const alive = engine.isAlive ? engine.isAlive(row.engineId) : true;
+        if (!isExpired && alive) {
+          keepEngineIds.add(row.engineId);
+          watchExit(row);
+          kept += 1;
+        } else {
+          if (engine.destroy && alive) await engine.destroy(row.engineId).catch(() => {});
+          await registry().delete(row.sessionId);
         }
       }
+      if (kept > 0) logger.info({ count: kept }, 'kept active student sessions after restart');
     } catch (err) {
       logger.warn({ err: err.message }, 'could not restore sessions from store');
     }
+    refreshGauge();
 
     if (engine.cleanupOrphans) {
-      const cleaned = await engine.cleanupOrphans({ keepEngineIds: activeEngineIds }).catch((err) => {
+      const cleaned = await engine.cleanupOrphans({ keepEngineIds }).catch((err) => {
         logger.warn({ err: err.message }, 'could not clean up orphaned sandboxes');
         return null;
       });
@@ -359,9 +390,15 @@ function createManager({ engine = loadEngine(config.sandboxMode), limits = {}, p
     await pool.replenish();
   }
 
+  /**
+   * Stop this process. A gateway using lab nodes owns no sandboxes, so students keep theirs through a
+   * gateway restart; an engine that runs sandboxes in this process ends its own, and empties its pool.
+   */
   async function shutdown() {
-    for (const sessionId of [...sessions.keys()]) {
-      await destroySession(sessionId, 'shutdown').catch(() => {});
+    if (!engine.remote) {
+      for (const row of await registry().all().catch(() => [])) {
+        if (owns(row)) await destroySession(row.sessionId, 'shutdown').catch(() => {});
+      }
     }
     await pool.drain();
   }

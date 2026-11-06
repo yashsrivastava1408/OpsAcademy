@@ -250,6 +250,51 @@ function runContract(label, setup) {
       });
     });
 
+    describe('lab nodes and terminal tickets', () => {
+      test('heartbeats create and refresh nodes; only recent, non-draining ones are healthy', async () => {
+        await repos.nodes.heartbeat({ nodeId: 'a', baseUrl: 'http://a:7000', capacity: 50, running: 3, version: '1' });
+        await repos.nodes.heartbeat({ nodeId: 'b', baseUrl: 'http://b:7000', capacity: 50, draining: true });
+        await repos.nodes.heartbeat({ nodeId: 'a', baseUrl: 'http://a2:7000', capacity: 60, running: 5 });
+        expect(await repos.nodes.get('a')).toMatchObject({ nodeId: 'a', baseUrl: 'http://a2:7000', capacity: 60, running: 5, draining: false });
+        expect((await repos.nodes.get('a')).lastSeenAt).toBeGreaterThan(Date.now() - 5000);
+        expect(await repos.nodes.get('zzz')).toBeNull();
+        expect((await repos.nodes.list()).map((n) => n.nodeId)).toEqual(['a', 'b']);
+        expect((await repos.nodes.listHealthy(60000)).map((n) => n.nodeId)).toEqual(['a']);
+        await new Promise((r) => setTimeout(r, 30));
+        expect(await repos.nodes.listHealthy(10)).toEqual([]);
+        expect(await repos.nodes.remove('a')).toBe(true);
+        expect(await repos.nodes.remove('a')).toBe(false);
+      });
+
+      test('a terminal ticket works once and only before it expires; deleting the session removes it', async () => {
+        await repos.users.create(user('u1'));
+        const s = { sessionId: 's1', engineId: 'e1', userId: 'u1', labId: 'x', createdAt: 1, lastActiveAt: 1, fromPool: false, history: [], strikes: 0 };
+        await repos.sessions.upsert(s);
+        await repos.tickets.create({ hash: 'h1', sessionId: 's1', userId: 'u1', expiresAt: Date.now() + 30000 });
+        expect(await repos.tickets.redeem('h1')).toEqual({ sessionId: 's1', userId: 'u1' });
+        expect(await repos.tickets.redeem('h1')).toBeNull();
+        expect(await repos.tickets.redeem('never-issued')).toBeNull();
+
+        await repos.tickets.create({ hash: 'h2', sessionId: 's1', userId: 'u1', expiresAt: Date.now() - 1000 });
+        expect(await repos.tickets.redeem('h2')).toBeNull(); // expired tickets are consumed but refused
+        await repos.tickets.create({ hash: 'h3', sessionId: 's1', userId: 'u1', expiresAt: Date.now() - 1000 });
+        expect(await repos.tickets.prune()).toBe(1);
+
+        await repos.tickets.create({ hash: 'h4', sessionId: 's1', userId: 'u1', expiresAt: Date.now() + 30000 });
+        await repos.sessions.delete('s1');
+        expect(await repos.tickets.redeem('h4')).toBeNull();
+        await expect(repos.tickets.create({ hash: 'h5', sessionId: 'gone', userId: 'u1', expiresAt: Date.now() + 1000 })).rejects.toMatchObject({ code: 'session_missing' });
+      });
+
+      test('concurrent redemptions of one ticket: exactly one wins', async () => {
+        await repos.users.create(user('u1'));
+        await repos.sessions.upsert({ sessionId: 's1', engineId: 'e1', userId: 'u1', labId: 'x', createdAt: 1, lastActiveAt: 1, fromPool: false, history: [], strikes: 0 });
+        await repos.tickets.create({ hash: 'race', sessionId: 's1', userId: 'u1', expiresAt: Date.now() + 30000 });
+        const results = await Promise.all(Array.from({ length: 8 }, () => repos.tickets.redeem('race')));
+        expect(results.filter(Boolean)).toHaveLength(1);
+      });
+    });
+
     describe('identities', () => {
       test('links an external identity to an app user and finds it again', async () => {
         await repos.users.create(user('u1'));
@@ -342,6 +387,46 @@ function runContract(label, setup) {
         expect(all).toHaveLength(1);
         expect(all[0]).toMatchObject({ sessionId: 's1', engineId: 'eng-s1', userId: 'u1', labId: 'linux-basics', createdAt: 1_800_000_000_000, lastActiveAt: 1_800_000_009_000, fromPool: true, claimMs: 12.5, strikes: 2 });
         expect(all[0].history).toHaveLength(2);
+      });
+
+      test('the registry answers by id, owner, node and count', async () => {
+        await repos.users.create(user('u2'));
+        await repos.sessions.upsert(session('s1', { nodeId: 'node-a' }));
+        await repos.sessions.upsert(session('s2', { nodeId: 'node-b', createdAt: 1_800_000_000_500 }));
+        await repos.sessions.upsert(session('s3', { userId: 'u2' }));
+        expect(await repos.sessions.get('s1')).toMatchObject({ sessionId: 's1', engineId: 'eng-s1', nodeId: 'node-a', userId: 'u1' });
+        expect(await repos.sessions.get('nope')).toBeNull();
+        expect((await repos.sessions.listByUser('u1')).map((s) => s.sessionId).sort()).toEqual(['s1', 's2']);
+        expect((await repos.sessions.listByNode('node-b')).map((s) => s.sessionId)).toEqual(['s2']);
+        expect(await repos.sessions.count()).toBe(3);
+        expect(await repos.sessions.countByUser('u1')).toBe(2);
+        expect(await repos.sessions.countByUser('ghost')).toBe(0);
+      });
+
+      test('activity moves forward only; commands append to a capped list; strikes count atomically', async () => {
+        await repos.sessions.upsert(session('s1', { history: [], strikes: 0 }));
+        await repos.sessions.touch('s1', 1_800_000_005_000);
+        await repos.sessions.touch('s1', 1_800_000_002_000);
+        expect((await repos.sessions.get('s1')).lastActiveAt).toBe(1_800_000_005_000);
+
+        for (const c of ['a', 'b', 'c', 'd']) await repos.sessions.appendCommand('s1', { command: c, at: 1 }, 3);
+        expect((await repos.sessions.get('s1')).history.map((h) => h.command)).toEqual(['b', 'c', 'd']);
+        await repos.sessions.clearHistory('s1');
+        expect((await repos.sessions.get('s1')).history).toEqual([]);
+
+        expect(await Promise.all([repos.sessions.addStrike('s1'), repos.sessions.addStrike('s1')]).then((r) => r.sort())).toEqual([1, 2]);
+        expect(await repos.sessions.addStrike('nope')).toBe(0);
+        // an upsert from a stale writer cannot lower activity or strikes
+        await repos.sessions.upsert(session('s1', { lastActiveAt: 1_800_000_000_001, strikes: 0, history: [] }));
+        expect(await repos.sessions.get('s1')).toMatchObject({ lastActiveAt: 1_800_000_005_000, strikes: 2 });
+      });
+
+      test('lists sessions past their age or idle limit', async () => {
+        await repos.sessions.upsert(session('old', { createdAt: 1000, lastActiveAt: 1_800_000_900_000 }));
+        await repos.sessions.upsert(session('idle', { createdAt: 1_800_000_000_000, lastActiveAt: 2000 }));
+        await repos.sessions.upsert(session('fresh', { createdAt: 1_800_000_000_000, lastActiveAt: 1_800_000_900_000 }));
+        const expired = await repos.sessions.listExpired({ createdBefore: 5000, activeBefore: 5000 });
+        expect(expired.map((s) => s.sessionId).sort()).toEqual(['idle', 'old']);
       });
 
       test('delete reports whether a session existed; unknown users are refused', async () => {

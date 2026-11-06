@@ -23,7 +23,9 @@ const alice = { id: 'u_alice', name: 'Alice' };
 const bob = { id: 'u_bob', name: 'Bob' };
 
 beforeEach(async () => {
-  ctx = install({ engine: pty });
+  // Activity is normally written to the registry at most every 30 s; the tests want every touch visible.
+  ctx = install({ engine: pty, limits: { persistIntervalMs: 0 } });
+  for (const who of [alice, bob]) await ctx.repos.users.create({ id: who.id, name: who.name, guest: true, createdAt: new Date().toISOString() });
   server = http.createServer(createApp());
   wss = attachTerminalWebSocket(server, ctx.manager);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -37,10 +39,11 @@ afterEach(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-function url({ sessionId, token }) {
+function url({ sessionId, token, ticket }) {
   const params = new URLSearchParams();
   if (sessionId) params.set('sessionId', sessionId);
   if (token) params.set('token', token);
+  if (ticket) params.set('ticket', ticket);
   return `ws://127.0.0.1:${port}/api/terminal?${params}`;
 }
 
@@ -67,6 +70,66 @@ async function openTerminal(user = alice) {
   await term.opened;
   return { term, sessionId: session.sessionId };
 }
+
+describe('terminal tickets', () => {
+  const request = require('supertest');
+  const config = require('../config');
+  const ticketFor = async (sessionId, who = alice) => {
+    const res = await request(server).post(`/api/sandbox/${sessionId}/terminal-ticket`).set('Authorization', `Bearer ${signToken(who)}`);
+    return res;
+  };
+
+  test('a ticket opens the terminal once; the session comes from the ticket, not the URL', async () => {
+    const session = await ctx.manager.createSession(alice.id, 'linux-basics');
+    const other = await ctx.manager.createSession(alice.id, 'git-basics');
+    const res = await ticketFor(session.sessionId);
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body.data).toMatchObject({ expiresInMs: 30000, wsPath: '/api/terminal' });
+    const { ticket } = res.body.data;
+
+    // A different sessionId in the URL cannot redirect the ticket to another sandbox.
+    const term = connect({ ticket, sessionId: other.sessionId });
+    await term.opened;
+    term.type('echo via-ticket-$((20+1))\r');
+    await term.sees('via-ticket-21');
+    expect(await ctx.manager.getHistory(session.sessionId)).toHaveLength(1);
+    expect(await ctx.manager.getHistory(other.sessionId)).toHaveLength(0);
+
+    await expect(connect({ ticket }).opened).rejects.toMatchObject({ status: 401 }); // already used
+  });
+
+  test('only the owner gets a ticket; garbage and expired tickets are refused', async () => {
+    const session = await ctx.manager.createSession(alice.id);
+    expect((await ticketFor(session.sessionId, bob)).status).toBe(404);
+    expect((await request(server).post(`/api/sandbox/${session.sessionId}/terminal-ticket`)).status).toBe(401);
+    await expect(connect({ ticket: 'x'.repeat(43) }).opened).rejects.toMatchObject({ status: 401 });
+    await expect(connect({ ticket: 'short' }).opened).rejects.toMatchObject({ status: 401 });
+
+    const ticketService = require('../services/ticketService');
+    const { ticket } = await ticketService.issue(session.sessionId, alice.id, Date.now() - 31000);
+    await expect(connect({ ticket }).opened).rejects.toMatchObject({ status: 401 });
+  });
+
+  test('ending the session invalidates its tickets', async () => {
+    const session = await ctx.manager.createSession(alice.id);
+    const { ticket } = (await ticketFor(session.sessionId)).body.data;
+    await ctx.manager.destroySession(session.sessionId);
+    await expect(connect({ ticket }).opened).rejects.toMatchObject({ status: 401 });
+  });
+
+  test('with TERMINAL_TOKEN_AUTH=off the bearer token in the URL no longer works', async () => {
+    const session = await ctx.manager.createSession(alice.id);
+    config.terminalTokenAuth = false;
+    try {
+      await expect(connect({ sessionId: session.sessionId, token: signToken(alice) }).opened).rejects.toMatchObject({ status: 401 });
+      const { ticket } = (await ticketFor(session.sessionId)).body.data;
+      await connect({ ticket }).opened;
+    } finally {
+      config.terminalTokenAuth = true;
+    }
+  });
+});
 
 describe('connection authentication', () => {
   test.each([
@@ -144,8 +207,8 @@ describe('terminal streaming', () => {
     term.type('mkdir webapp\r');
     term.type('cd webapp\r');
     term.type('   \r');
-    await waitFor(() => ctx.manager.getHistory(sessionId).length === 2);
-    expect(ctx.manager.getHistory(sessionId).map((h) => h.command)).toEqual(['mkdir webapp', 'cd webapp']);
+    await waitFor(async () => (await ctx.manager.getHistory(sessionId)).length === 2);
+    expect((await ctx.manager.getHistory(sessionId)).map((h) => h.command)).toEqual(['mkdir webapp', 'cd webapp']);
 
     const res = await request(server).get(`/api/sandbox/${sessionId}/history`).set('Authorization', `Bearer ${signToken(alice)}`);
     expect(res.body.data.map((h) => h.command)).toEqual(['mkdir webapp', 'cd webapp']);
@@ -200,7 +263,7 @@ describe('terminal streaming', () => {
     term.ws.close();
     await waitFor(() => term.closed);
 
-    expect(ctx.manager.getSession(sessionId)).not.toBeNull();
+    expect(await ctx.manager.getSession(sessionId)).not.toBeNull();
     const again = connect({ sessionId, token: signToken(alice) });
     await again.opened;
     again.type('echo $MARK\r');
@@ -209,10 +272,10 @@ describe('terminal streaming', () => {
 
   test('typing keeps the session from going idle', async () => {
     const { term, sessionId } = await openTerminal();
-    const before = ctx.manager.getSession(sessionId).lastActiveAt;
+    const before = (await ctx.manager.getSession(sessionId)).lastActiveAt;
     await new Promise((resolve) => setTimeout(resolve, 15));
     term.type('x');
-    await waitFor(() => ctx.manager.getSession(sessionId).lastActiveAt > before);
+    await waitFor(async () => (await ctx.manager.getSession(sessionId)).lastActiveAt > before);
   });
 });
 
@@ -228,7 +291,7 @@ describe('abuse tripwire', () => {
     const files = (await ctx.manager.exec(sessionId, 'ls')).stdout;
     expect(files).toContain('before.txt');
     expect(files).not.toContain('canary.txt');
-    expect(ctx.manager.getHistory(sessionId).map((h) => h.command)).toEqual(['touch before.txt', 'echo after-$((6+1))']);
+    expect((await ctx.manager.getHistory(sessionId)).map((h) => h.command)).toEqual(['touch before.txt', 'echo after-$((6+1))']);
   });
 
   test('three strikes destroy the sandbox and close the terminal', async () => {
@@ -238,7 +301,7 @@ describe('abuse tripwire', () => {
     await term.sees('Sandbox terminated after repeated blocked commands.');
     await waitFor(() => term.closed);
     expect(term.closed.code).toBe(4000);
-    expect(ctx.manager.getSession(sessionId)).toBeNull();
+    expect(await ctx.manager.getSession(sessionId)).toBeNull();
   });
 
   test('a flood of messages closes the connection', async () => {
@@ -275,6 +338,7 @@ describe('messages sent while the shell is still attaching', () => {
     wss.close();
     await new Promise((resolve) => server.close(resolve));
     ctx = install({ engine });
+    await ctx.repos.users.createIfAbsent({ id: alice.id, name: alice.name, guest: true, createdAt: new Date().toISOString() });
     server = http.createServer(createApp());
     wss = attachTerminalWebSocket(server, ctx.manager);
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

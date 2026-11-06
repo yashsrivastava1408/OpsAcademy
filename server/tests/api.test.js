@@ -543,7 +543,7 @@ describe('sandbox ownership', () => {
     for (const attempt of attempts) {
       expect((await attempt.set(intruder.auth)).status).toBe(404);
     }
-    expect(ctx.manager.getSession(sessionId)).not.toBeNull();
+    expect(await ctx.manager.getSession(sessionId)).not.toBeNull();
   });
 
   test('listing shows only your own sandboxes', async () => {
@@ -610,14 +610,14 @@ describe('sandbox ownership', () => {
     const owner = await guest();
     const other = await guest();
     const { sessionId } = await startSandbox(owner);
-    const startedAt = ctx.manager.getSession(sessionId).lastActiveAt;
+    const startedAt = (await ctx.manager.getSession(sessionId)).lastActiveAt;
     const idleMs = config.sandbox.maxInactivityMinutes * 60000;
 
     jest.spyOn(Date, 'now').mockReturnValue(startedAt + 10 * 60000);
     try {
       const history = await request(app).get(`/api/sandbox/${sessionId}/history`).set(owner.auth);
       expect(history.body.session).toEqual({
-        expiresAt: ctx.manager.getSession(sessionId).createdAt + config.sandbox.maxSessionMinutes * 60000,
+        expiresAt: (await ctx.manager.getSession(sessionId)).createdAt + config.sandbox.maxSessionMinutes * 60000,
         idleExpiresAt: startedAt + idleMs,
         serverTime: startedAt + 10 * 60000,
       });
@@ -639,17 +639,17 @@ describe('sandbox ownership', () => {
   test('the inspector polling telemetry does not keep an unused sandbox alive', async () => {
     const owner = await guest();
     const { sessionId } = await startSandbox(owner);
-    const startedAt = ctx.manager.getSession(sessionId).lastActiveAt;
+    const startedAt = (await ctx.manager.getSession(sessionId)).lastActiveAt;
 
     jest.spyOn(Date, 'now').mockReturnValue(startedAt + 5 * 60000);
     try {
       await request(app).get(`/api/sandbox/${sessionId}/telemetry`).set(owner.auth);
       await request(app).get(`/api/sandbox/${sessionId}/history`).set(owner.auth);
-      expect(ctx.manager.getSession(sessionId).lastActiveAt).toBe(startedAt);
+      expect((await ctx.manager.getSession(sessionId)).lastActiveAt).toBe(startedAt);
 
       // Real work in the sandbox still counts as activity.
       await request(app).post('/api/labs/linux-basics/verify').set(owner.auth).send({ sessionId, stepNumber: 1 });
-      expect(ctx.manager.getSession(sessionId).lastActiveAt).toBe(startedAt + 5 * 60000);
+      expect((await ctx.manager.getSession(sessionId)).lastActiveAt).toBe(startedAt + 5 * 60000);
     } finally {
       Date.now.mockRestore();
     }
@@ -874,8 +874,6 @@ describe('lab verification and progress', () => {
 
 /** Flip the lab engine between passing and failing checks. */
 function setFailing(failing) {
-  const session = ctx.manager.listSessions()[0];
-  if (!session) throw new Error('start a sandbox first');
   ctx.engine.passing = !failing;
 }
 

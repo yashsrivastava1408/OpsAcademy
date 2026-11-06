@@ -26,6 +26,16 @@ function mapError(err) {
 
 // ── row mappers (database shape <-> the shape the services already use) ──
 
+async function nodeRows(q, tail, params = []) {
+  const { rows } = await q(
+    `select node_id, base_url, capacity, running, draining, version,
+            (extract(epoch from last_seen_at) * 1000)::float8 as seen_ms from lab_nodes ${tail}`, params);
+  return rows.map((r) => ({
+    nodeId: r.node_id, baseUrl: r.base_url, capacity: r.capacity, running: r.running,
+    draining: r.draining, version: r.version, lastSeenAt: r.seen_ms,
+  }));
+}
+
 const collegeRow = (r) => ({ id: r.id, name: r.name, slug: r.slug, timezone: r.timezone, active: r.active, createdAt: r.created_at.toISOString() });
 const sectionRow = (r) => ({ id: r.id, collegeId: r.college_id, name: r.name, academicYear: r.academic_year });
 
@@ -69,9 +79,18 @@ function certFromRow(r) {
   };
 }
 
+async function sessionRows(q, where, params = []) {
+  const { rows } = await q(
+    `select session_id, engine_id, user_id, lab_id, node_id, from_pool, claim_ms, history, strikes,
+            (extract(epoch from created_at) * 1000)::float8 as created_ms,
+            (extract(epoch from last_active_at) * 1000)::float8 as active_ms
+       from sandbox_sessions ${where}`, params);
+  return rows.map(sessionFromRow);
+}
+
 function sessionFromRow(r) {
   return {
-    sessionId: r.session_id, engineId: r.engine_id, userId: r.user_id, labId: r.lab_id,
+    sessionId: r.session_id, engineId: r.engine_id, userId: r.user_id, labId: r.lab_id, nodeId: r.node_id || undefined,
     createdAt: r.created_ms, lastActiveAt: r.active_ms, fromPool: r.from_pool,
     claimMs: r.claim_ms === null ? undefined : Number(r.claim_ms), history: r.history, strikes: r.strikes,
   };
@@ -384,6 +403,47 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
       },
     },
 
+    nodes: {
+      async heartbeat({ nodeId, baseUrl, capacity, running = 0, draining = false, version = null }) {
+        await q(
+          `insert into lab_nodes (node_id, base_url, capacity, running, draining, version, last_seen_at)
+           values ($1,$2,$3,$4,$5,$6, now())
+           on conflict (node_id) do update set base_url = excluded.base_url, capacity = excluded.capacity,
+             running = excluded.running, draining = excluded.draining, version = excluded.version, last_seen_at = now()`,
+          [nodeId, baseUrl, capacity, running, draining, version]
+        );
+      },
+      async get(nodeId) { return (await nodeRows(q, 'where node_id = $1', [nodeId]))[0] || null; },
+      async list() { return nodeRows(q, 'order by node_id'); },
+      async listHealthy(maxAgeMs) {
+        return nodeRows(q, "where not draining and last_seen_at >= now() - ($1 || ' milliseconds')::interval order by node_id", [String(maxAgeMs)]);
+      },
+      async remove(nodeId) {
+        const { rowCount } = await q('delete from lab_nodes where node_id = $1', [nodeId]);
+        return rowCount > 0;
+      },
+    },
+
+    tickets: {
+      async create({ hash, sessionId, userId, expiresAt }) {
+        try {
+          await q('insert into terminal_tickets (hash, session_id, user_id, expires_at) values ($1,$2,$3,$4)', [hash, sessionId, userId, toDate(expiresAt)]);
+        } catch (err) {
+          if (err.code === '23503') throw new RepoError('session_missing', 'Session does not exist');
+          throw err;
+        }
+      },
+      async redeem(hash) {
+        // One statement: the ticket is consumed by whoever deletes it, and only if it has not expired.
+        const { rows } = await q('delete from terminal_tickets where hash = $1 returning session_id, user_id, expires_at > now() as valid', [hash]);
+        return rows[0] && rows[0].valid ? { sessionId: rows[0].session_id, userId: rows[0].user_id } : null;
+      },
+      async prune() {
+        const { rowCount } = await q('delete from terminal_tickets where expires_at <= now()');
+        return rowCount;
+      },
+    },
+
     audit: {
       async record({ actorId = null, actorRole = null, action, entityType = null, entityId = null, collegeId = null, ip = null, meta = {} }) {
         await q(
@@ -435,11 +495,11 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
     sessions: {
       async upsert(s) {
         await q(
-          `insert into sandbox_sessions (session_id, engine_id, user_id, lab_id, from_pool, claim_ms, history, strikes, created_at, last_active_at)
-           values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)
-           on conflict (session_id) do update set last_active_at = excluded.last_active_at, history = excluded.history,
-             strikes = excluded.strikes`,
-          [s.sessionId, s.engineId, s.userId, s.labId || null, Boolean(s.fromPool), s.claimMs ?? null,
+          `insert into sandbox_sessions (session_id, engine_id, user_id, lab_id, node_id, from_pool, claim_ms, history, strikes, created_at, last_active_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)
+           on conflict (session_id) do update set last_active_at = greatest(sandbox_sessions.last_active_at, excluded.last_active_at),
+             history = excluded.history, strikes = greatest(sandbox_sessions.strikes, excluded.strikes)`,
+          [s.sessionId, s.engineId, s.userId, s.labId || null, s.nodeId || null, Boolean(s.fromPool), s.claimMs ?? null,
             JSON.stringify(s.history || []), s.strikes || 0, toDate(s.createdAt), toDate(s.lastActiveAt)],
         );
       },
@@ -447,13 +507,41 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
         const { rowCount } = await q('delete from sandbox_sessions where session_id = $1', [sessionId]);
         return rowCount > 0;
       },
-      async all() {
-        const { rows } = await q(
-          `select session_id, engine_id, user_id, lab_id, from_pool, claim_ms, history, strikes,
-                  (extract(epoch from created_at) * 1000)::float8 as created_ms,
-                  (extract(epoch from last_active_at) * 1000)::float8 as active_ms
-           from sandbox_sessions`);
-        return rows.map(sessionFromRow);
+      async all() { return sessionRows(q, ''); },
+      async get(sessionId) { return (await sessionRows(q, 'where session_id = $1', [sessionId]))[0] || null; },
+      async listByUser(userId) { return sessionRows(q, 'where user_id = $1 order by created_at', [userId]); },
+      async count() {
+        const { rows } = await q('select count(*)::int as n from sandbox_sessions');
+        return rows[0].n;
+      },
+      async countByUser(userId) {
+        const { rows } = await q('select count(*)::int as n from sandbox_sessions where user_id = $1', [userId]);
+        return rows[0].n;
+      },
+      async listByNode(nodeId) { return sessionRows(q, 'where node_id = $1', [nodeId]); },
+      async touch(sessionId, atMs = Date.now()) {
+        await q('update sandbox_sessions set last_active_at = greatest(last_active_at, $2) where session_id = $1', [sessionId, toDate(atMs)]);
+      },
+      async appendCommand(sessionId, entry, cap) {
+        // One statement: append, then keep only the newest `cap` entries.
+        await q(
+          `update sandbox_sessions set history = coalesce((
+             select jsonb_agg(e order by ord) from (
+               select e, ord from jsonb_array_elements(history || $2::jsonb) with ordinality as t(e, ord)
+               order by ord desc limit $3) newest), '[]'::jsonb)
+           where session_id = $1`,
+          [sessionId, JSON.stringify([entry]), cap]
+        );
+      },
+      async clearHistory(sessionId) {
+        await q("update sandbox_sessions set history = '[]'::jsonb where session_id = $1", [sessionId]);
+      },
+      async addStrike(sessionId) {
+        const { rows } = await q('update sandbox_sessions set strikes = strikes + 1 where session_id = $1 returning strikes', [sessionId]);
+        return rows[0] ? rows[0].strikes : 0;
+      },
+      async listExpired({ createdBefore, activeBefore }) {
+        return sessionRows(q, 'where created_at < $1 or last_active_at < $2', [toDate(createdBefore), toDate(activeBefore)]);
       },
     },
 

@@ -27,6 +27,7 @@ const progressRoutes = require('./routes/progressRoutes');
 const certificateRoutes = require('./routes/certificateRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const collegeRoutes = require('./routes/collegeRoutes');
+const internalRoutes = require('./routes/internalRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 
 const PREFLIGHT_MAX_AGE_SECONDS = 2 * 60 * 60; // the most Chrome will honour
@@ -84,7 +85,7 @@ function createApp() {
     res.status(ready ? 200 : 503).json({
       status: ready ? (checks.aiHub ? 'ready' : 'degraded') : 'not_ready',
       checks,
-      sandbox: getManager().stats(),
+      sandbox: await getManager().stats(),
     });
   });
 
@@ -111,6 +112,7 @@ function createApp() {
   app.use('/api/progress', progressRoutes);
   app.use('/api/certificates', certificateRoutes);
   app.use('/api/profiles', profileRoutes);
+  app.use('/api/internal', internalRoutes);
   app.use('/api/colleges', collegeRoutes);
   app.use('/api/admin', adminRoutes);
 

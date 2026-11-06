@@ -33,7 +33,9 @@ Out of scope: a compromised host, a malicious operator, and kernel 0-days (see "
 | Exhaust memory | 256 MB limit with swap disabled | a 512 MB allocation is OOM-killed; the sandbox survives |
 | Hog the CPU | 0.5 CPU quota | set in the container config (not load-tested) |
 | Mine coins, attack other hosts, exfiltrate | No network interface at all (`NetworkMode: none`) | only loopback has an address; an outbound request fails |
-| Reach the Docker daemon | The socket is never mounted into a sandbox | `/var/run/docker.sock` does not exist inside |
+| Escape the container to the host kernel | Optional gVisor (`SANDBOX_RUNTIME=runsc`): the sandbox talks to a user-space kernel; capabilities dropped, no-new-privileges, read-only root | `tests/docker.test.js`; `docs/runbooks/lab-nodes.md` |
+| Reach the Docker daemon | The socket is never mounted into a sandbox; with lab nodes it is not mounted into the gateway either | `/var/run/docker.sock` does not exist inside; `docker-compose.nodes.yml` |
+| Steal a terminal connection from a log | The terminal WebSocket URL carries a random single-use ticket valid for 30 s, not the bearer token | `tests/terminal.test.js` |
 | Linger forever | Reaper destroys sandboxes after 15 idle minutes or 30 minutes total; containers are labelled and orphans are removed at startup | unit tests on the sweep; shutdown leaves zero containers |
 | Hang a verification | Checks run with a 10 s timeout | a `sleep 30` check is cut off |
 
@@ -80,7 +82,7 @@ Auth is a bearer token in `localStorage`, never a cookie, so there is no CSRF su
 These are real and unfixed. Read them before putting this in front of untrusted users.
 
 1. **PTY mode has no isolation.** `SANDBOX_MODE=pty` runs a shell as the gateway's own OS user. A student can read anything that user can, including the gateway's environment via `/proc`, and so the JWT secret. It is for local development and demos. The Render blueprint and the Kubernetes manifests use it because neither can start sibling containers; treat those deployments as demos.
-2. **The gateway holds the Docker socket.** In Docker mode the gateway can do anything on the host. A remote-code-execution bug in the gateway is a host compromise. Mitigations not done here: a socket proxy that only allows container create/exec/remove, or rootless Docker.
+2. **Whoever holds the Docker socket can do anything on that host.** With lab nodes (`docker-compose.nodes.yml`, `SANDBOX_MODE=remote`) the socket belongs to the lab node agent only; the internet-facing gateway has none. The agent is reachable only on a private network and only with `NODE_TOKEN`, so a leaked token is host-level access to lab servers: keep it out of logs, rotate it with the gateway, never publish port 7000. In the single-process Docker mode (`SANDBOX_MODE=docker`) the gateway still holds the socket and a remote-code-execution bug in it is a host compromise.
 3. **Shared kernel.** Containers are not VMs. A kernel exploit escapes them. gVisor or Firecracker would close this.
 4. **The token is in the WebSocket URL**, because browsers cannot set headers on a WebSocket. It can land in proxy access logs. A short-lived, single-use ticket would be better.
 5. **Single process, single file.** Sessions, rate-limit counters and the data store live in one gateway process. There is no failover, and a second replica would not share state.

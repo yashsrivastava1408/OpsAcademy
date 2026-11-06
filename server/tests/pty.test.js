@@ -10,6 +10,7 @@ const pty = require('../services/ptyService');
 const { createManager } = require('../services/sandboxManager');
 const telemetryService = require('../services/telemetryService');
 const { waitFor } = require('./helpers');
+const { createMemoryRepos, setRepos } = require('../repositories');
 
 const ids = [];
 function newId() {
@@ -130,12 +131,20 @@ test('destroy kills the shell and removes its directory', async () => {
   expect(await pty.attach(id)).toBeNull();
 });
 
+/** The registry needs the owner to exist. */
+async function userOne() {
+  const repos = setRepos(createMemoryRepos());
+  await repos.users.create({ id: 'user-1', name: 'User 1', guest: true, createdAt: new Date().toISOString() });
+}
+
 test('typing exit ends the session', async () => {
+  await userOne();
+  await userOne();
   const manager = createManager({ engine: pty, pool: { enabled: false } });
   const session = await manager.createSession('user-1');
   const terminal = await manager.attach(session.sessionId);
   terminal.write('exit\r');
-  await waitFor(() => manager.getSession(session.sessionId) === null);
+  await waitFor(async () => await manager.getSession(session.sessionId) === null);
 });
 
 test('a command that hangs is cut off by the timeout', async () => {
@@ -159,6 +168,7 @@ test('cleanupOrphans removes directories from a previous process only', async ()
 });
 
 test('telemetry lists the files and directories the student created', async () => {
+  await userOne();
   const manager = createManager({ engine: pty, pool: { enabled: false } });
   const session = await manager.createSession('user-1');
   await manager.exec(session.sessionId, 'mkdir -p webapp/src && touch webapp/src/index.js notes.txt Makefile && mkdir .git');

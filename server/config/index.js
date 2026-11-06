@@ -47,6 +47,11 @@ if (isProd && !legacyAuth && !(process.env.SUPABASE_URL && process.env.SUPABASE_
   throw new Error('LEGACY_AUTH=off needs SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (nothing else can sign users in)');
 }
 
+if (isProd && (process.env.SANDBOX_MODE === 'remote' || process.env.LAB_NODE === 'on') && (process.env.NODE_TOKEN || '').length < 32) {
+  // The token is the only thing standing between the internet and a shell on a lab server.
+  throw new Error('NODE_TOKEN (at least 32 characters) must be set when NODE_ENV=production and lab nodes are used');
+}
+
 const config = {
   env,
   isProd,
@@ -55,6 +60,26 @@ const config = {
 
   // 'all' = HTTP API + WebSocket terminal | 'api' = HTTP API only | 'terminal' = WebSocket terminal only
   serviceRole: (process.env.SERVICE_ROLE || 'all').toLowerCase(),
+
+  // Lab nodes (ADR 0005). The gateway (SANDBOX_MODE=remote) and each agent share NODE_TOKEN.
+  node: {
+    token: process.env.NODE_TOKEN || null,
+    port: int('NODE_PORT', 7000),
+    baseUrl: process.env.NODE_BASE_URL || `http://localhost:${int('NODE_PORT', 7000)}`,
+    capacity: int('NODE_CAPACITY', 50),
+    engine: (process.env.NODE_ENGINE || 'docker').toLowerCase(), // what the agent runs sandboxes with
+    gatewayUrl: process.env.GATEWAY_URL || null, // where the agent sends heartbeats
+    heartbeatMs: int('NODE_HEARTBEAT_MS', 10 * 1000),
+    healthyMs: int('NODE_HEALTHY_MS', 30 * 1000), // a node unseen for longer is not used
+    unreachableMs: int('NODE_UNREACHABLE_MS', 5 * 60 * 1000), // after this, its sessions are dropped
+  },
+
+  // Terminal sockets may still authenticate with ?token=<JWT> (older clients). TERMINAL_TOKEN_AUTH=off
+  // allows only single-use tickets from POST /api/sandbox/:id/terminal-ticket.
+  terminalTokenAuth: process.env.TERMINAL_TOKEN_AUTH !== 'off',
+
+  // Which lab node this process's sandboxes run on. One gateway running its own sandboxes is one node.
+  nodeId: process.env.NODE_ID || 'local',
 
   // 'pty' = local shell via node-pty | 'docker' = Docker containers via dockerode
   sandboxMode: process.env.SANDBOX_MODE || 'pty',
@@ -152,6 +177,9 @@ const config = {
     // 'none' = no network at all | 'internal' = per-session bridge with no route out
     // | 'bridge' = outbound internet allowed (only for labs that need it).
     dockerNetworkMode: process.env.SANDBOX_NETWORK || 'none',
+    // OCI runtime for sandbox containers, e.g. "runsc" for gVisor (a user-space kernel between the sandbox and the host).
+    // Unset = Docker's default runtime (runc). See docs/runbooks/lab-nodes.md.
+    dockerRuntime: process.env.SANDBOX_RUNTIME || null,
     dockerImage: process.env.SANDBOX_IMAGE || 'opsacademy-sandbox:latest',
     dockerSeccompProfile: process.env.SANDBOX_SECCOMP_PROFILE || null,
     sandboxesDir: process.env.SANDBOXES_DIR || path.join(__dirname, '..', 'sandboxes'),

@@ -21,6 +21,7 @@ process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
 const units = require('../lib/units');
 const { verifyStep } = require('../routes/labRoutes');
 const { createManager } = require('../services/sandboxManager');
+const { createMemoryRepos, setRepos } = require('../repositories');
 
 // Command-line programs a lab might call for. Only these are checked, because
 // backticked text in tasks also contains file contents (nginx directives,
@@ -66,6 +67,9 @@ function requiredPrograms(step) {
 }
 
 async function main() {
+  // These checks use throwaway in-memory records, never a real database, and sessions need an existing owner.
+  const repos = setRepos(createMemoryRepos());
+  await repos.users.create({ id: 'audit', name: 'Audit', guest: true, createdAt: new Date().toISOString() });
   const manager = createManager({ pool: { enabled: false }, limits: { maxPerUser: 1000, maxTotal: 1000 } });
   await manager.init();
   const mode = manager.getMode();

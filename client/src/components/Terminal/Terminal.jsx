@@ -208,8 +208,11 @@ const Terminal = forwardRef(function Terminal({ sessionId, onDisconnect, onStart
       let url;
       try {
         url = await getTerminalWsUrl(sessionId);
-      } catch {
-        if (!cancelled) reconnect();
+      } catch (err) {
+        if (cancelled) return;
+        // An answer from the server (the sandbox is gone or is not ours) ends the session; no answer means keep trying.
+        if (err.response && (err.response.status === 404 || err.response.status === 403)) sessionOver('Session closed.');
+        else reconnect();
         return;
       }
       if (cancelled) return;

@@ -56,9 +56,9 @@ async function prepareHint(req) {
   const tier = Number.isInteger(requested) && requested >= 1 ? Math.min(requested, unlocked) : unlocked;
 
   const manager = getManager();
-  const ownsSession = body.sessionId && manager.isOwner(body.sessionId, req.user.id);
+  const ownsSession = body.sessionId && (await manager.isOwner(body.sessionId, req.user.id));
   const commandHistory = ownsSession
-    ? manager.getHistory(body.sessionId).slice(-HISTORY_FOR_HINT).map((entry) => entry.command)
+    ? (await manager.getHistory(body.sessionId)).slice(-HISTORY_FOR_HINT).map((entry) => entry.command)
     : [];
   const telemetry = ownsSession ? await telemetryService.capture(body.sessionId) : null;
 

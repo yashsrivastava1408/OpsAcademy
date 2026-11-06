@@ -28,6 +28,8 @@ function createMemoryRepos() {
   const invites = []; // { collegeId, sectionId, email, role }
   const identities = new Map(); // `${provider}:${subject}` -> userId
   const rateHits = new Map(); // key -> { hits, resetAt }
+  const nodes = new Map(); // nodeId -> node
+  const tickets = new Map(); // hash -> { sessionId, userId, expiresAt }
   let nextId = 1;
   const locks = new Map(); // userId -> tail promise (serialises progress.mutate)
 
@@ -278,6 +280,40 @@ function createMemoryRepos() {
       },
     },
 
+    nodes: {
+      /** Create or refresh a node from its heartbeat; stamps last-seen with the server clock. */
+      async heartbeat({ nodeId, baseUrl, capacity, running = 0, draining = false, version = null }) {
+        nodes.set(nodeId, { nodeId, baseUrl, capacity, running, draining, version, lastSeenAt: Date.now() });
+      },
+      async get(nodeId) { return clone(nodes.get(nodeId) || null); },
+      async list() { return [...nodes.values()].map(clone); },
+      /** Nodes seen within `maxAgeMs` that are not draining. */
+      async listHealthy(maxAgeMs) {
+        const cutoff = Date.now() - maxAgeMs;
+        return [...nodes.values()].filter((n) => n.lastSeenAt >= cutoff && !n.draining).map(clone);
+      },
+      async remove(nodeId) { return nodes.delete(nodeId); },
+    },
+
+    tickets: {
+      async create({ hash, sessionId, userId, expiresAt }) {
+        if (!sessions.has(sessionId)) throw new RepoError('session_missing', 'Session does not exist');
+        tickets.set(hash, { sessionId, userId, expiresAt });
+      },
+      /** Single use: returns the ticket's session and user once, then never again. */
+      async redeem(hash) {
+        const t = tickets.get(hash);
+        if (!t) return null;
+        tickets.delete(hash);
+        return t.expiresAt > Date.now() ? { sessionId: t.sessionId, userId: t.userId } : null;
+      },
+      async prune() {
+        let n = 0;
+        for (const [hash, t] of tickets) if (t.expiresAt <= Date.now()) { tickets.delete(hash); n += 1; }
+        return n;
+      },
+    },
+
     audit: {
       async record({ actorId = null, actorRole = null, action, entityType = null, entityId = null, collegeId = null, ip = null, meta = {} }) {
         auditRows.push({ id: auditRows.length + 1, at: new Date().toISOString(), actorId, actorRole, action, entityType, entityId, collegeId, ip, meta: clone(meta) });
@@ -310,10 +346,50 @@ function createMemoryRepos() {
     sessions: {
       async upsert(session) {
         requireUser(session.userId);
-        sessions.set(session.sessionId, clone(session));
+        const before = sessions.get(session.sessionId);
+        const next = clone(session);
+        if (before) { // like the database: a stale writer cannot move activity or strikes backwards
+          next.lastActiveAt = Math.max(before.lastActiveAt, next.lastActiveAt);
+          next.strikes = Math.max(before.strikes || 0, next.strikes || 0);
+        }
+        sessions.set(session.sessionId, next);
       },
-      async delete(sessionId) { return sessions.delete(sessionId); },
+      async delete(sessionId) {
+        for (const [hash, t] of tickets) if (t.sessionId === sessionId) tickets.delete(hash);
+        return sessions.delete(sessionId);
+      },
       async all() { return [...sessions.values()].map(clone); },
+      async get(sessionId) { return clone(sessions.get(sessionId) || null); },
+      async listByUser(userId) { return [...sessions.values()].filter((s) => s.userId === userId).map(clone); },
+      async count() { return sessions.size; },
+      async countByUser(userId) { return [...sessions.values()].filter((s) => s.userId === userId).length; },
+      async listByNode(nodeId) { return [...sessions.values()].filter((s) => s.nodeId === nodeId).map(clone); },
+      /** Record activity; never moves the clock backwards. */
+      async touch(sessionId, atMs = Date.now()) {
+        const s = sessions.get(sessionId);
+        if (s && atMs > s.lastActiveAt) s.lastActiveAt = atMs;
+      },
+      /** Append to the capped command history (oldest dropped). */
+      async appendCommand(sessionId, entry, cap) {
+        const s = sessions.get(sessionId);
+        if (!s) return;
+        s.history = [...(s.history || []), entry].slice(-cap);
+      },
+      async clearHistory(sessionId) {
+        const s = sessions.get(sessionId);
+        if (s) s.history = [];
+      },
+      /** @returns the new strike count, or 0 when the session is gone */
+      async addStrike(sessionId) {
+        const s = sessions.get(sessionId);
+        if (!s) return 0;
+        s.strikes = (s.strikes || 0) + 1;
+        return s.strikes;
+      },
+      /** Sessions created before `createdBefore` or idle since before `activeBefore` (epoch ms). */
+      async listExpired({ createdBefore, activeBefore }) {
+        return [...sessions.values()].filter((s) => s.createdAt < createdBefore || s.lastActiveAt < activeBefore).map(clone);
+      },
     },
 
     jobs: {

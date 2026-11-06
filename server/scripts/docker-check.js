@@ -17,6 +17,7 @@ process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'warn';
 const config = require('../config');
 const docker = require('../services/dockerService');
 const { createManager } = require('../services/sandboxManager');
+const { createMemoryRepos, setRepos } = require('../repositories');
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -139,6 +140,9 @@ async function main() {
   check('destroy removes the container', !left && info.containerId.length === 12);
 
   // ── Manager with a pre-warmed pool ──────────────────────────
+  // These checks use throwaway in-memory records, never a real database, and sessions need an existing owner.
+  const repos = setRepos(createMemoryRepos());
+  await repos.users.create({ id: 'check-user', name: 'Check', guest: true, createdAt: new Date().toISOString() });
   const manager = createManager({ engine: docker, pool: { enabled: true, size: 2 } });
   await manager.init();
   start = process.hrtime.bigint();

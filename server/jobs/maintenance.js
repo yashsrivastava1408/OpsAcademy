@@ -3,6 +3,7 @@
  * several workers (or the gateway and a worker) never does the same job twice.
  */
 
+const config = require('../config');
 const logger = require('../lib/logger');
 const { getRepos } = require('../repositories');
 const userService = require('../services/userService');
@@ -27,10 +28,31 @@ async function pruneRateLimits() {
   return getRepos().rateLimits.prune();
 }
 
+/** Drop expired terminal tickets. */
+async function pruneTickets() {
+  return require('../services/ticketService').prune();
+}
+
+/** End sandboxes past their age or idle limit, wherever they run (one worker at a time, under the lock). */
+async function reapSandboxes() {
+  return require('../services/sandboxManager').getManager().sweep();
+}
+
+/** Compare the session registry with what the lab nodes run, and repair the difference. */
+async function reconcileLabNodes() {
+  return require('../services/reconcileService').reconcileNodes();
+}
+
 const JOBS = [
   { name: 'prune-expired', everyMs: 60 * MINUTE, run: pruneExpired },
   { name: 'refresh-leaderboards', everyMs: MINUTE, run: refreshLeaderboards },
   { name: 'prune-rate-limits', everyMs: 10 * MINUTE, run: pruneRateLimits },
+  { name: 'prune-tickets', everyMs: 5 * MINUTE, run: pruneTickets },
+  // Only meaningful when sandboxes live on lab nodes; a gateway running its own sandboxes reaps them itself.
+  ...(config.sandboxMode === 'remote' ? [
+    { name: 'reap-sandboxes', everyMs: MINUTE, run: reapSandboxes },
+    { name: 'reconcile-lab-nodes', everyMs: 2 * MINUTE, run: reconcileLabNodes },
+  ] : []),
 ];
 
 /** Run one job under its lock. Errors are logged, never thrown, so one bad job cannot stop the others. */
@@ -63,4 +85,4 @@ function startJobs(jobs = JOBS) {
   return () => timers.forEach((t) => clearInterval(t));
 }
 
-module.exports = { JOBS, pruneExpired, pruneRateLimits, refreshLeaderboards, runJob, startJobs };
+module.exports = { JOBS, pruneExpired, pruneRateLimits, pruneTickets, reapSandboxes, reconcileLabNodes, refreshLeaderboards, runJob, startJobs };

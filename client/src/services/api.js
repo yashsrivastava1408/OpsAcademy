@@ -186,6 +186,10 @@ export const sandboxApi = {
   status: (sessionId) =>
     api.get(`/sandbox/${sessionId}/status`),
 
+  // A single-use ticket for the terminal WebSocket (valid 30 s), so the bearer token never sits in a URL.
+  terminalTicket: (sessionId) =>
+    api.post(`/sandbox/${sessionId}/terminal-ticket`),
+
   getTelemetry: (sessionId) =>
     api.get(`/sandbox/${sessionId}/telemetry`),
 
@@ -344,11 +348,13 @@ export const certificateApi = {
 };
 
 // ── WebSocket URL helper ─────────────────────────────────────
-// Browsers cannot send headers on a WebSocket, so the token goes in the URL.
+// Browsers cannot send headers on a WebSocket, so the URL carries a ticket: random, single-use and
+// valid for 30 seconds. Every (re)connection asks for a new one.
 export async function getTerminalWsUrl(sessionId) {
-  const token = await ensureIdentity();
+  const res = await sandboxApi.terminalTicket(sessionId);
+  const { ticket, wsPath } = res.data.data;
   const base = wsBase(API_BASE_URL, window.location.origin);
-  return `${base}/api/terminal?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`;
+  return `${base}${wsPath}?ticket=${encodeURIComponent(ticket)}`;
 }
 
 export default api;

@@ -58,7 +58,7 @@ router.post('/:unitId/verify', requireAuth, async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Practice lab not found' });
     }
 
-    if (!manager.isOwner(sessionId, req.user.id)) {
+    if (!(await manager.isOwner(sessionId, req.user.id))) {
       return res.status(404).json({ success: false, error: 'Active sandbox session not found' });
     }
 

@@ -99,7 +99,7 @@ function create(engineId, { labId } = {}) {
     },
   });
 
-  const sandbox = { pty: ptyProcess, cwd: studentHome, sessionDir, alive: true, exitListeners: [], scrollback: '', portBlock, labEnv };
+  const sandbox = { pty: ptyProcess, createdAt: Date.now(), cwd: studentHome, sessionDir, alive: true, exitListeners: [], scrollback: '', portBlock, labEnv };
   // Keep the tail of the output so a terminal that attaches later (a
   // pre-warmed shell, or a page reload) is shown the prompt and recent lines.
   ptyProcess.onData((data) => {
@@ -269,4 +269,9 @@ function cleanupOrphans() {
   return Promise.resolve({ directories: removed });
 }
 
-module.exports = { name: 'pty', create, destroy, isAlive, onExit, exec, attach, reset, info, cleanupOrphans, mapStudentHome, labEnvOf };
+/** Every sandbox this engine knows, for the lab node agent's inventory. */
+function list() {
+  return [...sandboxes].map(([engineId, s]) => ({ engineId, alive: s.alive, createdAt: s.createdAt || null }));
+}
+
+module.exports = { name: 'pty', create, destroy, list, isAlive, onExit, exec, attach, reset, info, cleanupOrphans, mapStudentHome, labEnvOf };
