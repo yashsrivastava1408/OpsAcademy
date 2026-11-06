@@ -102,3 +102,8 @@
   margin-top: 4px;
   border-radius: 9999px;
 }
+
+.auth-sso {
+  display: grid;
+  gap: 0.5rem;
+}

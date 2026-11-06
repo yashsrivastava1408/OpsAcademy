@@ -21,6 +21,7 @@ const pages = {
   admin: () => import('./pages/AdminPage'),
   resetPassword: () => import('./pages/ResetPasswordPage'),
   verifyEmail: () => import('./pages/VerifyEmailPage'),
+  authCallback: () => import('./pages/AuthCallbackPage'),
   labTransition: () => import('./pages/LabTransitionPage'),
 };
 
@@ -38,6 +39,7 @@ const ProfilePage = lazy(pages.profile);
 const AdminPage = lazy(pages.admin);
 const ResetPasswordPage = lazy(pages.resetPassword);
 const VerifyEmailPage = lazy(pages.verifyEmail);
+const AuthCallbackPage = lazy(pages.authCallback);
 const LabTransitionPage = lazy(pages.labTransition);
 
 /** The chunk for a URL, so it can start downloading before React renders. */
@@ -57,6 +59,7 @@ function pageFor(pathname) {
   if (pathname.startsWith('/portal/lab') || pathname.startsWith('/enter-lab')) return pages.labTransition;
   if (pathname.startsWith('/reset-password')) return pages.resetPassword;
   if (pathname.startsWith('/verify-email')) return pages.verifyEmail;
+  if (pathname.startsWith('/auth/callback')) return pages.authCallback;
   return null;
 }
 
@@ -125,6 +128,7 @@ function AppRoutes() {
           <Route path="/unit/:unitId/casestudy" element={<CaseStudyPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/u/:slug" element={<ProfilePage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/portal/lab" element={<LabTransitionPage />} />

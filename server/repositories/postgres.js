@@ -173,6 +173,13 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
         const { rows } = await q(`update users set ${sets.join(', ')} where id = $1 returning *`, params);
         return rows[0] ? userFromRow(rows[0]) : null;
       },
+      async listForAuthMigration() {
+        const { rows } = await q(
+          `select * from users u where not u.guest and u.email is not null and u.password_hash is not null
+             and not exists (select 1 from identities i where i.user_id = u.id and i.provider = 'supabase') order by u.created_at`
+        );
+        return rows.map(userFromRow);
+      },
       async namesByIds(ids) {
         if (ids.length === 0) return {};
         const { rows } = await q('select id, name from users where id = any($1::text[])', [ids]);
@@ -316,6 +323,20 @@ function createPostgresRepos({ connectionString, pool: injected = null, max = 10
       async listByCollege(collegeId) {
         const { rows } = await q('select * from sections where college_id = $1 order by name', [collegeId]);
         return rows.map(sectionRow);
+      },
+    },
+
+    identities: {
+      async link({ provider = 'supabase', subject, userId }) {
+        await q(
+          `insert into identities (provider, subject, user_id) values ($1,$2,$3)
+           on conflict (provider, subject) do update set user_id = excluded.user_id`,
+          [provider, subject, userId]
+        );
+      },
+      async getUserId(provider, subject) {
+        const { rows } = await q('select user_id from identities where provider = $1 and subject = $2', [provider, subject]);
+        return rows[0] ? rows[0].user_id : null;
       },
     },
 

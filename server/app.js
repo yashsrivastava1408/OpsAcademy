@@ -50,7 +50,8 @@ function createApp() {
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   // maxAge lets the browser remember the preflight answer. Without it almost
   // every API call from the web app is preceded by an extra OPTIONS request.
-  app.use(cors({ origin: corsOrigin, maxAge: PREFLIGHT_MAX_AGE_SECONDS }));
+  // Credentials (the refresh cookie) are only allowed for origins listed in CORS_ORIGINS.
+  app.use(cors({ origin: corsOrigin, credentials: Boolean(config.corsOrigins), maxAge: PREFLIGHT_MAX_AGE_SECONDS }));
   // Lesson content is 10-25 KB of JSON per unit; gzip cuts it to about a quarter.
   app.use(compression());
   app.use(express.json({ limit: '100kb' }));

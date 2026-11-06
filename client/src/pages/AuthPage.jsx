@@ -3,6 +3,14 @@ import { useNavigate, Navigate, Link } from 'react-router-dom';
 import { Loader, LogIn, UserPlus } from 'lucide-react';
 import useAuth from '../hooks/useAuth';
 import { authApi, errorMessage } from '../services/api';
+import { isSupabaseMode } from '../lib/authMode';
+import { sendPasswordReset, signInWithProvider } from '../services/supabaseIdentity';
+
+// College single sign-on: VITE_SSO_PROVIDERS=google,azure (Supabase provider ids). Needs each provider enabled in Supabase.
+const SSO_LABELS = { google: 'Google Workspace', azure: 'Microsoft' };
+const SSO_PROVIDERS = isSupabaseMode
+  ? (import.meta.env.VITE_SSO_PROVIDERS || '').split(',').map((p) => p.trim()).filter((p) => SSO_LABELS[p])
+  : [];
 import './AuthPage.css';
 
 export default function AuthPage() {
@@ -11,11 +19,24 @@ export default function AuthPage() {
 
   const [mode, setMode] = useState('register'); // register | login | forgot
   const [resetNotice, setResetNotice] = useState(null);
+  const [confirmNotice, setConfirmNotice] = useState(null);
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (isRegistered) return <Navigate to="/dashboard" replace />;
+
+  if (confirmNotice) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card glass-card animate-scale-in" role="status">
+          <h1 className="auth-title">Check your email</h1>
+          <p className="auth-lead">We sent a confirmation link to <span className="mono">{confirmNotice}</span>. Open it to finish creating your account. Anything you have done as a guest stays with you.</p>
+          <button type="button" className="auth-link" onClick={() => { setConfirmNotice(null); setMode('login'); }}>Back to log in</button>
+        </div>
+      </div>
+    );
+  }
 
   const update = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
@@ -25,12 +46,24 @@ export default function AuthPage() {
     setError(null);
     try {
       if (mode === 'forgot') {
-        const res = await authApi.forgotPassword(form.email);
-        setResetNotice(res.data);
+        if (isSupabaseMode) {
+          await sendPasswordReset(form.email);
+          setResetNotice({ message: 'If an account uses that email address, a reset link is on its way.', emailConfigured: true });
+        } else {
+          const res = await authApi.forgotPassword(form.email);
+          setResetNotice(res.data);
+        }
         return;
       }
-      if (mode === 'register') await register(form.name, form.email, form.password);
-      else await login(form.email, form.password);
+      if (mode === 'register') {
+        const result = await register(form.name, form.email, form.password);
+        if (result?.needsConfirmation) {
+          setConfirmNotice(form.email);
+          return;
+        }
+      } else {
+        await login(form.email, form.password);
+      }
       navigate('/dashboard');
     } catch (err) {
       setError(errorMessage(err, 'Could not reach the server. Please try again.'));
@@ -98,6 +131,22 @@ export default function AuthPage() {
                 <Link to={resetNotice.devResetLink.replace(/^https?:\/\/[^/]+/, '')}>choose a new password</Link>
               </p>
             )}
+          </div>
+        )}
+
+        {mode !== 'forgot' && SSO_PROVIDERS.length > 0 && (
+          <div className="auth-sso">
+            {SSO_PROVIDERS.map((provider) => (
+              <button
+                key={provider}
+                type="button"
+                className="btn btn-secondary auth-submit"
+                disabled={submitting}
+                onClick={() => signInWithProvider(provider).catch((err) => setError(errorMessage(err, 'Could not start single sign-on.')))}
+              >
+                Continue with {SSO_LABELS[provider]}
+              </button>
+            ))}
           </div>
         )}
 

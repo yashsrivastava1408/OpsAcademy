@@ -9,9 +9,17 @@ const rateLimit = require('../middleware/rateLimit');
 const config = require('../config');
 const { getMailer } = require('../lib/mailer');
 const userService = require('../services/userService');
+const { readCookie, serializeCookie } = require('../lib/cookies');
+const supabaseApi = require('../lib/supabaseApi');
 
 const router = express.Router();
 const authLimiter = rateLimit.auth();
+
+/** Endpoints of the old sign-in. They disappear (404) once LEGACY_AUTH=off. */
+function legacyOnly(req, res, next) {
+  if (config.legacyAuth) return next();
+  res.status(404).json({ success: false, error: 'Not found' });
+}
 
 function session(user) {
   return { success: true, token: signToken(user), user: userService.publicUser(user) };
@@ -45,7 +53,7 @@ async function sendVerification(user) {
  * POST /api/auth/guest
  * Issue an anonymous identity so a visitor can start labs without signing up
  */
-router.post('/guest', rateLimit.guest(), asyncHandler(async (req, res) => {
+router.post('/guest', legacyOnly, rateLimit.guest(), asyncHandler(async (req, res) => {
   res.status(201).json(session(await userService.createGuest()));
 }));
 
@@ -53,7 +61,7 @@ router.post('/guest', rateLimit.guest(), asyncHandler(async (req, res) => {
  * POST /api/auth/register
  * Body: { name, email, password }. A guest token upgrades that guest in place.
  */
-router.post('/register', authLimiter, optionalAuth, async (req, res, next) => {
+router.post('/register', legacyOnly, authLimiter, optionalAuth, async (req, res, next) => {
   try {
     const guestId = req.user && req.user.guest ? req.user.id : null;
     const user = await userService.register(req.body || {}, guestId);
@@ -67,7 +75,7 @@ router.post('/register', authLimiter, optionalAuth, async (req, res, next) => {
 /**
  * POST /api/auth/login
  */
-router.post('/login', authLimiter, async (req, res, next) => {
+router.post('/login', legacyOnly, authLimiter, async (req, res, next) => {
   try {
     const user = await userService.login(req.body || {});
     res.json(session(user));
@@ -75,6 +83,61 @@ router.post('/login', authLimiter, async (req, res, next) => {
     next(err);
   }
 });
+
+// ── Cookie session for Supabase sign-in ─────────────────────────
+// The browser holds the access token in memory only. The long-lived refresh token is kept in an
+// HttpOnly cookie that scripts cannot read; these endpoints store it, rotate it and clear it.
+
+const COOKIE_PATH = '/api/auth';
+const cookieOptions = (maxAgeSeconds) => ({ ...config.authCookie, maxAgeSeconds, path: COOKIE_PATH });
+
+/** A custom header cannot be sent cross-site without a CORS preflight, which only allowed origins pass. */
+function requireAppHeader(req, res, next) {
+  if (req.get('x-requested-with') !== 'opsacademy') {
+    return res.status(400).json({ success: false, error: 'Missing X-Requested-With header' });
+  }
+  next();
+}
+
+async function startCookieSession(res, refreshToken) {
+  const session = await supabaseApi.refreshSession(refreshToken);
+  if (!session) return null;
+  res.set('Set-Cookie', serializeCookie(config.authCookie.name, session.refreshToken, cookieOptions(config.authCookie.maxAgeSeconds)));
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, accessToken: session.accessToken, expiresAt: session.expiresAt });
+  return session;
+}
+
+/** POST /api/auth/cookie — right after a Supabase sign-in: hand over the refresh token, keep only the cookie. */
+router.post('/cookie', authLimiter, requireAppHeader, asyncHandler(async (req, res) => {
+  const { refreshToken } = req.body || {};
+  if (typeof refreshToken !== 'string' || !refreshToken) {
+    return res.status(400).json({ success: false, error: 'refreshToken is required' });
+  }
+  if (!(await startCookieSession(res, refreshToken))) {
+    res.status(401).json({ success: false, error: 'That session is no longer valid' });
+  }
+}));
+
+/** POST /api/auth/refresh — new access token from the cookie; the refresh token rotates every time. */
+router.post('/refresh', authLimiter, requireAppHeader, asyncHandler(async (req, res) => {
+  const refreshToken = readCookie(req, config.authCookie.name);
+  if (!refreshToken) return res.status(401).json({ success: false, error: 'No session' });
+  if (!(await startCookieSession(res, refreshToken))) {
+    res.set('Set-Cookie', serializeCookie(config.authCookie.name, '', cookieOptions(0)));
+    res.status(401).json({ success: false, error: 'Session expired' });
+  }
+}));
+
+/** POST /api/auth/logout — clear the cookie and revoke the session ({ scope: 'global' } signs out every device). */
+router.post('/logout', authLimiter, requireAppHeader, asyncHandler(async (req, res) => {
+  const header = req.headers.authorization;
+  if (header && header.startsWith('Bearer ') && config.supabaseUrl) {
+    await supabaseApi.signOut(header.slice('Bearer '.length).trim(), req.body && req.body.scope);
+  }
+  res.set('Set-Cookie', serializeCookie(config.authCookie.name, '', cookieOptions(0)));
+  res.json({ success: true });
+}));
 
 /**
  * POST /api/auth/session
@@ -104,7 +167,7 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
  * POST /api/auth/forgot
  * Body: { email }. Always answers the same, whether or not the account exists.
  */
-router.post('/forgot', authLimiter, async (req, res, next) => {
+router.post('/forgot', legacyOnly, authLimiter, async (req, res, next) => {
   try {
     const mailer = getMailer();
     const found = await userService.requestPasswordReset(req.body && req.body.email);
@@ -133,7 +196,7 @@ router.post('/forgot', authLimiter, async (req, res, next) => {
  * POST /api/auth/reset
  * Body: { token, password }. Signs the user in with the new password.
  */
-router.post('/reset', authLimiter, async (req, res, next) => {
+router.post('/reset', legacyOnly, authLimiter, async (req, res, next) => {
   try {
     const { token, password } = req.body || {};
     const user = await userService.resetPassword(token, password);
@@ -148,7 +211,7 @@ router.post('/reset', authLimiter, async (req, res, next) => {
  * POST /api/auth/verify-email
  * Body: { token }
  */
-router.post('/verify-email', authLimiter, async (req, res, next) => {
+router.post('/verify-email', legacyOnly, authLimiter, async (req, res, next) => {
   try {
     const user = await userService.verifyEmail(req.body && req.body.token);
     res.json({ success: true, user: userService.publicUser(user) });
@@ -161,7 +224,7 @@ router.post('/verify-email', authLimiter, async (req, res, next) => {
  * POST /api/auth/resend-verification
  * Send the signed-in account a new confirmation link
  */
-router.post('/resend-verification', authLimiter, requireAuth, requireRegistered, async (req, res, next) => {
+router.post('/resend-verification', legacyOnly, authLimiter, requireAuth, requireRegistered, async (req, res, next) => {
   try {
     const user = await userService.getById(req.user.id);
     if (!user) return res.status(401).json({ success: false, error: 'Unauthorized: account no longer exists' });

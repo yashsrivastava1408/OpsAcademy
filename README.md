@@ -42,7 +42,8 @@ Every unit has three modes:
 - **Accounts that hold up.** Guest progress moves to the account on sign-up; password reset and email confirmation by one-time link; a reset signs out every older session; an optional public profile page; a lab of the day with a small XP bonus.
 - **Works on a phone.** The lab switches between instructions and terminal on narrow screens.
 - **Operations built in.** Prometheus metrics, a Grafana dashboard, alert rules, liveness and readiness probes, structured logs, graceful shutdown.
-- **Operator page.** `/admin` shows running sandboxes, the warm pool, accounts and what is configured, and can stop a sandbox. It exists only when the server has an `ADMIN_TOKEN`.
+- **Operator page.** `/admin` shows running sandboxes, the warm pool, accounts and what is configured, and can stop a sandbox. Only a signed-in platform admin can open it (role in the database; first admin via `PLATFORM_ADMIN_EMAILS` or `npm run grant-role`).
+- **Colleges and roles.** Roles (student, trainer, placement officer, college admin, platform admin) come from the database, never the token. A college admin imports a roster from CSV (dry run first); invites turn into memberships when the confirmed email signs in. Every `/api/colleges/:id/*` route is limited to that college's members, and admin actions are written to an append-only audit log.
 
 ---
 
@@ -470,7 +471,9 @@ Optional gateway settings (all in `server/.env.example`):
 | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` | The gateway accepts Supabase Auth access tokens (verified locally against the project's JWKS). | Only gateway-issued tokens |
 | `RESEND_API_KEY`, `MAIL_FROM` | Password-reset and confirmation emails are really sent | Links are only written to the server log |
 | `APP_URL` | The web app's address, used to build the links in those emails | `CLIENT_URL`, else `http://localhost:5173` |
-| `ADMIN_TOKEN` | The operator page at `/admin` and the `/api/admin` endpoints | Those endpoints answer 404 |
+| `PLATFORM_ADMIN_EMAILS` | Comma-separated confirmed emails that are platform admins (the first operator) | Admins are only those granted with `npm run grant-role` |
+| `LEGACY_AUTH` | `off` completes the move to Supabase Auth: the gateway's own sign-in endpoints and tokens stop working ([runbook](docs/runbooks/auth-cutover.md)) | `on` |
+| `AUTH_COOKIE_SAMESITE` | `lax`, `strict` or `none` for the refresh-token cookie (`none` for a web app on a different site; needs HTTPS) | `lax` |
 | `METRICS_TOKEN` | A bearer token on `/metrics` | `/metrics` is open |
 | `DAILY_CHALLENGE=off` | Removes the lab of the day | It is on |
 

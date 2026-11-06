@@ -5,6 +5,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { getRepos } = require('../repositories');
+const { forgetIdentity } = require('../middleware/auth');
 
 const RESET_TTL_MS = 30 * 60 * 1000;
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -80,14 +81,38 @@ function getById(id) {
  */
 async function ensureSupabaseUser(identity) {
   const repos = getRepos();
-  const user = await repos.users.createIfAbsent({
-    id: identity.id,
-    name: identity.name,
-    email: identity.email ? identity.email.toLowerCase() : null,
-    guest: Boolean(identity.guest),
-    emailVerified: Boolean(identity.emailVerified),
-    createdAt: new Date().toISOString(),
-  });
+  const email = identity.email ? identity.email.toLowerCase() : null;
+  const linked = Boolean(identity.subject); // the token's Supabase id maps to an existing app user
+
+  let user = await repos.users.getById(identity.id);
+
+  // An account from the old sign-in, now reached through Supabase: same confirmed address, so same person.
+  if (!user && identity.emailVerified && email) {
+    const legacy = await repos.users.getByEmail(email);
+    if (legacy && !legacy.guest) {
+      await repos.identities.link({ provider: 'supabase', subject: identity.id, userId: legacy.id });
+      forgetIdentity(identity.id);
+      user = legacy.emailVerified ? legacy : await repos.users.update(legacy.id, { emailVerified: true });
+    }
+  }
+
+  if (!user) {
+    user = await repos.users.createIfAbsent({
+      id: identity.id,
+      name: identity.name,
+      email,
+      guest: Boolean(identity.guest),
+      emailVerified: Boolean(identity.emailVerified),
+      createdAt: new Date().toISOString(),
+    });
+  } else if (user.guest && !identity.guest && email && !linked) {
+    // A guest (anonymous Supabase user) who has added and confirmed an email: same id, so progress carries over.
+    user = await repos.users.update(user.id, {
+      guest: false, name: identity.name, email, emailVerified: Boolean(identity.emailVerified), registeredAt: new Date().toISOString(),
+    });
+  } else if (!user.emailVerified && identity.emailVerified && email && user.email === email) {
+    user = await repos.users.update(user.id, { emailVerified: true });
+  }
   await claimInvites(user);
   return user;
 }

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { KeyRound, Loader } from 'lucide-react';
 import { authApi, errorMessage, setIdentity } from '../services/api';
+import { isSupabaseMode } from '../lib/authMode';
+import { completePasswordReset } from '../services/supabaseIdentity';
 import './AuthPage.css';
 
 /** Opened from the emailed link: choose a new password and get signed in. */
@@ -18,8 +20,12 @@ export default function ResetPasswordPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await authApi.resetPassword(token, password);
-      setIdentity(res.data.token, res.data.user);
+      if (isSupabaseMode) {
+        await completePasswordReset(password);
+      } else {
+        const res = await authApi.resetPassword(token, password);
+        setIdentity(res.data.token, res.data.user);
+      }
       navigate('/dashboard');
     } catch (err) {
       setError(errorMessage(err, 'Could not reach the server. Please try again.'));
@@ -32,7 +38,7 @@ export default function ResetPasswordPage() {
     <div className="auth-page">
       <form className="auth-card glass-card animate-scale-in" onSubmit={submit}>
         <h1 className="auth-title"><KeyRound size={18} /> Choose a new password</h1>
-        {!token ? (
+        {!token && !isSupabaseMode ? (
           <p className="auth-error" role="alert">This link is incomplete. Open the link from your email again, or ask for a new one.</p>
         ) : (
           <>

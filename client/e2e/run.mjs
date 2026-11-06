@@ -79,6 +79,12 @@ try {
       DATA_DIR: path.join(scratch, 'data'),
       SANDBOXES_DIR: path.join(scratch, 'sandboxes'),
       LOG_LEVEL: 'warn',
+      // Never inherit a real database or Supabase project from the developer's server/.env:
+      // the browser tests create and delete accounts. Opt in to Postgres with E2E_DATABASE_URL.
+      DATABASE_URL: process.env.E2E_DATABASE_URL || '',
+      MIGRATION_DATABASE_URL: '',
+      SUPABASE_URL: '',
+      SUPABASE_PUBLISHABLE_KEY: '',
       PLATFORM_ADMIN_EMAILS: 'e2e-admin@example.com',
       ...extraGatewayEnv,
     },
