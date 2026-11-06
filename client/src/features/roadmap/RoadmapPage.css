@@ -1,14 +1,10 @@
-/* ═══════════════════════════════════════════════════════════════
-   OpsAcademy Roadmap Page — Senior Designer Approved Spec
-   Disciplined Dark Technical Workspace: #0B1220 bg, #111827 panels,
-   #263449 borders, #2563EB active states, #22C55E completion
-   ═══════════════════════════════════════════════════════════════ */
+/* Roadmap page: the landing page's light look. The stage cards are the shared .oa-card (see shared/styles/index.css). */
 
 .roadmap-page {
-  padding: 32px 0 80px;
+  padding: 40px 0 80px;
   min-height: calc(100vh - 64px);
-  background: var(--workspace-bg, #0B1220);
-  color: var(--workspace-text, #F8FAFC);
+  background: var(--bg-alternate);
+  color: var(--text-navy);
 }
 
 .roadmap-page .container {
@@ -16,101 +12,78 @@
   padding: 0 32px;
 }
 
-/* ── Hero Banner (Disciplined Technical Header) ──────────────── */
 .roadmap-hero-banner {
-  padding: 2.25rem;
-  background: var(--workspace-surface, #111827);
-  border: 1px solid var(--workspace-border, #263449);
-  border-radius: var(--radius-panel, 20px);
-  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4);
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 2rem;
   margin-bottom: 2.5rem;
-  position: relative;
-  overflow: hidden;
+  padding: 2.25rem;
+  background: #ffffff;
+  border: 1.5px solid var(--border-light);
+  border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
 }
 
-.hero-banner-content {
-  max-width: 800px;
-  position: relative;
-  z-index: 1;
-}
+.hero-banner-content { max-width: 800px; }
 
 .banner-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.35rem 0.85rem;
-  background: rgba(37, 99, 235, 0.12);
-  border: 1px solid rgba(37, 99, 235, 0.35);
-  border-radius: 9999px;
-  color: #60A5FA;
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   margin-bottom: 0.85rem;
+  padding: 0.35rem 0.85rem;
+  background: var(--primary-blue-light);
+  border: 1px solid var(--primary-blue-border);
+  border-radius: 9999px;
+  color: var(--primary-blue);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .banner-title {
+  margin: 0 0 0.8rem;
   font-size: 2.25rem;
   font-weight: 800;
-  color: #F8FAFC;
   line-height: 1.25;
-  margin: 0 0 0.8rem 0;
   letter-spacing: -0.02em;
+  color: #0f172a;
 }
 
 .banner-subtitle {
-  color: #94A3B8;
+  margin: 0 0 1.5rem;
   font-size: 1.05rem;
   line-height: 1.6;
-  margin: 0 0 1.5rem 0;
+  color: var(--text-slate);
 }
 
-.banner-stats-row {
-  display: flex;
-  gap: 0.85rem;
-  flex-wrap: wrap;
-}
+.banner-stats-row { display: flex; flex-wrap: wrap; gap: 0.85rem; }
 
 .banner-stat-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.95rem;
-  background: #1E293B;
-  border: 1px solid #263449;
+  background: #f1f5f9;
+  border: 1px solid var(--border-light);
   border-radius: 9999px;
-  color: #F1F5F9;
+  color: #334155;
   font-size: 0.84rem;
   font-weight: 600;
 }
 
-.text-cyan { color: #38BDF8; }
-.text-green { color: #22C55E; }
-.text-purple { color: #818CF8; }
+.text-cyan { color: #0891b2; }
+.text-green { color: #16a34a; }
+.text-purple { color: #7c3aed; }
 
-.hero-banner-action {
-  flex-shrink: 0;
-  position: relative;
-  z-index: 1;
-}
+.hero-banner-action { flex-shrink: 0; }
 
 @media (max-width: 900px) {
-  .roadmap-hero-banner {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 1.8rem;
-  }
-  .banner-title {
-    font-size: 1.8rem;
-  }
+  .roadmap-hero-banner { flex-direction: column; align-items: flex-start; padding: 1.5rem; }
+  .banner-title { font-size: 1.8rem; }
+  .roadmap-page .container { padding: 0 16px; }
 }
 
-.roadmap-main-deck {
-  width: 100%;
-}
+.roadmap-main-deck { width: 100%; }

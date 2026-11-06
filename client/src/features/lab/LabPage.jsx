@@ -25,7 +25,6 @@ import usePolling from '../../shared/hooks/usePolling';
 import useLabAvailability from './useLabAvailability';
 import SlotBanner from './SlotBanner';
 import { isReadOnly } from './access';
-import useAuth from '../auth/useAuth';
 import useProgress from '../../shared/hooks/useProgress';
 import './LabPage.css';
 
@@ -126,8 +125,7 @@ export default function LabPage() {
   const [startedAt, setStartedAt] = useState(null);
   const [closing, setClosing] = useState(null); // when the gateway will close the sandbox, in this browser's clock
   const progress = useProgress();
-  const { isRegistered } = useAuth();
-  const access = useLabAvailability(10000, isRegistered);
+  const access = useLabAvailability(10000);
   const readOnly = isReadOnly(access);
   const [verifyResult, setVerifyResult] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);

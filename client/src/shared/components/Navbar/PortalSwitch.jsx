@@ -27,16 +27,16 @@ export default function PortalSwitch({ enabled }) {
 
   if (inLab) {
     return (
-      <Link to={unit ? `/unit/${unit}/learn` : '/dashboard'} className="btn btn-secondary btn-sm hide-mobile" onClick={() => labPortalApi.event('switch_to_theory')}>
-        <BookOpen size={14} /> Back to Theory
+      <Link to={unit ? `/unit/${unit}/learn` : '/dashboard'} className="btn btn-secondary btn-sm" onClick={() => labPortalApi.event('switch_to_theory')}>
+        <BookOpen size={14} /> <span><span className="portal-switch-long">Back to </span>Theory</span>
       </Link>
     );
   }
   const hint = labHint(state);
   const to = unit ? `/lab/${unit}` : '/lab';
   return (
-    <Link to={to} className="btn btn-primary btn-sm hide-mobile" onClick={() => labPortalApi.event('switch_to_lab')} title={hint ? `Lab Studio: ${hint}` : 'Open Lab Studio'}>
-      <FlaskConical size={14} /> Lab Studio{hint ? ` · ${hint}` : ''}
+    <Link to={to} className="btn btn-primary btn-sm" onClick={() => labPortalApi.event('switch_to_lab')} title={hint ? `Lab Studio: ${hint}` : 'Open Lab Studio'}>
+      <FlaskConical size={14} /> <span>Lab<span className="portal-switch-long"> Studio</span></span>{hint && <span className="portal-switch-hint"> · {hint}</span>}
     </Link>
   );
 }

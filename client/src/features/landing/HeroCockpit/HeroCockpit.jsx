@@ -640,7 +640,7 @@ export default function HeroCockpit() {
         <div className="studio-footer">
           <div className="footer-metric">
             <span className="metric-dot" />
-            <span className="metric-label">19 Interactive Labs</span>
+            <span className="metric-label">19 Hands-on Labs</span>
           </div>
           <div className="footer-metric">
             <FaLinux size={13} className="text-amber-400" />

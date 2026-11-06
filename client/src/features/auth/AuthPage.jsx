@@ -80,7 +80,7 @@ export default function AuthPage() {
       <form className="auth-card glass-card animate-scale-in" onSubmit={submit}>
         <div className="auth-tabs">
           <button type="button" className={`auth-tab ${mode === 'register' ? 'active' : ''}`} onClick={() => { setMode('register'); setError(null); }}>
-            <UserPlus size={15} /> Create account
+            <UserPlus size={15} /> Sign up
           </button>
           <button type="button" className={`auth-tab ${mode === 'login' || mode === 'forgot' ? 'active' : ''}`} onClick={() => { setMode('login'); setError(null); }}>
             <LogIn size={15} /> Log in

@@ -2,17 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarClock, FlaskConical, Lock, Search, Terminal, Users } from 'lucide-react';
 import { unitApi } from '../../shared/services/api';
-import useAuth from '../auth/useAuth';
 import useLabAvailability from './useLabAvailability';
 import './LabHomePage.css';
 
 const fmt = (ms) => new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 /** What the learner's lab state means for this page: can they open a lab, and what do we tell them. */
-function describe(state, isRegistered) {
-  if (!isRegistered) {
-    return { locked: true, tone: 'info', icon: Lock, title: 'Sign in with your Lab ID', text: 'Labs are for enrolled students. Use the Lab ID and password your college or admin gave you.', action: { to: '/login?tab=lab', label: 'Lab login' } };
-  }
+function describe(state) {
   switch (state?.state) {
     case 'blocked':
       return state.reason === 'account_disabled'
@@ -35,8 +31,7 @@ function describe(state, isRegistered) {
 
 /** Lab Studio: every topic, one click to its lab. Access (Lab ID, slot, queue) is explained here and enforced by the server. */
 export default function LabHomePage() {
-  const { isRegistered } = useAuth();
-  const state = useLabAvailability(10000, isRegistered);
+  const state = useLabAvailability(10000);
   const [units, setUnits] = useState([]);
   const [query, setQuery] = useState('');
 
@@ -51,7 +46,7 @@ export default function LabHomePage() {
     return q ? units.filter((u) => `${u.title} ${u.category}`.toLowerCase().includes(q)) : units;
   }, [units, query]);
 
-  const status = describe(state, isRegistered);
+  const status = describe(state);
   const locked = Boolean(status?.locked);
 
   return (

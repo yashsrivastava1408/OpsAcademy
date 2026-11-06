@@ -22,7 +22,7 @@ const root = path.join(client, '..');
 const PORTS = { hub: 5105, gateway: 4100, app: 4173 };
 const API_URL = `http://localhost:${PORTS.gateway}`;
 const APP_URL = `http://localhost:${PORTS.app}`;
-const TESTS = ['walkthrough.mjs', 'slow-link.mjs', 'features.mjs', 'lab-studio.mjs'].filter((file) => !process.argv[2] || file.includes(process.argv[2]));
+const TESTS = ['walkthrough.mjs', 'slow-link.mjs', 'features.mjs', 'lab-studio.mjs', 'screenshots.mjs'].filter((file) => !process.argv[2] || file.includes(process.argv[2]));
 
 // e.g. E2E_STORE_DRIVER=sqlite runs the same tests on the SQLite store.
 const extraGatewayEnv = process.env.E2E_STORE_DRIVER ? { STORE_DRIVER: process.env.E2E_STORE_DRIVER } : {};

@@ -221,3 +221,14 @@
     padding: 8px 10px;
   }
 }
+
+/* Lab Studio stays reachable on a phone: the label shortens instead of the button disappearing. */
+@media (max-width: 768px) {
+  .portal-switch-hint { display: none; }
+}
+@media (min-width: 769px) {
+  .portal-switch-long { display: inline; }
+}
+@media (max-width: 768px) {
+  .portal-switch-long { display: none; }
+}
