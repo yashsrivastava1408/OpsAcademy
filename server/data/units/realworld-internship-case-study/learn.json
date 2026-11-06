@@ -1,26 +1,248 @@
 {
-  "unitId": "realworld-internship-case-study",
-  "title": "Enterprise DevOps: Local Dev Contract, GitOps & Change-Aware CI/CD",
-  "modules": [
+  "overview": {
+    "why": "Tutorials show tools one at a time. Real jobs combine them, and the hard part is the decisions between the tools: why this layout, why this check, why this order. This case study follows a real engineering setup (local development, change-aware CI, GitOps delivery, and on-premises ingress) so you can see how the pieces fit, and learn to explain your own projects the same way in interviews.",
+    "prerequisites": [
+      "Docker, CI/CD, Kubernetes and Git basics. This unit assumes you know the vocabulary and shows the design choices."
+    ],
+    "outcomes": [
+      "Design a local development setup that works with one command and no cluster",
+      "Describe a CI pipeline that only does the work a change requires",
+      "Explain a GitOps delivery flow with Argo CD, a registry and environment overlays",
+      "Choose where to run an ingress controller and justify it",
+      "Diagnose a Pod stuck in `Init:1/2` caused by a NetworkPolicy label mismatch"
+    ],
+    "placementTip": "For \"tell me about a project\" questions, use the shape of this case study: the problem, the constraints, the design, the trade-offs, and what you would improve. Reading it with that structure in mind is excellent practice."
+  },
+  "sections": [
     {
       "id": "module-1",
       "title": "1. Local Development Contract (Zero-K8s Repro)",
-      "content": "### The Local Dev Contract\n\n**Goal**: A developer should clone the repo and run `make dev` to get the microservice stack running locally using Docker and local secrets without needing a local Kubernetes cluster, Vault, or cert-manager.\n\n```text\nDeveloper Laptop\n├── Docker (containers: auth-server, encryption-server, sdk-backend, postgres, redis)\n├── Backend/local/secrets/secrets.yaml (GITIGNORED)\n└── Makefile (single entrypoint: make dev / make dev-down / make dev-clean)\n```\n\n#### Key Rules & Principles:\n1. **Environment Specific**: All local setup lives in `develop` branch or `Backend/local/` folder.\n2. **Local Secrets**: `secrets.template.yaml` is committed with fake placeholders. Developers copy it to `secrets.yaml` which is strictly `.gitignored`.\n3. **Multi-Stage Builds**: Local Dockerfiles (`Dockerfile.local`) build Rust inside Docker to ensure reproducible local builds on any OS without relying on CI binaries."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### The Local Dev Contract\n\n**Goal**: A developer should clone the repo and run `make dev` to get the microservice stack running locally using Docker and local secrets without needing a local Kubernetes cluster, Vault, or cert-manager.\n\n```text\nDeveloper Laptop\n├── Docker (containers: auth-server, encryption-server, sdk-backend, postgres, redis)\n├── Backend/local/secrets/secrets.yaml (GITIGNORED)\n└── Makefile (single entrypoint: make dev / make dev-down / make dev-clean)\n```\n\n#### Key Rules & Principles:\n1. **Environment Specific**: All local setup lives in `develop` branch or `Backend/local/` folder.\n2. **Local Secrets**: `secrets.template.yaml` is committed with fake placeholders. Developers copy it to `secrets.yaml` which is strictly `.gitignored`.\n3. **Multi-Stage Builds**: Local Dockerfiles (`Dockerfile.local`) build Rust inside Docker to ensure reproducible local builds on any OS without relying on CI binaries."
+        }
+      ],
+      "keyPoints": [
+        "One command (`make dev`) should start the whole stack on any laptop.",
+        "Commit a secrets **template** with fake values; keep the real file out of Git.",
+        "Build inside Docker so builds are the same on every machine."
+      ],
+      "quiz": {
+        "question": "Why is only a secrets *template* committed to the repository?",
+        "options": [
+          "Templates run faster",
+          "It shows what is needed without exposing real secrets",
+          "Git cannot store real files",
+          "The template is the real secret"
+        ],
+        "correctIndex": 1,
+        "explanation": "Developers copy the template to a git-ignored file and fill it in, so real credentials never enter version control."
+      }
     },
     {
       "id": "module-2",
       "title": "2. Change-Aware Jenkins CI Pipeline",
-      "content": "### Intelligent CI Pipeline Architecture\n\nInstead of blindly rebuilding every service on every commit, an enterprise CI pipeline compares the current commit against the target branch and dynamically detects changes.\n\n```text\nGit Event Push → Checkout SCM → Change Detection → Global Safety Gates → Dynamic Build Matrix → Lint & Test → Build Docker\n```\n\n#### 1. Change Detection Flags:\n- `IS_APP_CHANGE`: Triggers unit tests and Rust clippy linting.\n- `IS_INFRA_CHANGE`: Triggers K8s YAML & Terraform syntax/policy checks.\n- `IS_DB_CHANGE`: Validates migration files and scans for destructive SQL (`DROP TABLE`, `TRUNCATE`).\n- `IS_DOC_CHANGE`: Skips heavy builds and marks as low-risk.\n\n#### 2. Global Safety Gates (Always On):\n- **Secret Leak Scan**: Ensures no API keys or tokens are hardcoded in Git history.\n- **Dependency Vulnerability Scan**: Scans dependency lockfiles against known CVE databases."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### Intelligent CI Pipeline Architecture\n\nInstead of blindly rebuilding every service on every commit, an enterprise CI pipeline compares the current commit against the target branch and dynamically detects changes.\n\n```text\nGit Event Push → Checkout SCM → Change Detection → Global Safety Gates → Dynamic Build Matrix → Lint & Test → Build Docker\n```\n\n#### 1. Change Detection Flags:\n- `IS_APP_CHANGE`: Triggers unit tests and Rust clippy linting.\n- `IS_INFRA_CHANGE`: Triggers K8s YAML & Terraform syntax/policy checks.\n- `IS_DB_CHANGE`: Validates migration files and scans for destructive SQL (`DROP TABLE`, `TRUNCATE`).\n- `IS_DOC_CHANGE`: Skips heavy builds and marks as low-risk.\n\n#### 2. Global Safety Gates (Always On):\n- **Secret Leak Scan**: Ensures no API keys or tokens are hardcoded in Git history.\n- **Dependency Vulnerability Scan**: Scans dependency lockfiles against known CVE databases."
+        }
+      ],
+      "keyPoints": [
+        "Detect what changed (app, infrastructure, database, docs) and run only the matching checks.",
+        "Safety gates (secret scan, dependency scan) always run, whatever changed.",
+        "Faster pipelines get used; slow ones get bypassed."
+      ],
+      "quiz": {
+        "question": "What is the benefit of a change-aware CI pipeline?",
+        "options": [
+          "It skips all tests",
+          "It runs only the checks a change needs, which makes it faster",
+          "It deploys without review",
+          "It removes the need for Git"
+        ],
+        "correctIndex": 1,
+        "explanation": "By detecting what changed, the pipeline avoids rebuilding and testing unrelated parts, while safety gates still always run."
+      }
     },
     {
       "id": "module-3",
       "title": "3. GitOps Continuous Deployment (ArgoCD + Kustomize)",
-      "content": "### Continuous Deployment Architecture\n\n```text\nGitOps Repo (GitLab) ──(ArgoCD Polls)──> ArgoCD Reconciler ──(Applies Manifests)──> K8s Cluster ──(Pulls Image)──> Harbor Registry\n```\n\n#### Workflow Components:\n- **GitLab**: Stores desired state (manifests & overlays).\n- **ArgoCD**: Pull-based GitOps engine. Detects drift between Git desired state and K8s actual state.\n- **Harbor**: Immutable enterprise container image registry (`harbor.domain.me/app:v1.2.0`).\n- **Kustomize Overlays**:\n  - `overlays/dev`: 1 replica, auto-sync enabled.\n  - `overlays/staging`: 2 replicas, auto-sync or manual approval.\n  - `overlays/prod`: 3 replicas, high availability, manual approval required."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### Continuous Deployment Architecture\n\n```text\nGitOps Repo (GitLab) ──(ArgoCD Polls)──> ArgoCD Reconciler ──(Applies Manifests)──> K8s Cluster ──(Pulls Image)──> Harbor Registry\n```\n\n#### Workflow Components:\n- **GitLab**: Stores desired state (manifests & overlays).\n- **ArgoCD**: Pull-based GitOps engine. Detects drift between Git desired state and K8s actual state.\n- **Harbor**: Immutable enterprise container image registry (`harbor.domain.me/app:v1.2.0`).\n- **Kustomize Overlays**:\n  - `overlays/dev`: 1 replica, auto-sync enabled.\n  - `overlays/staging`: 2 replicas, auto-sync or manual approval.\n  - `overlays/prod`: 3 replicas, high availability, manual approval required."
+        }
+      ],
+      "keyPoints": [
+        "Git holds the desired state; Argo CD pulls it; the registry stores immutable images.",
+        "Overlays give each environment its own size and approval rules.",
+        "Production changes need a manual approval; development can sync automatically."
+      ],
+      "quiz": {
+        "question": "In this GitOps flow, what applies the manifests to the cluster?",
+        "options": [
+          "A developer running kubectl by hand",
+          "Argo CD, which pulls the desired state from Git",
+          "The container registry",
+          "The load balancer"
+        ],
+        "correctIndex": 1,
+        "explanation": "Argo CD runs in the cluster, compares Git with reality and reconciles any difference."
+      }
     },
     {
       "id": "module-4",
       "title": "4. On-Prem Architecture & Ingress Strategy",
-      "content": "### NGINX Inside K8s vs Outside K8s\n\nRunning NGINX as an **Ingress Controller inside Kubernetes** acts as a single entrypoint for all HTTP/S microservices:\n\n| Feature | Inside K8s (Ingress) | Outside K8s (Host NGINX) |\n| :--- | :--- | :--- |\n| **Pod Auto-Discovery** | ✅ YES (built-in) | ❌ NO (manual static IP config) |\n| **GitOps Integration** | ✅ YES (ArgoCD sync) | ❌ NO |\n| **Cert-Manager (Auto SSL)**| ✅ YES | ❌ NO (manual SSL renewals) |\n| **High Availability** | ✅ YES | ❌ NO (complex setup) |\n| **Zero-Downtime Rollouts**| ✅ YES | ❌ Difficult |\n\n### Proxmox VE Virtualization Layer:\n- **Master Node**: Control plane components.\n- **Worker Nodes**: Workload execution (apps, DBs, ingress, monitoring)."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### NGINX Inside K8s vs Outside K8s\n\nRunning NGINX as an **Ingress Controller inside Kubernetes** acts as a single entrypoint for all HTTP/S microservices:\n\n| Feature | Inside K8s (Ingress) | Outside K8s (Host NGINX) |\n| :--- | :--- | :--- |\n| **Pod Auto-Discovery** | ✅ YES (built-in) | ❌ NO (manual static IP config) |\n| **GitOps Integration** | ✅ YES (ArgoCD sync) | ❌ NO |\n| **Cert-Manager (Auto SSL)**| ✅ YES | ❌ NO (manual SSL renewals) |\n| **High Availability** | ✅ YES | ❌ NO (complex setup) |\n| **Zero-Downtime Rollouts**| ✅ YES | ❌ Difficult |\n\n### Proxmox VE Virtualization Layer:\n- **Master Node**: Control plane components.\n- **Worker Nodes**: Workload execution (apps, DBs, ingress, monitoring)."
+        }
+      ],
+      "keyPoints": [
+        "Running the ingress controller inside Kubernetes gives auto-discovery, GitOps integration and automatic certificates.",
+        "A load balancer or host NGINX outside the cluster needs manual updates when Pods change.",
+        "Know your layers: virtualisation, Kubernetes nodes, ingress, applications."
+      ],
+      "quiz": {
+        "question": "Why is running NGINX as an Ingress Controller inside Kubernetes attractive?",
+        "options": [
+          "It uses no resources",
+          "It discovers Pods automatically, works with GitOps and can renew certificates automatically",
+          "It removes the need for Services",
+          "It is the only option"
+        ],
+        "correctIndex": 1,
+        "explanation": "Inside the cluster it follows Pods as they change, is managed through Git, and integrates with cert-manager."
+      }
+    },
+    {
+      "id": "module-5",
+      "title": "5. Debugging a Pod Stuck in Init:1/2 (NetworkPolicy Label Mismatch)",
+      "content": [
+        {
+          "type": "text",
+          "value": "A real incident from this setup: after a deployment, an application Pod stayed at `Init:1/2` for ever. Nothing was obviously broken, and the manifests were in Git and synced. Walking through how it was found is a good model for any \"stuck Pod\" problem."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Step 1: what is it waiting for?"
+        },
+        {
+          "type": "code",
+          "title": "Read the Pod",
+          "value": "kubectl get pod api-7c9d -n app\n# NAME       READY   STATUS     RESTARTS\n# api-7c9d   0/1     Init:1/2   0\n\nkubectl describe pod api-7c9d -n app\n# Init Containers:\n#   wait-for-db:   State: Running   (still looping)\nkubectl logs api-7c9d -n app -c wait-for-db\n# waiting for postgres:5432 ... connection timed out"
+        },
+        {
+          "type": "text",
+          "value": "`Init:1/2` means the first init container finished and the second is still running. Its log shows it cannot reach the database: a **network** problem, not an application one."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Step 2: is the database itself fine?"
+        },
+        {
+          "type": "code",
+          "title": "Check the target",
+          "value": "kubectl get pods -n data --show-labels\n# postgres-0   1/1   Running   app=postgres,tier=db\nkubectl get svc postgres -n data"
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Step 3: what do the NetworkPolicies allow?"
+        },
+        {
+          "type": "code",
+          "title": "Compare labels",
+          "value": "kubectl get networkpolicy -n data -o yaml\n#   podSelector:        matchLabels: { app: postgres }\n#   ingress:\n#     - from:\n#         - podSelector:  matchLabels: { app.kubernetes.io/name: api }   # <- policy expects this label\n\nkubectl get pod api-7c9d -n app --show-labels\n#   app=api        # <- the Pod actually has THIS label"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "The policy allowed traffic from Pods labelled `app.kubernetes.io/name=api`, but the Pods carried `app=api`. Nothing matched, so the database dropped the traffic. (A policy across namespaces also needs a matching `namespaceSelector`.)"
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Step 4: fix it in Git"
+        },
+        {
+          "type": "text",
+          "value": "Following GitOps, the fix is a change to the manifests: make the policy and the Pod labels agree, commit, and let Argo CD sync. Then confirm with `kubectl get pod` that the Pod reaches `Running`."
+        },
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "Read the status (`Init:1/2`) and find which init container is waiting.",
+            "Read that container's logs to learn what it needs.",
+            "Check the target is healthy, then check what policies select and allow.",
+            "Compare labels and namespaces character by character.",
+            "Fix it in Git and verify."
+          ]
+        }
+      ],
+      "keyPoints": [
+        "`Init:N/M` tells you how many init containers have finished; read the one still running.",
+        "A timeout to a healthy service often means a NetworkPolicy label or namespace mismatch.",
+        "Fix it in Git, not with a manual edit, so Argo CD does not undo it."
+      ],
+      "quiz": {
+        "question": "A Pod is stuck in `Init:1/2`. The second init container waits for the database. What do you check first for a NetworkPolicy problem?",
+        "options": [
+          "The Pod's labels against the policy's selectors",
+          "The monitor's brightness",
+          "The Git history",
+          "The Docker version"
+        ],
+        "correctIndex": 0,
+        "explanation": "If the policy selects different labels than the Pod actually has, traffic is blocked even though the policy looks correct."
+      }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Case study cheat sheet",
+    "rows": [
+      [
+        "make dev / make dev-down / make dev-clean",
+        "One entry point for the local stack"
+      ],
+      [
+        "secrets.template.yaml -> secrets.yaml (gitignored)",
+        "Commit the template, never the real secrets"
+      ],
+      [
+        "IS_APP_CHANGE / IS_INFRA_CHANGE / IS_DB_CHANGE / IS_DOC_CHANGE",
+        "Flags that choose which pipeline stages run"
+      ],
+      [
+        "Secret scan + dependency scan",
+        "Always-on safety gates"
+      ],
+      [
+        "overlays/dev | staging | prod",
+        "Kustomize environments with different replicas and approvals"
+      ],
+      [
+        "Argo CD (pull) + Harbor (registry)",
+        "Deploy by reconciling Git; pull images from a trusted registry"
+      ],
+      [
+        "kubectl get pods --show-labels",
+        "Check the labels a NetworkPolicy must match"
+      ],
+      [
+        "kubectl get networkpolicy -n NS -o yaml",
+        "Read what a policy selects and allows"
+      ],
+      [
+        "Init:1/2",
+        "Pod stuck: the second init container is still waiting"
+      ]
+    ]
+  }
 }

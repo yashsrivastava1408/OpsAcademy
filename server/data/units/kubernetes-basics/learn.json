@@ -1,4 +1,19 @@
 {
+  "overview": {
+    "why": "Docker runs a container on one machine. Real products run hundreds of containers across many machines and must survive crashes, traffic spikes and updates with no downtime. Kubernetes is the system that does this, and it is the most requested skill in cloud job descriptions. You do not need to master it in a day: you need the mental model, which this unit gives you.",
+    "prerequisites": [
+      "Docker basics: images, containers and ports."
+    ],
+    "outcomes": [
+      "Describe the control plane and worker nodes, and what each component does",
+      "Write and apply a Pod, a Deployment and a Service",
+      "Scale an app up and down and watch Kubernetes heal a crashed Pod",
+      "Keep configuration and secrets out of your image with ConfigMaps and Secrets",
+      "Route web traffic with an Ingress and separate teams with Namespaces",
+      "Roll out a new version safely using rolling updates and health probes"
+    ],
+    "placementTip": "Be able to walk through \"what happens when I run `kubectl apply -f deployment.yaml`\": API server, etcd, scheduler, kubelet, container runtime. It shows you understand the architecture, not just the commands."
+  },
   "sections": [
     {
       "id": "what-is-kubernetes",
@@ -22,6 +37,11 @@
           "style": "info",
           "value": "K8s abbreviation: 'K' followed by 8 letters ('ubernete'), ending in 's' = K-eight-s. Google created it internally (called 'Borg'), then open-sourced it in 2014."
         }
+      ],
+      "keyPoints": [
+        "Kubernetes keeps your **desired state** true: you say what you want, it makes it so and keeps it so.",
+        "Control plane (API server, etcd, scheduler, controllers) decides; worker nodes (kubelet, runtime) do the work.",
+        "Everything is a declarative YAML object sent to the API server."
       ],
       "quiz": {
         "question": "What is the main purpose of Kubernetes?",
@@ -66,6 +86,11 @@
           "value": "In practice, you rarely create Pods directly. Instead, you create Deployments that manage Pods for you. Deployments add self-healing, scaling, and rolling updates."
         }
       ],
+      "keyPoints": [
+        "A Pod is the smallest unit: one or more containers sharing a network and storage.",
+        "Pods are disposable. If one dies, it is replaced, with a new IP address.",
+        "`kubectl describe pod` and `kubectl logs` are your first debugging tools."
+      ],
       "quiz": {
         "question": "What do containers inside the same Pod share?",
         "options": [
@@ -109,6 +134,11 @@
           "value": "Interview question: 'How does Kubernetes achieve self-healing?' Answer: The Deployment controller continuously compares the desired state (3 replicas) with the actual state. If a Pod dies, the controller creates a new one to match the desired state. This is called the 'reconciliation loop'."
         }
       ],
+      "keyPoints": [
+        "A Deployment keeps N identical Pods running and replaces any that fail.",
+        "Change `replicas` to scale; change the image to roll out an update.",
+        "`kubectl rollout undo` goes back to the previous version."
+      ],
       "quiz": {
         "question": "What happens if a Pod managed by a Deployment crashes?",
         "options": [
@@ -149,6 +179,11 @@
           "style": "tip",
           "value": "Interview tip: 'How do pods discover each other?' Answer: Through DNS. K8s runs an internal DNS server (CoreDNS). If you create a Service called 'database', any pod can reach it at 'http://database' or 'database.namespace.svc.cluster.local'."
         }
+      ],
+      "keyPoints": [
+        "A Service gives a stable address and load-balances across matching Pods.",
+        "ClusterIP is inside the cluster, NodePort opens a port on each node, LoadBalancer asks the cloud for one.",
+        "Services find Pods by **labels**, so a wrong label means no traffic."
       ],
       "quiz": {
         "question": "Why do we need Services in Kubernetes?",
@@ -193,6 +228,11 @@
           "value": "Secrets are base64-encoded, NOT encrypted. Anyone with access to the cluster can decode them. For production, use a Secrets Manager like HashiCorp Vault, AWS Secrets Manager, or enable Kubernetes Secrets encryption at rest."
         }
       ],
+      "keyPoints": [
+        "ConfigMaps hold settings; Secrets hold sensitive values. Both keep config out of the image.",
+        "Secrets are only base64-encoded by default, **not encrypted**: restrict access and enable encryption at rest.",
+        "Inject them as environment variables or mount them as files."
+      ],
       "quiz": {
         "question": "What is the difference between ConfigMaps and Secrets?",
         "options": [
@@ -229,6 +269,11 @@
           "style": "info",
           "value": "An Ingress resource alone does nothing — you need an Ingress Controller (like nginx-ingress or traefik) running in your cluster to actually implement the routing rules."
         }
+      ],
+      "keyPoints": [
+        "An Ingress routes HTTP(S) requests to Services by host and path, with TLS.",
+        "It needs an Ingress controller (NGINX, Traefik) running in the cluster.",
+        "One load balancer can then serve many applications."
       ],
       "quiz": {
         "question": "What is the purpose of a Kubernetes Ingress?",
@@ -271,6 +316,11 @@
           "style": "tip",
           "value": "Interview: 'Why use Helm?' Answer: It templatizes Kubernetes manifests, manages versions and rollbacks, handles complex dependency chains, and lets you install battle-tested community charts instead of reinventing the wheel."
         }
+      ],
+      "keyPoints": [
+        "Namespaces split one cluster into separate areas for teams or environments.",
+        "Helm packages a set of YAML files as a **chart** with settings you can override.",
+        "`helm install` and `helm upgrade` give repeatable, versioned deployments."
       ],
       "quiz": {
         "question": "What is Helm in the Kubernetes ecosystem?",
@@ -319,6 +369,11 @@
           "value": "Interview question: 'How do you achieve zero-downtime deployments in Kubernetes?' Answer: Use Rolling Updates (default strategy) with properly configured Readiness Probes. K8s only sends traffic to new pods after the readiness probe passes, ensuring users never hit an unready pod."
         }
       ],
+      "keyPoints": [
+        "A rolling update replaces Pods gradually so the app stays up.",
+        "Readiness probes decide when a Pod may receive traffic; liveness probes decide when to restart it.",
+        "Set resource requests and limits, or one busy Pod can starve its neighbours."
+      ],
       "quiz": {
         "question": "What happens if a Pod's liveness probe fails repeatedly?",
         "options": [
@@ -331,5 +386,66 @@
         "explanation": "If the liveness probe fails more than the failureThreshold, Kubernetes kills the container and restarts it. This provides automatic recovery from application deadlocks or hangs."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "kubectl cheat sheet",
+    "rows": [
+      [
+        "kubectl get pods -A",
+        "List Pods in every namespace"
+      ],
+      [
+        "kubectl get all -n shop",
+        "Pods, Services and Deployments in one namespace"
+      ],
+      [
+        "kubectl describe pod NAME",
+        "Events and reasons: the first stop when something is wrong"
+      ],
+      [
+        "kubectl logs NAME -f --previous",
+        "Follow logs; `--previous` shows the crashed container"
+      ],
+      [
+        "kubectl exec -it NAME -- sh",
+        "Open a shell in a Pod"
+      ],
+      [
+        "kubectl apply -f file.yaml",
+        "Create or update from a file"
+      ],
+      [
+        "kubectl delete -f file.yaml",
+        "Remove what a file created"
+      ],
+      [
+        "kubectl scale deploy web --replicas=5",
+        "Change the number of Pods"
+      ],
+      [
+        "kubectl rollout status deploy/web",
+        "Watch an update finish"
+      ],
+      [
+        "kubectl rollout undo deploy/web",
+        "Go back to the last version"
+      ],
+      [
+        "kubectl port-forward svc/web 8080:80",
+        "Reach a Service from your laptop"
+      ],
+      [
+        "kubectl top pods",
+        "CPU and memory use (needs metrics-server)"
+      ],
+      [
+        "kubectl get events --sort-by=.lastTimestamp",
+        "What just happened in the cluster"
+      ],
+      [
+        "kubectl config use-context NAME",
+        "Switch between clusters"
+      ]
+    ]
+  }
 }

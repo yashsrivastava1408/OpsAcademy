@@ -1,4 +1,20 @@
 {
+  "overview": {
+    "why": "Almost every server, container and cloud machine you will ever touch runs Linux. In a DevOps interview the first practical question is usually a Linux one, because if you cannot move around a terminal, read a log or fix a permission, nothing else (Docker, Kubernetes, CI/CD) will make sense. This unit gives you the daily-driver commands.",
+    "prerequisites": [
+      "A laptop with a browser. Nothing else: the lab gives you a real Linux terminal, so you install nothing.",
+      "No programming experience needed."
+    ],
+    "outcomes": [
+      "Find your way around the filesystem and say what lives in `/etc`, `/var`, `/home` and `/tmp`",
+      "Create, copy, move and delete files safely, and know why `rm -rf` deserves respect",
+      "Read a permission string like `-rwxr-xr--` and fix it with `chmod` and `chown`",
+      "Find a stuck process and stop it, and explain the difference between `kill` and `kill -9`",
+      "Chain commands with pipes and search logs with `grep`, `sed` and `awk`",
+      "Schedule a job with cron and read its five time fields"
+    ],
+    "placementTip": "Interviewers love the question \"a disk is full, what do you do?\". Practise `df -h`, `du -sh *`, `find / -size +100M` and be ready to explain what you check first and why."
+  },
   "sections": [
     {
       "id": "what-is-linux",
@@ -27,9 +43,19 @@
           "value": "Think of Linux like a restaurant kitchen. The **Kernel** is the head chef who manages all the equipment (hardware). The **Shell** is the waiter who takes your orders (commands) and delivers them to the kitchen. **Applications** are the meals — the things you actually interact with."
         }
       ],
+      "keyPoints": [
+        "Linux is the **kernel**; a distribution (Ubuntu, Debian, Amazon Linux) is the kernel plus tools around it.",
+        "Everything is a file: devices, processes and settings all show up as paths you can read.",
+        "Servers use Linux because it is free, stable, scriptable and can be run with no screen at all."
+      ],
       "quiz": {
         "question": "What percentage of top servers run Linux?",
-        "options": ["About 50%", "About 75%", "Over 96%", "100%"],
+        "options": [
+          "About 50%",
+          "About 75%",
+          "Over 96%",
+          "100%"
+        ],
         "correctIndex": 2,
         "explanation": "Over 96% of the world's top 1 million servers run Linux, making it the dominant server operating system."
       }
@@ -65,9 +91,19 @@
           "value": "Use Tab for auto-completion. Type 'cd /ho' then press Tab — it completes to 'cd /home/'. This saves massive time and prevents typos."
         }
       ],
+      "keyPoints": [
+        "One tree starting at `/`. There are no drive letters like `C:`.",
+        "`pwd` shows where you are, `cd` moves, `ls -la` lists everything including hidden files.",
+        "Know the big four: `/etc` (config), `/var/log` (logs), `/home` (people), `/tmp` (scratch)."
+      ],
       "quiz": {
         "question": "What does the command 'cd ..' do?",
-        "options": ["Goes to root directory", "Goes up one directory level", "Goes to home directory", "Lists parent directory"],
+        "options": [
+          "Goes to root directory",
+          "Goes up one directory level",
+          "Goes to home directory",
+          "Lists parent directory"
+        ],
         "correctIndex": 1,
         "explanation": "'cd ..' moves you one level up in the directory tree. '..' always refers to the parent directory."
       }
@@ -103,6 +139,11 @@
           "title": "Reading Files",
           "value": "cat file.txt                # Print entire file content\nhead -n 5 file.txt          # Print first 5 lines\ntail -n 5 file.txt          # Print last 5 lines\ntail -f /var/log/syslog     # Follow a log file in real-time\nless file.txt               # Paginated file viewer (q to quit)\nwc -l file.txt              # Count lines in a file\nstat file.txt               # Show file size, permissions, timestamps"
         }
+      ],
+      "keyPoints": [
+        "`mkdir -p`, `touch`, `cp -r`, `mv` and `rm` cover nearly all file work.",
+        "`rm` has no recycle bin. Check with `ls` first, and be careful with `rm -rf`.",
+        "`cat`, `less`, `head` and `tail -f` are how you read files and follow logs live."
       ],
       "quiz": {
         "question": "What is the difference between '>' and '>>' in bash?",
@@ -147,6 +188,11 @@
           "value": "The numeric system: r=4, w=2, x=1. Add them up per group. So 755 means owner=7(rwx), group=5(r-x), others=5(r-x). This is asked in almost every DevOps interview."
         }
       ],
+      "keyPoints": [
+        "Three groups (owner, group, others) each get read, write and execute: `rwx`.",
+        "Numbers add up: read 4 + write 2 + execute 1, so `755` means `rwxr-xr-x` and `644` means `rw-r--r--`.",
+        "`chmod` changes who can do what; `chown` changes who owns it. Never fix a problem with `chmod 777`."
+      ],
       "quiz": {
         "question": "What does chmod 644 mean?",
         "options": [
@@ -190,6 +236,11 @@
           "value": "Interview tip: Always explain that you'd try 'kill' (SIGTERM) before 'kill -9' (SIGKILL). SIGTERM lets the process clean up gracefully (save data, close connections). SIGKILL is a last resort that can leave corrupted files. This shows production maturity."
         }
       ],
+      "keyPoints": [
+        "Every running program is a process with a PID. `ps aux` lists them and `top` shows them live.",
+        "`kill PID` asks politely (SIGTERM); `kill -9 PID` forces it (SIGKILL) and gives it no chance to clean up.",
+        "Add `&` to run something in the background, and `jobs` to see what is running."
+      ],
       "quiz": {
         "question": "What is the difference between kill and kill -9?",
         "options": [
@@ -232,6 +283,11 @@
           "style": "info",
           "value": "The pipe symbol (|) passes the STDOUT of the left command as STDIN to the right command. Think of it like connecting two hoses — water flows from left to right."
         }
+      ],
+      "keyPoints": [
+        "`|` sends one command's output into the next, so small tools combine into powerful ones.",
+        "`>` overwrites a file, `>>` appends, `2>` captures errors, and `2>&1` merges errors into normal output.",
+        "`/dev/null` is the bin: `command > /dev/null 2>&1` silences a command completely."
       ],
       "quiz": {
         "question": "What does 'ps aux | grep nginx | wc -l' do?",
@@ -282,6 +338,11 @@
           "value": "Interview combo: 'How would you find the top 10 IP addresses in an access log?' Answer: awk '{print $1}' access.log | sort | uniq -c | sort -rn | head -10. This one-liner is asked in almost every DevOps interview!"
         }
       ],
+      "keyPoints": [
+        "`grep` finds lines, `sed` changes them, `awk` picks columns. Together they are a log-analysis toolkit.",
+        "`sort | uniq -c | sort -rn` is the classic way to count and rank anything.",
+        "`grep -i` ignores case, `-r` searches folders, `-v` shows the lines that do not match."
+      ],
       "quiz": {
         "question": "What does 'grep -r \"TODO\" /src/' do?",
         "options": [
@@ -330,6 +391,11 @@
           "value": "Interview tip: 'How would you schedule a log rotation every night at 2 AM?' Answer: Add '0 2 * * * /usr/sbin/logrotate /etc/logrotate.conf' to your crontab with 'crontab -e'. Also mention that most production systems use logrotate with a daily cron already configured."
         }
       ],
+      "keyPoints": [
+        "A cron line has five time fields, then the command: minute, hour, day of month, month, day of week.",
+        "Cron runs with a tiny environment: use full paths and redirect output to a log file.",
+        "`crontab -e` edits your jobs and `crontab -l` lists them."
+      ],
       "quiz": {
         "question": "What does the cron expression '*/5 * * * *' mean?",
         "options": [
@@ -342,5 +408,74 @@
         "explanation": "'*/5' in the minute field means 'every 5 minutes'. The asterisks in the remaining fields mean 'every hour, every day, every month, every day of the week'."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Linux cheat sheet",
+    "rows": [
+      [
+        "pwd",
+        "Print the folder you are in"
+      ],
+      [
+        "ls -la",
+        "List everything, with permissions and sizes"
+      ],
+      [
+        "cd /var/log",
+        "Go to a folder (`cd ..` goes up, `cd ~` goes home)"
+      ],
+      [
+        "mkdir -p a/b/c",
+        "Make nested folders in one go"
+      ],
+      [
+        "cp -r src dst",
+        "Copy a folder and everything in it"
+      ],
+      [
+        "mv old new",
+        "Move or rename"
+      ],
+      [
+        "rm -rf dir",
+        "Delete a folder for good (no undo)"
+      ],
+      [
+        "cat / less / tail -f file",
+        "Read a file / page through it / follow it live"
+      ],
+      [
+        "chmod 755 script.sh",
+        "Owner can run and edit, everyone else can read and run"
+      ],
+      [
+        "chown user:group file",
+        "Change who owns a file"
+      ],
+      [
+        "ps aux | grep nginx",
+        "Find a process by name"
+      ],
+      [
+        "kill PID / kill -9 PID",
+        "Stop politely / force stop"
+      ],
+      [
+        "df -h  /  du -sh *",
+        "Disk free space / size of each item here"
+      ],
+      [
+        "grep -ri \"error\" /var/log",
+        "Search every log for a word, ignoring case"
+      ],
+      [
+        "awk '{print $1}' file",
+        "Print the first column"
+      ],
+      [
+        "crontab -e",
+        "Edit your scheduled jobs"
+      ]
+    ]
+  }
 }

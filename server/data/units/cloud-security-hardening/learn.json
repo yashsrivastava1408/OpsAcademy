@@ -1,38 +1,356 @@
 {
+  "overview": {
+    "why": "A container is not a security boundary by itself: it shares the host's kernel, so a flaw in one container can become a flaw in the whole machine. Hardening means removing every permission an application does not need, so that a break-in has nowhere to go. This is the unit that separates \"we use Docker\" from \"we run Docker safely\", and it is asked about in cloud security and SRE interviews.",
+    "prerequisites": [
+      "Linux basics (permissions, processes) and Docker basics.",
+      "Some Kubernetes helps for the pod-level sections, and DevSecOps basics help for the big picture."
+    ],
+    "outcomes": [
+      "Explain defence in depth for containers: Seccomp, capabilities, AppArmor/SELinux, and where each sits",
+      "Run a container as non-root, read-only and with every capability dropped except what it needs",
+      "Write a Kubernetes `securityContext` that enforces the same rules",
+      "Restrict traffic with a default-deny NetworkPolicy and limit access with least-privilege RBAC",
+      "Detect suspicious behaviour at run time with Falco rules"
+    ],
+    "placementTip": "A strong answer to \"how do you secure a container?\" lists layers: minimal image, non-root user, read-only filesystem, dropped capabilities, Seccomp profile, network policy, secrets from a vault, and runtime detection. Practise saying them in order."
+  },
   "sections": [
     {
       "id": "kernel-security-mechanisms",
       "title": "Linux Kernel Isolation: Seccomp, AppArmor & Capabilities",
-      "content": "### Defense in Depth in Linux Workloads\n\nContainers share the host Linux kernel. Hardening the system call boundary is the primary defense against zero-day container breakout exploits:\n\n```text\nContainer Application ──> [Seccomp (Syscall Filter)] ──> [AppArmor/SELinux (Path MAC)] ──> [Capabilities Filter] ──> Host Kernel\n```\n\n#### Security Layers:\n1. **Seccomp (Secure Computing)**: Restricts which of the ~450 Linux system calls a process can make. Blocking calls like `ptrace`, `sys_chroot`, and `keyctl` neutralizes 90% of privilege escalation CVEs.\n2. **Linux Capabilities**: Divides root privileges into granular sub-units (`CAP_NET_BIND_SERVICE`, `CAP_CHOWN`). Dropping all capabilities (`cap-drop: ALL`) and whitelisting only necessary ones prevents unauthorized packet sniffing or raw device access.\n3. **AppArmor / SELinux**: Mandatory Access Control (MAC) enforcing granular file read/write, network socket, and execution permissions."
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### Defense in Depth in Linux Workloads\n\nContainers share the host Linux kernel. Hardening the system call boundary is the primary defense against zero-day container breakout exploits:\n\n```text\nContainer Application ──> [Seccomp (Syscall Filter)] ──> [AppArmor/SELinux (Path MAC)] ──> [Capabilities Filter] ──> Host Kernel\n```\n\n#### Security Layers:\n1. **Seccomp (Secure Computing)**: Restricts which of the ~450 Linux system calls a process can make. Blocking calls like `ptrace`, `sys_chroot`, and `keyctl` removes a large class of privilege-escalation exploits.\n2. **Linux Capabilities**: Divides root privileges into granular sub-units (`CAP_NET_BIND_SERVICE`, `CAP_CHOWN`). Dropping all capabilities (`cap-drop: ALL`) and whitelisting only necessary ones prevents unauthorized packet sniffing or raw device access.\n3. **AppArmor / SELinux**: Mandatory Access Control (MAC) enforcing granular file read/write, network socket, and execution permissions."
+        }
+      ],
+      "keyPoints": [
+        "Containers share the host kernel, so the system-call boundary is the key line of defence.",
+        "Seccomp filters which system calls are allowed; capabilities split root into small powers; AppArmor/SELinux limit files and sockets.",
+        "Default-deny is the rule: drop everything, then add back only what the app proves it needs."
+      ],
+      "quiz": {
+        "question": "What is the primary function of Seccomp in Linux container security?",
+        "options": [
+          "To filter and intercept system calls (syscalls) executed by a process before reaching the kernel",
+          "To encrypt container network traffic over the wire",
+          "To scan container images for vulnerable open-source packages",
+          "To manage Kubernetes RBAC token permissions"
+        ],
+        "correctIndex": 0,
+        "explanation": "Seccomp (Secure Computing Mode) acts as a kernel-level system call firewall, blocking or logging unauthorized syscalls like ptrace or reboot."
+      }
     },
     {
       "id": "falco-ebpf-runtime-detection",
       "title": "Runtime Intrusion Detection with Falco & eBPF",
-      "content": "### eBPF-Powered Kernel Telemetry\n\n**Falco** uses kernel instrumentation (via eBPF probes) to monitor system calls in real-time and trigger alerts when suspicious behavior occurs:\n\n```yaml\n- rule: Terminal Shell in Container\n  desc: A terminal shell was spawned in a running production container\n  condition: >\n    spawned_process and container\n    and proc.name in (bash, sh, zsh, dash)\n  output: \"Shell spawned in container (user=%user.name pod=%k8s.pod.name)\"\n  priority: WARNING\n```\n\nUnlike traditional log shippers, eBPF operates at the kernel ring buffer layer (<1% CPU overhead) and cannot be bypassed by user-space malware tampering with `/var/log`."
-    }
-  ],
-  "quiz": [
-    {
-      "question": "What is the primary function of Seccomp in Linux container security?",
-      "options": [
-        "To filter and intercept system calls (syscalls) executed by a process before reaching the kernel",
-        "To encrypt container network traffic over the wire",
-        "To scan container images for vulnerable open-source packages",
-        "To manage Kubernetes RBAC token permissions"
+      "content": [
+        {
+          "type": "markdown",
+          "value": "### eBPF-Powered Kernel Telemetry\n\n**Falco** uses kernel instrumentation (via eBPF probes) to monitor system calls in real-time and trigger alerts when suspicious behavior occurs:\n\n```yaml\n- rule: Terminal Shell in Container\n  desc: A terminal shell was spawned in a running production container\n  condition: >\n    spawned_process and container\n    and proc.name in (bash, sh, zsh, dash)\n  output: \"Shell spawned in container (user=%user.name pod=%k8s.pod.name)\"\n  priority: WARNING\n```\n\nUnlike traditional log shippers, eBPF operates at the kernel ring buffer layer with low overhead, and it is much harder for user-space malware to hide from than log files in `/var/log`."
+        }
       ],
-      "correctIndex": 0,
-      "explanation": "Seccomp (Secure Computing Mode) acts as a kernel-level system call firewall, blocking or logging unauthorized syscalls like ptrace or reboot."
+      "keyPoints": [
+        "Prevention is never perfect, so watch behaviour at run time as well.",
+        "Falco watches system calls and raises an alert when a rule matches, such as a shell starting inside a production container.",
+        "Tune rules to your workloads, or the noise will make people ignore real alerts."
+      ],
+      "quiz": {
+        "question": "What does a Falco rule such as \"Terminal Shell in Container\" do?",
+        "options": [
+          "It blocks all shells in the cluster at build time",
+          "It raises an alert at run time when a shell is started inside a container",
+          "It scans images for vulnerabilities",
+          "It encrypts container traffic"
+        ],
+        "correctIndex": 1,
+        "explanation": "Falco watches system calls as they happen and alerts when behaviour matches a rule, such as an interactive shell starting inside a production container."
+      }
     },
     {
-      "question": "Why should production containers drop CAP_NET_RAW capability?",
-      "options": [
-        "To prevent attackers from crafting raw TCP/IP packets to perform ARP spoofing or port scans inside the cluster network",
-        "To increase network throughput by disabling checksums",
-        "To allow containers to bind to privileged ports below 1024",
-        "To disable DNS resolution inside the pod"
+      "id": "container-runtime-hardening",
+      "title": "Hardening a Container in Practice",
+      "content": [
+        {
+          "type": "text",
+          "value": "The previous section explained the kernel mechanisms. This section applies them. The goal is a container that can do **exactly what the application needs and nothing more**. Start from the strictest settings and loosen one thing at a time only when something proves necessary."
+        },
+        {
+          "type": "code",
+          "title": "A hardened docker run",
+          "value": "docker run -d --name web \\\n  --user 10001:10001 \\\n  --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \\\n  --cap-drop ALL --cap-add NET_BIND_SERVICE \\\n  --security-opt no-new-privileges:true \\\n  --pids-limit 128 --memory 256m --cpus 0.5 \\\n  -p 8080:80 \\\n  myorg/web:1.4.2"
+        },
+        {
+          "type": "table",
+          "header": [
+            "Setting",
+            "What it prevents"
+          ],
+          "rows": [
+            [
+              "`--user` (non-root)",
+              "A bug becoming root inside the container"
+            ],
+            [
+              "`--read-only` + `--tmpfs`",
+              "An attacker writing tools or changing the app"
+            ],
+            [
+              "`--cap-drop ALL`",
+              "Raw sockets, mounting, changing ownership and other root powers"
+            ],
+            [
+              "`no-new-privileges`",
+              "Gaining privileges through setuid programs"
+            ],
+            [
+              "`--pids-limit`, `--memory`",
+              "Fork bombs and one container starving the host"
+            ]
+          ]
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "The same rules in Kubernetes"
+        },
+        {
+          "type": "code",
+          "title": "securityContext for a Pod",
+          "value": "spec:\n  securityContext:\n    runAsNonRoot: true\n    runAsUser: 10001\n    seccompProfile:\n      type: RuntimeDefault      # the container runtime's default system-call filter\n  containers:\n    - name: web\n      image: myorg/web:1.4.2\n      securityContext:\n        allowPrivilegeEscalation: false\n        readOnlyRootFilesystem: true\n        capabilities:\n          drop: [\"ALL\"]\n          add: [\"NET_BIND_SERVICE\"]\n      resources:\n        limits: { memory: 256Mi, cpu: 500m }"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "Never use `--privileged`, never mount `/var/run/docker.sock` into an application container, and never mount the host's root filesystem. Each of these hands the container the keys to the machine."
+        },
+        {
+          "type": "callout",
+          "style": "tip",
+          "value": "Containers should be able to bind to a port above 1024 without any capability. Use port 8080 inside the container and map it to 80 outside, and you can drop `NET_BIND_SERVICE` too."
+        }
       ],
-      "correctIndex": 0,
-      "explanation": "CAP_NET_RAW allows a process to create raw network sockets, which attackers can exploit for network spoofing, ARP poisoning, or covert channel communication."
+      "keyPoints": [
+        "Run as non-root, with a read-only filesystem, no capabilities and a memory/process limit.",
+        "Kubernetes `securityContext` expresses the same rules declaratively.",
+        "`--privileged` and the Docker socket are almost always a mistake."
+      ],
+      "quiz": {
+        "question": "Why should production containers drop CAP_NET_RAW capability?",
+        "options": [
+          "To prevent attackers from crafting raw TCP/IP packets to perform ARP spoofing or port scans inside the cluster network",
+          "To increase network throughput by disabling checksums",
+          "To allow containers to bind to privileged ports below 1024",
+          "To disable DNS resolution inside the pod"
+        ],
+        "correctIndex": 0,
+        "explanation": "CAP_NET_RAW allows a process to create raw network sockets, which attackers can exploit for network spoofing, ARP poisoning, or covert channel communication."
+      }
+    },
+    {
+      "id": "network-and-access-policies",
+      "title": "Limiting the Blast Radius: NetworkPolicy and RBAC",
+      "content": [
+        {
+          "type": "text",
+          "value": "Hardening one container is not enough. If an attacker gets into one Pod, they will try to reach other Pods and the Kubernetes API. Two controls limit how far they can go: **NetworkPolicy** (who may talk to whom) and **RBAC** (who may do what in the cluster)."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Start with deny everything"
+        },
+        {
+          "type": "code",
+          "title": "Default-deny for a namespace",
+          "value": "apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: default-deny-all\n  namespace: shop\nspec:\n  podSelector: {}          # every Pod in the namespace\n  policyTypes: [Ingress, Egress]"
+        },
+        {
+          "type": "code",
+          "title": "Then allow only what is needed: web may reach the API on 8080",
+          "value": "apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: allow-web-to-api\n  namespace: shop\nspec:\n  podSelector:\n    matchLabels: { app: api }\n  policyTypes: [Ingress]\n  ingress:\n    - from:\n        - podSelector:\n            matchLabels: { app: web }\n      ports:\n        - { protocol: TCP, port: 8080 }"
+        },
+        {
+          "type": "callout",
+          "style": "warning",
+          "value": "NetworkPolicy only works if your network plugin (CNI) supports it, for example Calico or Cilium. Without one, the objects are accepted but nothing is enforced."
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "Least-privilege RBAC"
+        },
+        {
+          "type": "code",
+          "title": "A Role that can only read Pods in one namespace",
+          "value": "apiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata: { name: pod-reader, namespace: shop }\nrules:\n  - apiGroups: [\"\"]\n    resources: [\"pods\", \"pods/log\"]\n    verbs: [\"get\", \"list\", \"watch\"]\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata: { name: read-pods, namespace: shop }\nsubjects:\n  - kind: ServiceAccount\n    name: monitoring\n    namespace: shop\nroleRef:\n  kind: Role\n  name: pod-reader\n  apiGroup: rbac.authorization.k8s.io"
+        },
+        {
+          "type": "list",
+          "ordered": false,
+          "items": [
+            "Prefer namespaced `Role` over cluster-wide `ClusterRole`.",
+            "Avoid wildcards (`*`) in resources and verbs.",
+            "Turn off automatic token mounting (`automountServiceAccountToken: false`) for Pods that never call the API.",
+            "Check access with `kubectl auth can-i`."
+          ]
+        }
+      ],
+      "keyPoints": [
+        "Default-deny NetworkPolicy first, then open only the paths that are needed.",
+        "Policies need a CNI that enforces them (Calico, Cilium).",
+        "RBAC: smallest verbs, smallest scope, no wildcards, no unused tokens."
+      ],
+      "quiz": {
+        "question": "What does a NetworkPolicy with `podSelector: {}` and no ingress rules do?",
+        "options": [
+          "Allows all traffic to every Pod",
+          "Blocks all incoming traffic to every Pod in that namespace",
+          "Deletes the Pods",
+          "Only affects the Kubernetes API"
+        ],
+        "correctIndex": 1,
+        "explanation": "An empty podSelector selects every Pod in the namespace. With Ingress listed and no rules, no incoming traffic is allowed, which is the usual \"default deny\" starting point."
+      }
+    },
+    {
+      "id": "hardening-audit-checklist",
+      "title": "Auditing Your Hardening: Benchmarks and a Checklist",
+      "content": [
+        {
+          "type": "text",
+          "value": "Hardening you cannot measure drifts away over time. Use industry benchmarks and automated scanners so that \"secure\" is a result you can check, not a feeling."
+        },
+        {
+          "type": "table",
+          "header": [
+            "Tool",
+            "Checks",
+            "Example"
+          ],
+          "rows": [
+            [
+              "**kube-bench**",
+              "Cluster nodes against the CIS Kubernetes Benchmark",
+              "`kube-bench run`"
+            ],
+            [
+              "**Trivy config**",
+              "Dockerfiles and Kubernetes YAML for risky settings",
+              "`trivy config .`"
+            ],
+            [
+              "**Trivy image**",
+              "Known vulnerabilities in an image",
+              "`trivy image web:1.4.2`"
+            ],
+            [
+              "**Docker Bench**",
+              "A Docker host against the CIS Docker Benchmark",
+              "`docker-bench-security`"
+            ],
+            [
+              "**Falco**",
+              "Behaviour at run time",
+              "rules + alerts"
+            ]
+          ]
+        },
+        {
+          "type": "heading",
+          "level": 4,
+          "value": "A quick checklist before going to production"
+        },
+        {
+          "type": "list",
+          "ordered": false,
+          "items": [
+            "Image: small base, pinned version, scanned, no secrets inside.",
+            "Runs as non-root with a read-only root filesystem.",
+            "All capabilities dropped; only the needed ones added.",
+            "Seccomp profile set (at least `RuntimeDefault`).",
+            "CPU and memory limits set.",
+            "Default-deny NetworkPolicy plus explicit allow rules.",
+            "Service account with minimal RBAC and no automatic token if unused.",
+            "Secrets come from a secrets manager, not from the image or Git.",
+            "Runtime detection (Falco) is on and alerts reach a person."
+          ]
+        },
+        {
+          "type": "callout",
+          "style": "info",
+          "value": "Run these checks in CI so that a risky change fails the pull request. Fixing a finding in review is cheap; finding it after an incident is not."
+        }
+      ],
+      "keyPoints": [
+        "Benchmarks (CIS) and scanners turn \"hardened\" into something you can test.",
+        "Run the checks in CI so every change is judged, not just the first deployment.",
+        "Layers matter: image, container, pod, network, cluster, run time."
+      ],
+      "quiz": {
+        "question": "Which tool checks Dockerfiles and Kubernetes manifests for insecure settings before deployment?",
+        "options": [
+          "Falco",
+          "Trivy config scanning",
+          "Prometheus",
+          "Helm"
+        ],
+        "correctIndex": 1,
+        "explanation": "`trivy config` analyses infrastructure files for misconfigurations such as running as root or missing resource limits. Falco watches behaviour at run time instead."
+      }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Container hardening cheat sheet",
+    "rows": [
+      [
+        "--user 1000:1000",
+        "Run as a normal user, not root"
+      ],
+      [
+        "--read-only",
+        "Make the container's filesystem read-only"
+      ],
+      [
+        "--tmpfs /tmp",
+        "Give it a small writable scratch area"
+      ],
+      [
+        "--cap-drop ALL --cap-add NET_BIND_SERVICE",
+        "Drop every capability, add back only one"
+      ],
+      [
+        "--security-opt no-new-privileges:true",
+        "Block privilege gain through setuid programs"
+      ],
+      [
+        "--security-opt seccomp=profile.json",
+        "Use a custom system-call filter"
+      ],
+      [
+        "--pids-limit 128 --memory 256m",
+        "Limit processes and memory"
+      ],
+      [
+        "runAsNonRoot: true",
+        "Kubernetes: refuse to start as root"
+      ],
+      [
+        "readOnlyRootFilesystem: true",
+        "Kubernetes: read-only root filesystem"
+      ],
+      [
+        "allowPrivilegeEscalation: false",
+        "Kubernetes: no privilege gain"
+      ],
+      [
+        "capabilities: { drop: [\"ALL\"] }",
+        "Kubernetes: drop every capability"
+      ],
+      [
+        "kubectl auth can-i --list --as system:serviceaccount:ns:sa",
+        "What may this service account do?"
+      ]
+    ]
+  }
 }

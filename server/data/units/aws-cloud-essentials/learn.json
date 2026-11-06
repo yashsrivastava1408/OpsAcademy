@@ -1,4 +1,20 @@
 {
+  "overview": {
+    "why": "Most companies now run on the cloud, and AWS is the largest provider. You do not need to know all 200+ services: a handful (EC2, S3, IAM, VPC, RDS, Lambda) cover most real projects and most entry-level interviews. This unit explains what each one is for, in plain words, so the console stops looking like a wall of names.",
+    "prerequisites": [
+      "Networking basics (IP addresses, ports, DNS).",
+      "Linux basics for working on servers."
+    ],
+    "outcomes": [
+      "Explain IaaS, PaaS and SaaS with examples",
+      "Launch an EC2 server, connect to it, and choose the right size",
+      "Store and share files in S3 and control who can see them",
+      "Write a least-privilege IAM policy and explain users, roles and policies",
+      "Design a VPC with public and private subnets",
+      "Choose between a managed database (RDS) and serverless code (Lambda)"
+    ],
+    "placementTip": "Be ready to draw a simple three-tier architecture: load balancer, EC2 instances in private subnets, RDS database. It ties together almost everything in this unit."
+  },
   "sections": [
     {
       "id": "cloud-computing-basics",
@@ -23,9 +39,19 @@
           "value": "AWS has 200+ services across 30+ global regions. You don't need to know all of them — focus on the top 10 that appear in 90% of interviews: EC2, S3, IAM, VPC, RDS, Lambda, CloudWatch, ELB, Route 53, ECS/EKS."
         }
       ],
+      "keyPoints": [
+        "You rent computing instead of buying it, and pay for what you use.",
+        "IaaS gives you machines (EC2), PaaS gives you a platform (Elastic Beanstalk), SaaS gives you a finished product (Gmail).",
+        "A Region is a geographic area; Availability Zones are separate data centres inside it."
+      ],
       "quiz": {
         "question": "What type of cloud service is AWS EC2?",
-        "options": ["SaaS", "PaaS", "IaaS", "FaaS"],
+        "options": [
+          "SaaS",
+          "PaaS",
+          "IaaS",
+          "FaaS"
+        ],
         "correctIndex": 2,
         "explanation": "EC2 (Elastic Compute Cloud) is IaaS — you rent virtual machines and manage the OS, runtime, and applications yourself. AWS manages the physical hardware."
       }
@@ -60,6 +86,11 @@
           "style": "tip",
           "value": "t3.micro is in the AWS Free Tier — 750 hours/month for the first 12 months. Perfect for learning! Always use the smallest instance that meets your needs to save costs."
         }
+      ],
+      "keyPoints": [
+        "EC2 is a virtual server; pick the AMI (operating system), the instance type (size) and a key pair.",
+        "Security groups are the firewall: open only the ports you need.",
+        "Stop instances you are not using. Running servers cost money even when idle."
       ],
       "quiz": {
         "question": "What is an EC2 instance?",
@@ -99,6 +130,11 @@
           "value": "S3 bucket names are globally unique across ALL AWS accounts. Use a naming convention like: company-environment-purpose (e.g., 'opsacademy-prod-assets'). Never put sensitive data in publicly accessible buckets!"
         }
       ],
+      "keyPoints": [
+        "S3 stores objects (files) in buckets and is designed to be extremely durable.",
+        "Buckets are **private by default**; making one public is a common and costly mistake.",
+        "Storage classes and lifecycle rules move old data to cheaper tiers automatically."
+      ],
       "quiz": {
         "question": "What does S3's '11 nines' durability mean?",
         "options": [
@@ -136,6 +172,11 @@
           "value": "The #1 AWS security rule: NEVER use the root account for daily work. Create IAM users with minimum required permissions (Principle of Least Privilege). Enable MFA on the root account immediately."
         }
       ],
+      "keyPoints": [
+        "Give every person and service **only the permissions they need** (least privilege).",
+        "Use roles for services and temporary access instead of sharing access keys.",
+        "Turn on multi-factor authentication for the root account and never use it day to day."
+      ],
       "quiz": {
         "question": "What is the Principle of Least Privilege?",
         "options": [
@@ -170,6 +211,11 @@
           "style": "tip",
           "value": "Interview architecture: 'I'd place the load balancer in a public subnet, app servers in a private subnet, and the database in an isolated private subnet with no internet access. The app servers reach the internet through a NAT Gateway for pulling updates.'"
         }
+      ],
+      "keyPoints": [
+        "A VPC is your private network; subnets divide it; route tables decide where traffic goes.",
+        "Public subnets reach the internet through an internet gateway; private subnets use a NAT gateway.",
+        "Put databases in private subnets, never directly on the internet."
       ],
       "quiz": {
         "question": "Why put databases in a private subnet?",
@@ -212,6 +258,11 @@
           "value": "Lambda free tier: 1 million requests and 400,000 GB-seconds of compute per month — FREE forever. Perfect for microservices, API endpoints, image processing, and scheduled tasks."
         }
       ],
+      "keyPoints": [
+        "RDS runs a managed database with backups, patching and failover (Multi-AZ).",
+        "Lambda runs your code only when triggered, and you pay per use.",
+        "Choose Lambda for short event-driven jobs and EC2 or containers for long-running services."
+      ],
       "quiz": {
         "question": "What is AWS Lambda?",
         "options": [
@@ -224,5 +275,54 @@
         "explanation": "Lambda is serverless — you upload code and AWS runs it in response to events. No servers to provision, scale, or maintain. You pay only for the compute time your code actually consumes."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "AWS CLI and concepts cheat sheet",
+    "rows": [
+      [
+        "aws configure",
+        "Set your access key, secret and default region"
+      ],
+      [
+        "aws sts get-caller-identity",
+        "Which identity am I using right now?"
+      ],
+      [
+        "aws ec2 describe-instances",
+        "List your servers"
+      ],
+      [
+        "aws s3 ls  /  aws s3 cp file s3://bucket/",
+        "List buckets / upload a file"
+      ],
+      [
+        "aws s3 sync ./dir s3://bucket/dir",
+        "Copy a folder to a bucket"
+      ],
+      [
+        "aws iam list-users",
+        "List IAM users"
+      ],
+      [
+        "aws lambda invoke --function-name f out.json",
+        "Run a Lambda function"
+      ],
+      [
+        "Security group",
+        "Instance-level firewall (allow rules only)"
+      ],
+      [
+        "IAM role",
+        "Permissions a service or person can temporarily take on"
+      ],
+      [
+        "Public vs private subnet",
+        "Has a route to the internet gateway vs does not"
+      ],
+      [
+        "Multi-AZ",
+        "A standby copy in another data centre for failover"
+      ]
+    ]
+  }
 }

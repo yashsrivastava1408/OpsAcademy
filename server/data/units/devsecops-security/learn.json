@@ -1,4 +1,18 @@
 {
+  "overview": {
+    "why": "Security found after release is expensive; security found while writing code is cheap. DevSecOps puts automatic checks inside the pipeline so every change is scanned for vulnerable code, vulnerable libraries and leaked secrets. Companies increasingly ask even junior DevOps candidates how they would secure a pipeline.",
+    "prerequisites": [
+      "Docker basics and CI/CD basics: the checks you learn here run inside pipelines."
+    ],
+    "outcomes": [
+      "Explain \"shift left\" and where SAST, DAST and dependency scanning fit in a pipeline",
+      "Scan a container image with Trivy and decide what to fix first",
+      "Keep secrets out of code and images and manage them with a vault",
+      "Name the main OWASP API Top 10 risks, such as broken object-level authorisation",
+      "Produce a software bill of materials (SBOM) and explain why supply-chain security matters"
+    ],
+    "placementTip": "When asked \"how would you secure a pipeline?\", answer in layers: scan code, scan dependencies, scan the image, never store secrets in the repository, sign what you ship, and limit what the pipeline itself can do."
+  },
   "sections": [
     {
       "id": "shift-left",
@@ -21,6 +35,11 @@
           "type": "text",
           "value": "**SAST (Static Application Security Testing)** — Scans raw source code without executing it (e.g. SonarQube, Semgrep).\n\n**DAST (Dynamic Application Security Testing)** — Tests a running application by sending malicious HTTP payloads (e.g. OWASP ZAP, Burp Suite)."
         }
+      ],
+      "keyPoints": [
+        "Move testing earlier: a bug found in a pull request costs minutes, one found in production costs days.",
+        "SAST reads your source code; DAST attacks the running app from outside; SCA checks your libraries.",
+        "Fail the build on high-severity findings, but tune the rules so developers trust it."
       ],
       "quiz": {
         "question": "What does 'Shift-Left Security' mean in DevSecOps?",
@@ -59,6 +78,11 @@
           "value": "Zero Trust Principle: 'Never Trust, Always Verify.' Even traffic inside your internal Kubernetes cluster must be authenticated and encrypted using mTLS (mutual TLS)."
         }
       ],
+      "keyPoints": [
+        "Base images carry hundreds of packages: scan them (Trivy, Grype) and keep them updated.",
+        "Never put secrets in a Dockerfile, an image layer or a Git repository. Rotate any that leaked.",
+        "Use a secrets manager (Vault, AWS Secrets Manager) and short-lived credentials."
+      ],
       "quiz": {
         "question": "What is the core rule of Zero Trust Architecture?",
         "options": [
@@ -91,6 +115,11 @@
           "value": "BOLA (Broken Object Level Authorization) is the #1 most exploited API flaw in tech companies. Never trust URL parameters (e.g. GET /api/orders/55) without verifying that the logged-in user actually owns order #55."
         }
       ],
+      "keyPoints": [
+        "Broken object-level authorisation (BOLA) means changing an ID in the URL shows someone else's data. Always check ownership on the server.",
+        "Other common risks: broken authentication, excessive data in responses, no rate limiting.",
+        "Validate every input and return only the fields the client needs."
+      ],
       "quiz": {
         "question": "What is BOLA (Broken Object Level Authorization) in API security?",
         "options": [
@@ -121,6 +150,11 @@
           "value": "An **SBOM (Software Bill of Materials)** is an ingredients list for software. Just like a food label lists ingredients, an SBOM lists every open-source package, version, and license included in your container."
         }
       ],
+      "keyPoints": [
+        "Most of your code is other people's libraries, so their flaws are your flaws.",
+        "An SBOM is the ingredient list of your software, so you can answer \"are we affected?\" in minutes.",
+        "Pin dependency versions, verify signatures and use lock files."
+      ],
       "quiz": {
         "question": "What is an SBOM (Software Bill of Materials)?",
         "options": [
@@ -133,5 +167,50 @@
         "explanation": "An SBOM is a machine-readable inventory of software components and dependencies used in an application. It helps security teams rapidly identify if a new vulnerability affects their codebase."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "DevSecOps cheat sheet",
+    "rows": [
+      [
+        "trivy image app:1.0",
+        "Scan an image for known vulnerabilities"
+      ],
+      [
+        "trivy fs .",
+        "Scan the project folder, including dependencies"
+      ],
+      [
+        "gitleaks detect",
+        "Look for secrets committed to Git"
+      ],
+      [
+        "syft app:1.0 -o spdx-json",
+        "Generate an SBOM"
+      ],
+      [
+        "SAST",
+        "Analyse source code without running it (SonarQube, Semgrep)"
+      ],
+      [
+        "DAST",
+        "Test the running app from outside (OWASP ZAP)"
+      ],
+      [
+        "SCA",
+        "Check third-party libraries for known flaws"
+      ],
+      [
+        "Least privilege",
+        "Give only the access that is needed"
+      ],
+      [
+        "Zero trust",
+        "Never trust by location; verify every request"
+      ],
+      [
+        "CVE / CVSS",
+        "A flaw's public ID / its severity score 0-10"
+      ]
+    ]
+  }
 }

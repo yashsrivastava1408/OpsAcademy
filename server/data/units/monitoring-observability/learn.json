@@ -1,4 +1,18 @@
 {
+  "overview": {
+    "why": "You cannot fix what you cannot see. Monitoring tells you that something is wrong; observability helps you find out why. On-call engineers live in dashboards, alerts and logs, and companies look for people who understand which numbers matter and how to avoid alert fatigue.",
+    "prerequisites": [
+      "Linux basics and Docker basics (you will read container metrics and logs)."
+    ],
+    "outcomes": [
+      "Explain logs, metrics and traces, and when each helps",
+      "Write simple PromQL to measure request rate, errors and latency",
+      "Build a Grafana dashboard that tells a story instead of showing every number",
+      "Define SLIs, SLOs and SLAs and calculate an error budget",
+      "Design alerts that wake someone only when a human needs to act"
+    ],
+    "placementTip": "Know the **four golden signals**: latency, traffic, errors and saturation. If you can say what you would measure for a web service using those four, you sound experienced."
+  },
   "sections": [
     {
       "id": "three-pillars",
@@ -22,6 +36,11 @@
           "style": "info",
           "value": "Golden Signals of Monitoring (Google SRE Book): Latency, Traffic, Errors, and Saturation. If you monitor these 4 signals, you can detect almost any production issue."
         }
+      ],
+      "keyPoints": [
+        "Metrics are numbers over time (cheap, great for alerts); logs are detailed events; traces follow one request across services.",
+        "Start with metrics to see *that* something is wrong, then use logs and traces to find *why*.",
+        "Observability means you can ask new questions about a system without shipping new code."
       ],
       "quiz": {
         "question": "What is the primary purpose of Distributed Tracing?",
@@ -66,6 +85,11 @@
           "value": "PromQL Tip: `rate()` calculates per-second average rate of increase for Counter metrics over a given time window. Always use `rate()` on counters, never raw values."
         }
       ],
+      "keyPoints": [
+        "Prometheus **pulls** (scrapes) metrics from `/metrics` endpoints on a schedule.",
+        "Metric types: counter (only goes up), gauge (up and down), histogram (distribution, used for latency).",
+        "`rate(http_requests_total[5m])` turns a counter into requests per second."
+      ],
       "quiz": {
         "question": "How does Prometheus collect metrics from applications?",
         "options": [
@@ -102,6 +126,11 @@
           "style": "info",
           "value": "Pro Tip: Community Grafana Dashboards (like Dashboard #315 for Kubernetes cluster monitoring or #1860 for Node Exporter) can be imported instantly using their ID number."
         }
+      ],
+      "keyPoints": [
+        "A good dashboard answers one question, such as \"is this service healthy?\".",
+        "Put the golden signals at the top and detail below.",
+        "Use variables (environment, service) so one dashboard serves many cases."
       ],
       "quiz": {
         "question": "What is Grafana's main role in an observability stack?",
@@ -140,6 +169,11 @@
           "value": "Error Budget Concept: 100% uptime is impossible and prohibitively expensive. An Error Budget (100% - SLO) is the allowable amount of downtime. Teams use their Error Budget to ship new features quickly; if the budget is exhausted, feature deployments freeze!"
         }
       ],
+      "keyPoints": [
+        "SLI is what you measure, SLO is the target, SLA is the promise to customers (with consequences).",
+        "An SLO of 99.9% leaves an error budget of about 43 minutes a month.",
+        "When the budget is spent, slow down releases and focus on reliability."
+      ],
       "quiz": {
         "question": "What is the difference between an SLO and an SLA?",
         "options": [
@@ -177,6 +211,11 @@
           "value": "On-Call Golden Rule: Never alert on a symptom without a runbook! Every critical alert should link directly to a Runbook document containing step-by-step instructions on how to troubleshoot and mitigate the issue."
         }
       ],
+      "keyPoints": [
+        "Alert on **symptoms users feel** (errors, slowness), not on every cause (CPU 70%).",
+        "Every alert needs an owner, a clear message and a runbook link.",
+        "After an incident, write a blameless post-mortem: what happened, why, and what changes."
+      ],
       "quiz": {
         "question": "What is 'alert fatigue' and how do you prevent it?",
         "options": [
@@ -189,5 +228,54 @@
         "explanation": "Alert fatigue happens when engineers are spammed with noisy, non-actionable alerts. Preventing it requires tuning alert thresholds, using 'for' duration windows, and reserving urgent pages for real outages."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Monitoring cheat sheet",
+    "rows": [
+      [
+        "up",
+        "Is the target reachable? (1 yes, 0 no)"
+      ],
+      [
+        "rate(http_requests_total[5m])",
+        "Requests per second over five minutes"
+      ],
+      [
+        "sum by (status)(rate(http_requests_total[5m]))",
+        "Requests per second split by status code"
+      ],
+      [
+        "histogram_quantile(0.95, sum by (le)(rate(http_request_duration_seconds_bucket[5m])))",
+        "95th percentile latency"
+      ],
+      [
+        "node_memory_MemAvailable_bytes",
+        "Memory still available on a host"
+      ],
+      [
+        "1 - (rate(errors[5m]) / rate(requests[5m]))",
+        "Success ratio, a common SLI"
+      ],
+      [
+        "Latency / Traffic / Errors / Saturation",
+        "The four golden signals"
+      ],
+      [
+        "99.9% monthly",
+        "About 43 minutes of allowed downtime"
+      ],
+      [
+        "99.99% monthly",
+        "About 4 minutes of allowed downtime"
+      ],
+      [
+        "RED method",
+        "Rate, Errors, Duration for services"
+      ],
+      [
+        "USE method",
+        "Utilisation, Saturation, Errors for resources"
+      ]
+    ]
+  }
 }

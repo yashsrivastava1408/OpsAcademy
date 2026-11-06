@@ -1,4 +1,18 @@
 {
+  "overview": {
+    "why": "Anything you do twice by hand should be a script. Bash is the glue of DevOps: deploy scripts, backups, health checks and CI steps are all shell scripts. A script that fails silently is worse than no script, so this unit teaches the habits (strict mode, traps, argument checking) that make scripts safe to run on real servers.",
+    "prerequisites": [
+      "Linux basics: files, permissions, pipes and cron."
+    ],
+    "outcomes": [
+      "Start every script with `set -euo pipefail` and explain what each flag protects you from",
+      "Clean up temporary files and lock files even when a script crashes, using `trap`",
+      "Accept options like `-e production -v` with `getopts` and print a helpful usage message",
+      "Write a disk and log monitoring script that alerts when a limit is crossed",
+      "Quote variables correctly so a space in a filename does not break your script"
+    ],
+    "placementTip": "A very common take-home task is \"write a script that checks disk usage and warns above 80%\". Be ready to write it from memory, with error handling."
+  },
   "sections": [
     {
       "id": "defensive-bash",
@@ -23,6 +37,11 @@
           "style": "tip",
           "value": "Interview favorite: 'What does set -euo pipefail do?' Explain each letter (-e, -u, -o pipefail). Mentioning this in any Linux/DevOps interview proves you have real-world production experience!"
         }
+      ],
+      "keyPoints": [
+        "`set -e` stops at the first failing command; `-u` treats an unset variable as an error; `-o pipefail` fails a pipe if any part fails.",
+        "Always quote variables: `\"$file\"`, not `$file`.",
+        "Check inputs first and fail early with a clear message and a non-zero exit code."
       ],
       "quiz": {
         "question": "What happens when 'set -e' is enabled in a Bash script?",
@@ -56,6 +75,11 @@
           "value": "#!/usr/bin/env bash\nset -euo pipefail\n\n# Create temporary file\nTEMP_FILE=$(mktemp /tmp/myapp.XXXXXX)\n\n# Cleanup function\ncleanup() {\n  echo \"Cleaning up temporary files...\"\n  rm -f \"$TEMP_FILE\"\n}\n\n# Register trap on EXIT, INT (Ctrl+C), TERM\ntrap cleanup EXIT INT TERM\n\necho \"Processing data into $TEMP_FILE...\"\n# Do work here..."
         }
       ],
+      "keyPoints": [
+        "`trap 'cleanup' EXIT` runs your cleanup however the script ends.",
+        "Use `mktemp` for temporary files and remove them in the trap.",
+        "A lock file stops two copies of a job running at once; the trap removes it."
+      ],
       "quiz": {
         "question": "What is the primary use case of the 'trap' command in Bash?",
         "options": [
@@ -82,6 +106,11 @@
           "title": "getopts Argument Parsing Example",
           "value": "#!/usr/bin/env bash\nset -euo pipefail\n\nENV=\"staging\"\nVERSION=\"latest\"\n\nwhile getopts \"e:v:h\" opt; do\n  case ${opt} in\n    e) ENV=\"$OPTARG\" ;;\n    v) VERSION=\"$OPTARG\" ;;\n    h) echo \"Usage: $0 [-e env] [-v version]\"; exit 0 ;;\n    \\?) echo \"Invalid option\"; exit 1 ;;\n  esac\ndone\n\necho \"Deploying version $VERSION to environment $ENV...\""
         }
+      ],
+      "keyPoints": [
+        "`$1`, `$2` are positional arguments, `$@` is all of them, `$#` is how many.",
+        "`getopts` handles flags such as `-e prod` the standard way.",
+        "Print usage and exit 1 when arguments are missing, so mistakes are obvious."
       ],
       "quiz": {
         "question": "In Bash, what does '$@' represent?",
@@ -110,6 +139,11 @@
           "value": "#!/usr/bin/env bash\nset -euo pipefail\n\nTHRESHOLD=80\nEMAIL=\"ops-alerts@company.com\"\n\ndf -H | grep -vE '^Filesystem|tmpfs|cdrom' | awk '{ print $5 \" \" $1 }' | while read -r output; do\n  usep=$(echo \"$output\" | awk '{ print $1}' | cut -d'%' -f1)\n  partition=$(echo \"$output\" | awk '{ print $2 }')\n  \n  if [ \"$usep\" -ge \"$THRESHOLD\" ]; then\n    echo \"[ALERT] Partition '$partition' is at $usep% usage on $(hostname) as of $(date)\"\n  fi\ndone"
         }
       ],
+      "keyPoints": [
+        "`df -h` and `awk` pull out the usage number; compare it with a threshold using `-gt`.",
+        "Send alerts (mail, webhook) and also write to a log so there is a record.",
+        "Run it from cron and test the failure path, not only the happy path."
+      ],
       "quiz": {
         "question": "How do you extract just the numeric percentage from '85%' in Bash?",
         "options": [
@@ -122,5 +156,58 @@
         "explanation": "'cut -d\"%\" -f1' splits the text by the '%' delimiter and returns field 1 (the number 85)."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Bash scripting cheat sheet",
+    "rows": [
+      [
+        "#!/usr/bin/env bash",
+        "First line: which interpreter runs the script"
+      ],
+      [
+        "set -euo pipefail",
+        "Strict mode: stop on errors, unset variables and failed pipes"
+      ],
+      [
+        "\"$var\"",
+        "Always quote variables"
+      ],
+      [
+        "${var:-default}",
+        "Use a default when the variable is empty"
+      ],
+      [
+        "$1  $@  $#  $?",
+        "First argument / all arguments / how many / last exit code"
+      ],
+      [
+        "[[ -f file ]]  [[ -d dir ]]",
+        "File exists / folder exists"
+      ],
+      [
+        "[[ $n -gt 80 ]]",
+        "Numeric comparison (greater than)"
+      ],
+      [
+        "for f in *.log; do ...; done",
+        "Loop over files"
+      ],
+      [
+        "trap 'rm -f \"$tmp\"' EXIT",
+        "Always clean up when the script ends"
+      ],
+      [
+        "tmp=$(mktemp)",
+        "Make a safe temporary file"
+      ],
+      [
+        "command || { echo \"failed\"; exit 1; }",
+        "Handle one failure explicitly"
+      ],
+      [
+        "cmd > out.log 2>&1",
+        "Capture normal output and errors together"
+      ]
+    ]
+  }
 }

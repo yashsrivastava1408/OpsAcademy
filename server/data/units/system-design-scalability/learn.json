@@ -1,4 +1,18 @@
 {
+  "overview": {
+    "why": "\"Design a system that serves a million users\" is the classic senior-engineer interview question, and it increasingly appears in campus placements too. It is less about one right answer and more about showing that you ask good questions, know the building blocks (load balancers, caches, queues, replicas) and can explain trade-offs out loud.",
+    "prerequisites": [
+      "Networking basics and AWS cloud basics: you will use terms like load balancer, DNS and subnet."
+    ],
+    "outcomes": [
+      "Choose between vertical and horizontal scaling and say what each costs",
+      "Place a cache (Redis) in front of a database and avoid stale or stampeding data",
+      "Scale a database with read replicas, partitioning and sharding",
+      "Explain the CAP theorem with a real example and pick consistency or availability on purpose",
+      "Use a message queue to smooth traffic and decouple services"
+    ],
+    "placementTip": "Follow a simple script in every design answer: clarify requirements, estimate scale, sketch the big boxes, then dig into the part the interviewer cares about. Talk about trade-offs, not just components."
+  },
   "sections": [
     {
       "id": "scaling-basics",
@@ -19,6 +33,11 @@
           "title": "Scaling Comparison Matrix",
           "value": "Feature          Vertical Scaling (Scale Up)    Horizontal Scaling (Scale Out)\n─────────────────────────────────────────────────────────────────────────────\nStrategy         Add more CPU / RAM to 1 machine Add more machines to pool\nDowntime         Usually requires reboot        Zero downtime (add/remove nodes)\nCost             Exponentially expensive        Linear & cost-efficient\nFault Tolerance  Single point of failure (SPOF) High availability (N+1 redundancy)\nLimit            Strict hardware cap            Virtually unlimited"
         }
+      ],
+      "keyPoints": [
+        "Vertical scaling makes one machine bigger (simple, but it has a ceiling); horizontal adds more machines (needs a load balancer and stateless servers).",
+        "Keep servers **stateless**, with sessions and files in shared storage, so any server can handle any request.",
+        "Look for the bottleneck before you scale: CPU, memory, disk, network or the database."
       ],
       "quiz": {
         "question": "What is the primary benefit of Horizontal Scaling over Vertical Scaling?",
@@ -51,6 +70,11 @@
           "value": "Cache Invalidation Rule: 'There are only two hard things in Computer Science: cache invalidation and naming things.' Always set a TTL (Time To Live) on cached keys to prevent stale data."
         }
       ],
+      "keyPoints": [
+        "Memory is far faster than disk, so cache what is read often and changes rarely.",
+        "Cache-aside: check the cache, on a miss read the database and fill the cache.",
+        "Decide how data expires (TTL) and how it is invalidated, because stale data is the cost of caching."
+      ],
       "quiz": {
         "question": "In the Cache-Aside pattern, what happens when a request experiences a 'Cache Miss'?",
         "options": [
@@ -81,9 +105,19 @@
           "value": "**Read Replicas** — All writes go to the Primary DB. Changes replicate asynchronously to Read Replicas. All SELECT queries hit the replicas.\n\n**Database Sharding** — Splitting a huge table across multiple database servers based on a Shard Key (e.g., User ID % 2)."
         }
       ],
+      "keyPoints": [
+        "Most apps read far more than they write: send reads to replicas, writes to the primary.",
+        "Replicas can lag behind, so a user may briefly not see their own write.",
+        "Sharding splits data across databases by a key; it scales writes but makes queries and joins harder."
+      ],
       "quiz": {
         "question": "Which database pattern is best for handling high write volumes and huge dataset growth beyond a single server disk?",
-        "options": ["Read Replicas", "Database Sharding", "Vertical Scaling", "Single Primary"],
+        "options": [
+          "Read Replicas",
+          "Database Sharding",
+          "Vertical Scaling",
+          "Single Primary"
+        ],
         "correctIndex": 1,
         "explanation": "Database Sharding partitions data horizontally across multiple independent servers (shards), allowing you to scale both WRITE capacity and storage capacity."
       }
@@ -106,6 +140,11 @@
           "value": "**Message Queues (Kafka / RabbitMQ)** decouple background work. When a user buys a product, the API places a message in the Queue and responds in 20ms. Background workers process email receipts, inventory, and analytics asynchronously."
         }
       ],
+      "keyPoints": [
+        "During a network partition a distributed system must choose consistency or availability.",
+        "Banks tend to choose consistency; social feeds tend to choose availability with eventual consistency.",
+        "Queues (Kafka, SQS, RabbitMQ) absorb bursts and let services work at their own pace."
+      ],
       "quiz": {
         "question": "Why do modern microservices use Message Queues (like RabbitMQ / Kafka)?",
         "options": [
@@ -118,5 +157,50 @@
         "explanation": "Message queues enable asynchronous communication. The web server enqueues background jobs (sending emails, video processing) and returns a fast response to the user while background workers handle the heavy lifting."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "System design cheat sheet",
+    "rows": [
+      [
+        "Load balancer",
+        "Spreads requests across servers and checks their health"
+      ],
+      [
+        "CDN",
+        "Serves static files from locations near the user"
+      ],
+      [
+        "Cache (Redis)",
+        "Fast in-memory store in front of the database"
+      ],
+      [
+        "Read replica",
+        "Copy of the database that serves reads"
+      ],
+      [
+        "Sharding",
+        "Splitting data across databases by a key"
+      ],
+      [
+        "Message queue",
+        "Buffer between producer and consumer services"
+      ],
+      [
+        "Rate limiter",
+        "Protects a service from too many requests"
+      ],
+      [
+        "Idempotency",
+        "Doing a request twice has the same result as once"
+      ],
+      [
+        "Back-of-envelope",
+        "1M users/day is about 12 requests per second on average"
+      ],
+      [
+        "Latency numbers",
+        "RAM ~0.1 ms, SSD ~0.1-1 ms, same-region network ~1 ms, disk seek ~10 ms"
+      ]
+    ]
+  }
 }

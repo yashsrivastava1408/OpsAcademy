@@ -357,7 +357,7 @@
   "section": "kernel-security-mechanisms",
   "title": "Linux Kernel Isolation: Seccomp, AppArmor & Capabilities",
   "kind": "learn",
-  "text": "### Defense in Depth in Linux Workloads\nContainers share the host Linux kernel. Hardening the system call boundary is the primary defense against zero-day container breakout exploits:\n```text\nContainer Application ──> [Seccomp (Syscall Filter)] ──> [AppArmor/SELinux (Path MAC)] ──> [Capabilities Filter] ──> Host Kernel\n```\n#### Security Layers:\n1. **Seccomp (Secure Computing)**: Restricts which of the ~450 Linux system calls a process can make. Blocking calls like `ptrace`, `sys_chroot`, and `keyctl` neutralizes 90% of privilege escalation CVEs.\n2. **Linux Capabilities**: Divides root privileges into granular sub-units (`CAP_NET_BIND_SERVICE`, `CAP_CHOWN`). Dropping all capabilities (`cap-drop: ALL`) and whitelisting only necessary ones prevents unauthorized packet sniffing or raw device access."
+  "text": "### Defense in Depth in Linux Workloads\nContainers share the host Linux kernel. Hardening the system call boundary is the primary defense against zero-day container breakout exploits:\n```text\nContainer Application ──> [Seccomp (Syscall Filter)] ──> [AppArmor/SELinux (Path MAC)] ──> [Capabilities Filter] ──> Host Kernel\n```\n#### Security Layers:\n1. **Seccomp (Secure Computing)**: Restricts which of the ~450 Linux system calls a process can make. Blocking calls like `ptrace`, `sys_chroot`, and `keyctl` removes a large class of privilege-escalation exploits.\n2. **Linux Capabilities**: Divides root privileges into granular sub-units (`CAP_NET_BIND_SERVICE`, `CAP_CHOWN`). Dropping all capabilities (`cap-drop: ALL`) and whitelisting only necessary ones prevents unauthorized packet sniffing or raw device access."
  },
  {
   "id": "cloud-security-hardening/kernel-security-mechanisms/1",
@@ -375,7 +375,79 @@
   "section": "falco-ebpf-runtime-detection",
   "title": "Runtime Intrusion Detection with Falco & eBPF",
   "kind": "learn",
-  "text": "### eBPF-Powered Kernel Telemetry\n**Falco** uses kernel instrumentation (via eBPF probes) to monitor system calls in real-time and trigger alerts when suspicious behavior occurs:\n```yaml\n- rule: Terminal Shell in Container\n  desc: A terminal shell was spawned in a running production container\n  condition: >\n    spawned_process and container\n    and proc.name in (bash, sh, zsh, dash)\n  output: \"Shell spawned in container (user=%user.name pod=%k8s.pod.name)\"\n  priority: WARNING\n```\nUnlike traditional log shippers, eBPF operates at the kernel ring buffer layer (<1% CPU overhead) and cannot be bypassed by user-space malware tampering with `/var/log`."
+  "text": "### eBPF-Powered Kernel Telemetry\n**Falco** uses kernel instrumentation (via eBPF probes) to monitor system calls in real-time and trigger alerts when suspicious behavior occurs:\n```yaml\n- rule: Terminal Shell in Container\n  desc: A terminal shell was spawned in a running production container\n  condition: >\n    spawned_process and container\n    and proc.name in (bash, sh, zsh, dash)\n  output: \"Shell spawned in container (user=%user.name pod=%k8s.pod.name)\"\n  priority: WARNING\n```\nUnlike traditional log shippers, eBPF operates at the kernel ring buffer layer with low overhead, and it is much harder for user-space malware to hide from than log files in `/var/log`."
+ },
+ {
+  "id": "cloud-security-hardening/container-runtime-hardening/0",
+  "unit": "cloud-security-hardening",
+  "unit_title": "Cloud-Native Container & Linux Kernel Hardening",
+  "section": "container-runtime-hardening",
+  "title": "Hardening a Container in Practice",
+  "kind": "learn",
+  "text": "The previous section explained the kernel mechanisms. This section applies them. The goal is a container that can do **exactly what the application needs and nothing more**. Start from the strictest settings and loosen one thing at a time only when something proves necessary.\nA hardened docker run\ndocker run -d --name web \\\n  --user 10001:10001 \\\n  --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \\\n  --cap-drop ALL --cap-add NET_BIND_SERVICE \\\n  --security-opt no-new-privileges:true \\\n  --pids-limit 128 --memory 256m --cpus 0.5 \\\n  -p 8080:80 \\\n  myorg/web:1.4.2\nSetting\nWhat it prevents\n`--user` (non-root)\nA bug becoming root inside the container\n`--read-only` + `--tmpfs`\nAn attacker writing tools or changing the app\n`--cap-drop ALL`"
+ },
+ {
+  "id": "cloud-security-hardening/container-runtime-hardening/1",
+  "unit": "cloud-security-hardening",
+  "unit_title": "Cloud-Native Container & Linux Kernel Hardening",
+  "section": "container-runtime-hardening",
+  "title": "Hardening a Container in Practice",
+  "kind": "learn",
+  "text": "Raw sockets, mounting, changing ownership and other root powers\n`no-new-privileges`\nGaining privileges through setuid programs\n`--pids-limit`, `--memory`\nFork bombs and one container starving the host\nThe same rules in Kubernetes\nsecurityContext for a Pod\nspec:\n  securityContext:\n    runAsNonRoot: true\n    runAsUser: 10001\n    seccompProfile:\n      type: RuntimeDefault      # the container runtime's default system-call filter\n  containers:\n    - name: web\n      image: myorg/web:1.4.2\n      securityContext:\n        allowPrivilegeEscalation: false\n        readOnlyRootFilesystem: true\n        capabilities:\n          drop: [\"ALL\"]\n          add: [\"NET_BIND_SERVICE\"]\n      resources:\n        limits: { memory: 256Mi, cpu: 500m }\nwarning\nNever use `--privileged`, never mount `/var/run/docker.sock` into an application container, and never mount the host's root filesystem. Each of these hands the container the keys to the machine.\ntip"
+ },
+ {
+  "id": "cloud-security-hardening/container-runtime-hardening/2",
+  "unit": "cloud-security-hardening",
+  "unit_title": "Cloud-Native Container & Linux Kernel Hardening",
+  "section": "container-runtime-hardening",
+  "title": "Hardening a Container in Practice",
+  "kind": "learn",
+  "text": "Containers should be able to bind to a port above 1024 without any capability. Use port 8080 inside the container and map it to 80 outside, and you can drop `NET_BIND_SERVICE` too."
+ },
+ {
+  "id": "cloud-security-hardening/network-and-access-policies/0",
+  "unit": "cloud-security-hardening",
+  "unit_title": "Cloud-Native Container & Linux Kernel Hardening",
+  "section": "network-and-access-policies",
+  "title": "Limiting the Blast Radius: NetworkPolicy and RBAC",
+  "kind": "learn",
+  "text": "Hardening one container is not enough. If an attacker gets into one Pod, they will try to reach other Pods and the Kubernetes API. Two controls limit how far they can go: **NetworkPolicy** (who may talk to whom) and **RBAC** (who may do what in the cluster).\nStart with deny everything\nDefault-deny for a namespace\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: default-deny-all\n  namespace: shop\nspec:\n  podSelector: {}          # every Pod in the namespace\n  policyTypes: [Ingress, Egress]\nThen allow only what is needed: web may reach the API on 8080"
+ },
+ {
+  "id": "cloud-security-hardening/network-and-access-policies/1",
+  "unit": "cloud-security-hardening",
+  "unit_title": "Cloud-Native Container & Linux Kernel Hardening",
+  "section": "network-and-access-policies",
+  "title": "Limiting the Blast Radius: NetworkPolicy and RBAC",
+  "kind": "learn",
+  "text": "apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: allow-web-to-api\n  namespace: shop\nspec:\n  podSelector:\n    matchLabels: { app: api }\n  policyTypes: [Ingress]\n  ingress:\n    - from:\n        - podSelector:\n            matchLabels: { app: web }\n      ports:\n        - { protocol: TCP, port: 8080 }\nwarning\nNetworkPolicy only works if your network plugin (CNI) supports it, for example Calico or Cilium. Without one, the objects are accepted but nothing is enforced.\nLeast-privilege RBAC\nA Role that can only read Pods in one namespace\napiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata: { name: pod-reader, namespace: shop }\nrules:\n  - apiGroups: [\"\"]\n    resources: [\"pods\", \"pods/log\"]\n    verbs: [\"get\", \"list\", \"watch\"]"
+ },
+ {
+  "id": "cloud-security-hardening/network-and-access-policies/2",
+  "unit": "cloud-security-hardening",
+  "unit_title": "Cloud-Native Container & Linux Kernel Hardening",
+  "section": "network-and-access-policies",
+  "title": "Limiting the Blast Radius: NetworkPolicy and RBAC",
+  "kind": "learn",
+  "text": "---\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata: { name: read-pods, namespace: shop }\nsubjects:\n  - kind: ServiceAccount\n    name: monitoring\n    namespace: shop\nroleRef:\n  kind: Role\n  name: pod-reader\n  apiGroup: rbac.authorization.k8s.io\nPrefer namespaced `Role` over cluster-wide `ClusterRole`.\nAvoid wildcards (`*`) in resources and verbs.\nTurn off automatic token mounting (`automountServiceAccountToken: false`) for Pods that never call the API.\nCheck access with `kubectl auth can-i`."
+ },
+ {
+  "id": "cloud-security-hardening/hardening-audit-checklist/0",
+  "unit": "cloud-security-hardening",
+  "unit_title": "Cloud-Native Container & Linux Kernel Hardening",
+  "section": "hardening-audit-checklist",
+  "title": "Auditing Your Hardening: Benchmarks and a Checklist",
+  "kind": "learn",
+  "text": "Hardening you cannot measure drifts away over time. Use industry benchmarks and automated scanners so that \"secure\" is a result you can check, not a feeling.\nTool\nChecks\nExample\n**kube-bench**\nCluster nodes against the CIS Kubernetes Benchmark\n`kube-bench run`\n**Trivy config**\nDockerfiles and Kubernetes YAML for risky settings\n`trivy config .`\n**Trivy image**\nKnown vulnerabilities in an image\n`trivy image web:1.4.2`\n**Docker Bench**\nA Docker host against the CIS Docker Benchmark\n`docker-bench-security`\n**Falco**\nBehaviour at run time\nrules + alerts\nA quick checklist before going to production\nImage: small base, pinned version, scanned, no secrets inside.\nRuns as non-root with a read-only root filesystem."
+ },
+ {
+  "id": "cloud-security-hardening/hardening-audit-checklist/1",
+  "unit": "cloud-security-hardening",
+  "unit_title": "Cloud-Native Container & Linux Kernel Hardening",
+  "section": "hardening-audit-checklist",
+  "title": "Auditing Your Hardening: Benchmarks and a Checklist",
+  "kind": "learn",
+  "text": "All capabilities dropped; only the needed ones added.\nSeccomp profile set (at least `RuntimeDefault`).\nCPU and memory limits set.\nDefault-deny NetworkPolicy plus explicit allow rules.\nService account with minimal RBAC and no automatic token if unused.\nSecrets come from a secrets manager, not from the image or Git.\nRuntime detection (Falco) is on and alerts reach a person.\ninfo\nRun these checks in CI so that a risky change fails the pull request. Fixing a finding in review is cheap; finding it after an incident is not."
  },
  {
   "id": "cloud-security-hardening/flashcard/fc-csh1",
@@ -520,6 +592,60 @@
   "title": "3. Disk Artifacts & Timeline Reconstruction",
   "kind": "learn",
   "text": "### Windows & Linux Forensic Artifacts\n- **Master File Table ($MFT)**: Metadata for every file on NTFS partitions.\n- **Windows Registry**: User activity, auto-run persistence keys, recent documents.\n- **Event Logs (`.evtx`)**: Security Event ID 4624 (Logon Success), 4625 (Logon Failed), 7045 (New Service Installed).\n- **Prefetch (`.pf`)**: Proves execution timestamp and frequency of executable applications."
+ },
+ {
+  "id": "digital-forensics/evidence-handling/0",
+  "unit": "digital-forensics",
+  "unit_title": "Digital Forensics & Incident Response (DFIR) Masterclass",
+  "section": "evidence-handling",
+  "title": "Handling Evidence: Imaging, Hashing and Chain of Custody",
+  "kind": "learn",
+  "text": "Evidence is only useful if people believe it. That belief rests on two things: proof that the data did not change (**hashing**) and a record of who held it and when (**chain of custody**).\n1. Identify the right disk\nBe sure before you copy\nlsblk -o NAME,SIZE,MODEL,SERIAL\nsudo fdisk -l /dev/sdb\n2. Image it read-only and hash it\nAcquire and verify\n# the source is attached through a hardware write blocker\nsudo dd if=/dev/sdb of=/cases/2026-014/disk.img bs=4M conv=noerror,sync status=progress\nsha256sum /dev/sdb            > /cases/2026-014/source.sha256\nsha256sum /cases/2026-014/disk.img > /cases/2026-014/image.sha256\n# the two hashes must be identical\ninfo"
+ },
+ {
+  "id": "digital-forensics/evidence-handling/1",
+  "unit": "digital-forensics",
+  "unit_title": "Digital Forensics & Incident Response (DFIR) Masterclass",
+  "section": "evidence-handling",
+  "title": "Handling Evidence: Imaging, Hashing and Chain of Custody",
+  "kind": "learn",
+  "text": "A hash is a fingerprint. Change one bit of a 500 GB image and the SHA-256 value changes completely. Matching hashes prove the copy is exact.\n3. Record the chain of custody\nField\nExample\nItem and description\nLaptop, serial XYZ123, black, Dell\nWhere and when seized\nOffice 3B, 6 Nov 2026, 14:05\nWho collected it\nA. Sharma, Incident Response\nHash of the image\nSHA-256: 9f2c...\nEach transfer\nFrom, to, date and time, reason, signatures\nStorage\nLocked evidence cabinet 4, access log\nwarning\nA gap in the record (\"who had it between Tuesday and Friday?\") is enough to make evidence unusable. Record every handover."
+ },
+ {
+  "id": "digital-forensics/linux-forensics/0",
+  "unit": "digital-forensics",
+  "unit_title": "Digital Forensics & Incident Response (DFIR) Masterclass",
+  "section": "linux-forensics",
+  "title": "Investigating a Linux Server",
+  "kind": "learn",
+  "text": "Many incidents involve Linux servers: a web server that was broken into, a cloud instance running a crypto-miner. Linux keeps plenty of evidence if you know where to look. Work from a **copy or a read-only mount** wherever you can, and note the time on the machine, since clocks can be wrong.\nQuestion\nWhere to look\nCommand\nWho logged in, from where?\n`/var/log/auth.log` or `/var/log/secure`, `wtmp`\n`last -a`, `grep \"Accepted\" /var/log/auth.log`\nWere there guessing attacks?\nFailed logins\n`lastb`, `grep \"Failed password\" /var/log/auth.log`\nWhat did a user run?\nShell history\n`cat ~user/.bash_history`\nWhat changed recently?\nModified files\n`find / -xdev -mtime -2 -type f 2>/dev/null`\nWhat is running now?"
+ },
+ {
+  "id": "digital-forensics/linux-forensics/1",
+  "unit": "digital-forensics",
+  "unit_title": "Digital Forensics & Incident Response (DFIR) Masterclass",
+  "section": "linux-forensics",
+  "title": "Investigating a Linux Server",
+  "kind": "learn",
+  "text": "Processes and connections\n`ps auxf`, `ss -tulpn`\nWhat starts at boot or on schedule?\nPersistence\n`systemctl list-unit-files --state=enabled`, `crontab -l`, `ls /etc/cron.*`\nAny unexpected admin accounts or keys?\nUsers and SSH keys\n`cat /etc/passwd`, `cat ~/.ssh/authorized_keys`\nA first look at a suspect web server\ndate -u; uptime\nlast -a | head -20\ngrep -E \"Accepted|Failed\" /var/log/auth.log | tail -50\nps auxf --sort=-%cpu | head\nss -tulpn\nfind /var/www /tmp /dev/shm -type f -mtime -3 2>/dev/null\ntip\nUnknown programs running from `/tmp` or `/dev/shm`, or a busy process with a random name, are classic signs of a compromise or a crypto-miner."
+ },
+ {
+  "id": "digital-forensics/timeline-and-report/0",
+  "unit": "digital-forensics",
+  "unit_title": "Digital Forensics & Incident Response (DFIR) Masterclass",
+  "section": "timeline-and-report",
+  "title": "Building a Timeline and Writing the Report",
+  "kind": "learn",
+  "text": "Single artifacts rarely tell the whole story. A **timeline** puts events from many sources on one clock: logins, file changes, program runs, network connections. Patterns appear that no single log shows.\nFrom evidence to report\ngraph LR\n    A[Disk image] --> T[Timeline tool]\n    B[Memory image] --> T\n    C[Logs] --> T\n    T --> D[Sorted events]\n    D --> E[Findings]\n    E --> F[Report]\nTools such as **Plaso (`log2timeline`)** turn many artifact types into one sorted list. Always convert times to **UTC** and note any clock differences.\nWhat a good report contains\n**Summary** in plain language: what was asked, what was found.\n**Scope and sources**: which systems and images, with their hashes."
+ },
+ {
+  "id": "digital-forensics/timeline-and-report/1",
+  "unit": "digital-forensics",
+  "unit_title": "Digital Forensics & Incident Response (DFIR) Masterclass",
+  "section": "timeline-and-report",
+  "title": "Building a Timeline and Writing the Report",
+  "kind": "learn",
+  "text": "**Method**: tools and versions, so another examiner can repeat it.\n**Findings** as a timeline, each tied to the evidence that supports it.\n**Limits**: what you could not determine, and any assumptions.\n**Appendix**: chain of custody, command output and screenshots.\nwarning\nReport **facts and evidence**, not opinions or blame. \"The account logged in from IP X at 02:14 UTC\" is a fact. \"The employee did it\" is a conclusion the evidence may not support."
  },
  {
   "id": "digital-forensics/flashcard/1",
@@ -861,7 +987,7 @@
   "section": "module-2",
   "title": "2. Subdomains: EPP vs EDR vs XDR",
   "kind": "learn",
-  "text": "- **Antivirus / NGAV**: Real-time file scanning & signature updates.\n- **Behavioral Analysis**: Machine learning models detecting fileless malware.\n- **Application & Device Control**: Whitelisting approved apps and blocking unauthorized USB drives.\n- **Automated Isolation**: Immediately cutting network access to infected hosts in <5 seconds."
+  "text": "- **Antivirus / NGAV**: Real-time file scanning & signature updates.\n- **Behavioral Analysis**: Machine learning models detecting fileless malware.\n- **Application & Device Control**: Whitelisting approved apps and blocking unauthorized USB drives.\n- **Automated Isolation**: Quickly cutting network access to infected hosts so malware cannot spread."
  },
  {
   "id": "endpoint-security/module-3/0",
@@ -889,6 +1015,69 @@
   "title": "4. Enterprise Tooling Comparison & Deployment",
   "kind": "learn",
   "text": "#### GPO / PowerShell Onboarding Script:\n```powershell\n# Onboard Defender for Endpoint\nExpand-Archive -Path 'C:\\Deploy\\DefenderATP.zip' -DestinationPath 'C:\\Deploy\\ATP'\ncd C:\\Deploy\\ATP\n.\\WindowsDefenderATP-Onboarding.ps1\nGet-Service -Name 'Sense' | Select-Object Status\n```"
+ },
+ {
+  "id": "endpoint-security/attack-lifecycle/0",
+  "unit": "endpoint-security",
+  "unit_title": "Enterprise Endpoint Security: EPP, EDR & XDR Defense",
+  "section": "attack-lifecycle",
+  "title": "How an Attack Unfolds (and Where the EDR Sees It)",
+  "kind": "learn",
+  "text": "To defend endpoints you need to know how attackers move. The **cyber kill chain** and the **MITRE ATT&CK** catalogue describe the stages. Each stage leaves traces on a device, and those traces are what an EDR collects.\nStage\nWhat the attacker does\nWhat an EDR can see\nDelivery\nSends a phishing email with a document or link\nOffice app starting an unusual child process\nExecution\nRuns a script or macro\nPowerShell with encoded commands\nPersistence\nMakes sure it survives a reboot\nNew scheduled task, new service, run-key in the registry\nPrivilege escalation\nBecomes administrator\nUnusual token use, exploit behaviour\nCredential access\nSteals passwords\nAccess to the LSASS process memory"
+ },
+ {
+  "id": "endpoint-security/attack-lifecycle/1",
+  "unit": "endpoint-security",
+  "unit_title": "Enterprise Endpoint Security: EPP, EDR & XDR Defense",
+  "section": "attack-lifecycle",
+  "title": "How an Attack Unfolds (and Where the EDR Sees It)",
+  "kind": "learn",
+  "text": "Lateral movement\nMoves to other machines\nRemote logins, admin shares, remote execution\nImpact\nEncrypts files or steals data\nMass file renames, shadow-copy deletion, large uploads\ninfo\nA defender only needs to break the chain **once**. Stopping the macro that launches PowerShell, or the credential theft, is enough to prevent the later stages.\nSigns of ransomware worth memorising\nHundreds of files renamed or changed within seconds.\nVolume shadow copies deleted (`vssadmin delete shadows`).\nA new process running from a user's temp folder.\nSudden spike in disk activity on a file server."
+ },
+ {
+  "id": "endpoint-security/alert-triage-playbook/0",
+  "unit": "endpoint-security",
+  "unit_title": "Enterprise Endpoint Security: EPP, EDR & XDR Defense",
+  "section": "alert-triage-playbook",
+  "title": "Responding to an Alert: A Triage Playbook",
+  "kind": "learn",
+  "text": "Security teams receive far more alerts than they can read, so a **repeatable playbook** matters more than heroics. The steps below work for most endpoint alerts, from a suspicious script to confirmed ransomware.\n**Validate.** Is it real? Read the alert, the process tree and the user. Check whether the file or address is known bad (threat intelligence).\n**Scope.** Which devices and accounts are involved? Search the console for the same file hash or command across the estate.\n**Contain.** If it is real, isolate the host. Disable the account if credentials were taken.\n**Collect.** Keep evidence before you clean: process list, files, memory image if needed, and notes with times."
+ },
+ {
+  "id": "endpoint-security/alert-triage-playbook/1",
+  "unit": "endpoint-security",
+  "unit_title": "Enterprise Endpoint Security: EPP, EDR & XDR Defense",
+  "section": "alert-triage-playbook",
+  "title": "Responding to an Alert: A Triage Playbook",
+  "kind": "learn",
+  "text": "**Eradicate.** Remove the malware and the persistence it set up. Patch the way in.\n**Recover.** Restore from a clean backup, re-enable the account with new credentials, watch closely.\n**Learn.** Write down what happened, how it was found, and what would catch it sooner.\ntip\nContainment first, investigation second. Isolating a host takes seconds, can be undone, and stops spread while you work out what happened.\nWorked example"
+ },
+ {
+  "id": "endpoint-security/alert-triage-playbook/2",
+  "unit": "endpoint-security",
+  "unit_title": "Enterprise Endpoint Security: EPP, EDR & XDR Defense",
+  "section": "alert-triage-playbook",
+  "title": "Responding to an Alert: A Triage Playbook",
+  "kind": "learn",
+  "text": "The console shows `winword.exe` starting `powershell.exe -enc ...` on a finance laptop. You validate: the user did open an invoice attachment. You scope: the same file hash appears on two more laptops. You isolate all three, reset the user's password, collect the files, and block the hash across the company. Then you write the timeline."
+ },
+ {
+  "id": "endpoint-security/endpoint-hardening-baseline/0",
+  "unit": "endpoint-security",
+  "unit_title": "Enterprise Endpoint Security: EPP, EDR & XDR Defense",
+  "section": "endpoint-hardening-baseline",
+  "title": "A Baseline for Every Endpoint",
+  "kind": "learn",
+  "text": "Detection is only half of the job. Most successful attacks use problems that are simple to prevent. A baseline applied to every device removes the easy wins.\nControl\nWhy it matters\nHow\n**Patch quickly**\nAttackers use known flaws within days of publication\nWindows Update for Business, Intune rings, automatic updates\n**Least privilege**\nStolen standard accounts can do far less than admin ones\nNo daily-use admin accounts; just-in-time elevation\n**Disk encryption**\nA lost laptop does not mean lost data\nBitLocker with recovery keys saved to Azure AD\n**Application control**\nOnly approved programs can run\nAppLocker or Windows Defender Application Control\n**Multi-factor sign-in**\nA stolen password alone is not enough"
+ },
+ {
+  "id": "endpoint-security/endpoint-hardening-baseline/1",
+  "unit": "endpoint-security",
+  "unit_title": "Enterprise Endpoint Security: EPP, EDR & XDR Defense",
+  "section": "endpoint-hardening-baseline",
+  "title": "A Baseline for Every Endpoint",
+  "kind": "learn",
+  "text": "Authenticator apps or security keys\n**USB and device control**\nBlocks a common way malware arrives\nDevice-control policy in the EDR\n**Backups**\nRansomware becomes an inconvenience, not a disaster\nOffline or immutable copies, restore tests\nCheck encryption and Defender health (PowerShell)\nmanage-bde -status C:\nGet-MpComputerStatus | Select-Object AntivirusEnabled, RealTimeProtectionEnabled, AntivirusSignatureLastUpdated\nGet-Service -Name 'Sense' | Select-Object Status\nwarning\nA backup that has never been restored is only a hope. Test a restore on a schedule."
  },
  {
   "id": "endpoint-security/flashcard/1",
@@ -1195,6 +1384,78 @@
   "title": "ArgoCD Application Manifest",
   "kind": "learn",
   "text": "ArgoCD Application Custom Resource (CRD)\napiVersion: argoproj.io/v1alpha1\nkind: Application\nmetadata:\n  name: production-web-app\n  namespace: argocd\nspec:\n  project: default\n  source:\n    repoURL: 'https://github.com/opsacademy/k8s-manifests.git'\n    targetRevision: HEAD\n    path: overlays/production\n  destination:\n    server: 'https://kubernetes.default.svc'\n    namespace: prod\n  syncPolicy:\n    automated:\n      prune: true        # Delete resources removed from Git\n      selfHeal: true     # Revert manual kubectl edits automatically!"
+ },
+ {
+  "id": "gitops-argocd/repo-layout-kustomize/0",
+  "unit": "gitops-argocd",
+  "unit_title": "GitOps & Progressive Delivery (ArgoCD)",
+  "section": "repo-layout-kustomize",
+  "title": "Repository Layout and Environments with Kustomize",
+  "kind": "learn",
+  "text": "GitOps needs a repository that is easy to read and safe to change. A common approach keeps **application code** and **deployment manifests** in separate repositories, and uses **Kustomize** to describe each environment as small changes on top of a shared base.\nA typical manifests repository\nk8s-manifests/\n├── base/                    # what every environment shares\n│   ├── deployment.yaml\n│   ├── service.yaml\n│   └── kustomization.yaml\n└── overlays/\n    ├── staging/\n    │   └── kustomization.yaml   # 1 replica, staging hostname\n    └── production/\n        └── kustomization.yaml   # 5 replicas, production hostname, bigger limits\noverlays/production/kustomization.yaml"
+ },
+ {
+  "id": "gitops-argocd/repo-layout-kustomize/1",
+  "unit": "gitops-argocd",
+  "unit_title": "GitOps & Progressive Delivery (ArgoCD)",
+  "section": "repo-layout-kustomize",
+  "title": "Repository Layout and Environments with Kustomize",
+  "kind": "learn",
+  "text": "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - ../../base\nreplicas:\n  - name: web\n    count: 5\nimages:\n  - name: web\n    newTag: 2.1.0          # the release is just a one-line change in Git\nHow a release works\nCI builds and tests the code, then pushes an image tagged `2.1.0`.\nA pull request changes `newTag` in the staging overlay; the team reviews it.\nArgo CD notices the merge and syncs staging. Tests run against it.\nA second pull request changes the production overlay. After approval, Argo CD syncs production.\ntip\nPromotion is a Git change, so every release has an author, a reviewer, a timestamp and a one-click undo (`git revert`)."
+ },
+ {
+  "id": "gitops-argocd/sync-health-drift/0",
+  "unit": "gitops-argocd",
+  "unit_title": "GitOps & Progressive Delivery (ArgoCD)",
+  "section": "sync-health-drift",
+  "title": "Sync, Health and Drift in Practice",
+  "kind": "learn",
+  "text": "Argo CD continuously compares Git with the cluster and reports two separate things. **Sync status** says whether the cluster matches Git. **Health status** says whether the app is actually working.\nStatus\nMeaning\nWhat to do\nSynced + Healthy\nCluster matches Git and the app runs\nNothing: this is the goal\nOutOfSync\nGit changed, or someone edited the cluster\nReview the diff, then sync (or let auto-sync do it)\nSynced + Degraded\nManifests applied but Pods are failing\nDebug the app: logs, events, probes\nProgressing\nA rollout is in progress\nWait, then check again\nDaily commands"
+ },
+ {
+  "id": "gitops-argocd/sync-health-drift/1",
+  "unit": "gitops-argocd",
+  "unit_title": "GitOps & Progressive Delivery (ArgoCD)",
+  "section": "sync-health-drift",
+  "title": "Sync, Health and Drift in Practice",
+  "kind": "learn",
+  "text": "argocd app get production-web-app      # status and the resources it manages\nargocd app diff production-web-app     # exactly what differs from Git\nargocd app sync production-web-app     # apply the Git state now\nDrift and self-heal\nIf someone runs `kubectl scale deploy web --replicas=1` against production, the cluster no longer matches Git. With `selfHeal: true`, Argo CD changes it back within moments. This is a feature: it stops quiet, undocumented changes.\nRolling back"
+ },
+ {
+  "id": "gitops-argocd/sync-health-drift/2",
+  "unit": "gitops-argocd",
+  "unit_title": "GitOps & Progressive Delivery (ArgoCD)",
+  "section": "sync-health-drift",
+  "title": "Sync, Health and Drift in Practice",
+  "kind": "learn",
+  "text": "The GitOps rollback is `git revert` of the bad commit. Argo CD then syncs the previous state, and your history shows both the mistake and the fix. The `argocd app rollback` command exists too, but it only works while auto-sync is off, so reverting in Git is the habit to build.\nwarning\nSecrets must **not** be stored as plain Kubernetes Secrets in Git. Use Sealed Secrets, External Secrets or SOPS so that only encrypted values are committed."
+ },
+ {
+  "id": "gitops-argocd/progressive-delivery/0",
+  "unit": "gitops-argocd",
+  "unit_title": "GitOps & Progressive Delivery (ArgoCD)",
+  "section": "progressive-delivery",
+  "title": "Progressive Delivery with Argo Rollouts (Canary)",
+  "kind": "learn",
+  "text": "A normal Deployment replaces every Pod and hopes. **Argo Rollouts** adds safer strategies. A **canary** sends a small share of traffic to the new version, waits, checks, and only then continues. If the new version misbehaves, it is stopped before most users see it.\nA canary Rollout"
+ },
+ {
+  "id": "gitops-argocd/progressive-delivery/1",
+  "unit": "gitops-argocd",
+  "unit_title": "GitOps & Progressive Delivery (ArgoCD)",
+  "section": "progressive-delivery",
+  "title": "Progressive Delivery with Argo Rollouts (Canary)",
+  "kind": "learn",
+  "text": "apiVersion: argoproj.io/v1alpha1\nkind: Rollout\nmetadata:\n  name: web\nspec:\n  replicas: 5\n  selector:\n    matchLabels: { app: web }\n  template:\n    metadata:\n      labels: { app: web }\n    spec:\n      containers:\n        - name: web\n          image: web:2.1.0\n  strategy:\n    canary:\n      steps:\n        - setWeight: 10        # 10% of traffic to the new version\n        - pause: { duration: 5m }\n        - setWeight: 50\n        - pause: { duration: 5m }\n        - setWeight: 100       # fully rolled out\nA canary release\ngraph LR\n    U[Users] --> S[Service]\n    S -->|90%| V1[Stable v2.0]\n    S -->|10%| V2[Canary v2.1]\n    V2 --> M{Metrics healthy?}\n    M -->|Yes| P[Promote to 50% then 100%]\n    M -->|No| A[Abort and return to v2.0]\nLet the metrics decide"
+ },
+ {
+  "id": "gitops-argocd/progressive-delivery/2",
+  "unit": "gitops-argocd",
+  "unit_title": "GitOps & Progressive Delivery (ArgoCD)",
+  "section": "progressive-delivery",
+  "title": "Progressive Delivery with Argo Rollouts (Canary)",
+  "kind": "learn",
+  "text": "Pauses are a start, but the real power is an **analysis**: Argo Rollouts queries Prometheus during the canary and aborts automatically if, for example, the error rate rises above 1%. Nobody has to be watching a dashboard at midnight.\nOperating a rollout\nkubectl argo rollouts get rollout web -w     # watch the steps happen\nkubectl argo rollouts promote web            # continue past a pause\nkubectl argo rollouts abort web              # stop and go back to stable\ntip\nCanary, blue-green and rolling are all ways of answering one question: *how much of my user base am I willing to risk on a new version?*"
  },
  {
   "id": "gitops-argocd/flashcard/fc-go1",
@@ -2106,6 +2367,69 @@
   "text": "DevOps engineers frequently interact with external APIs (GitHub, PagerDuty, Jira, Datadog). The `requests` library makes HTTP calls straightforward.\nTrigger GitHub Actions Workflow via API\nimport requests\nimport os\nGITHUB_TOKEN = os.getenv('GITHUB_TOKEN')\nREPO = 'opsacademy/server'\nheaders = {\n    'Authorization': f'Bearer {GITHUB_TOKEN}',\n    'Accept': 'application/vnd.github.v3+json'\n}\n# Trigger dispatch event\nresponse = requests.post(\n    f'https://api.github.com/repos/{REPO}/dispatches',\n    headers=headers,\n    json={'event_type': 'run-e2e-tests'}\n)\nif response.status_code == 204:\n    print(\"✅ Workflow triggered successfully!\")\nelse:\n    print(f\"❌ Failed: {response.status_code} - {response.text}\")"
  },
  {
+  "id": "python-devops-automation/json-yaml-config/0",
+  "unit": "python-devops-automation",
+  "unit_title": "Python for Cloud & DevOps Automation",
+  "section": "json-yaml-config",
+  "title": "Working with JSON and YAML Configuration",
+  "kind": "learn",
+  "text": "Almost every DevOps tool is configured with JSON or YAML: Kubernetes manifests, CI pipelines, Terraform variables, Docker Compose. Python can read, **change** and write them, which is how you update a hundred files without opening any of them.\nRead and update a YAML file\nimport yaml\nwith open('deployment.yaml') as f:\n    config = yaml.safe_load(f)      # safe_load never runs code hidden in the file\nconfig['spec']['replicas'] = 5\nconfig['spec']['template']['spec']['containers'][0]['image'] = 'web:2.1.0'\nwith open('deployment.yaml', 'w') as f:\n    yaml.safe_dump(config, f, sort_keys=False)\nwarning\nUse `yaml.safe_load`, never `yaml.load`. The plain version can execute arbitrary code from an untrusted file.\nJSON: parse an API response and write a report\nimport json\nwith open('instances.json') as f:\n    data = json.load(f)"
+ },
+ {
+  "id": "python-devops-automation/json-yaml-config/1",
+  "unit": "python-devops-automation",
+  "unit_title": "Python for Cloud & DevOps Automation",
+  "section": "json-yaml-config",
+  "title": "Working with JSON and YAML Configuration",
+  "kind": "learn",
+  "text": "running = [i['id'] for i in data['instances'] if i['state'] == 'running']\nwith open('report.json', 'w') as f:\n    json.dump({'running': running, 'count': len(running)}, f, indent=2)\nHandle missing keys without crashing\nget() with defaults\nreplicas = config.get('spec', {}).get('replicas', 1)   # 1 if any level is missing\nregion = os.getenv('AWS_REGION', 'ap-south-1')         # default when the variable is not set\nValidate the data you read: check required keys exist before using them.\nWrite to a temporary file first, then rename, so a crash never leaves half a config.\nKeep comments in mind: PyYAML drops them when it writes, so use `ruamel.yaml` if comments must survive."
+ },
+ {
+  "id": "python-devops-automation/argparse-cli/0",
+  "unit": "python-devops-automation",
+  "unit_title": "Python for Cloud & DevOps Automation",
+  "section": "argparse-cli",
+  "title": "Building a Command-Line Tool with argparse",
+  "kind": "learn",
+  "text": "A script others will run needs a clear interface: what it does, what options it takes, and a helpful message when it is used wrongly. `argparse` is in the standard library and gives you `--help`, validation and error messages for free.\ncleanup.py: a safe, documented tool\nimport argparse\nimport sys\ndef main():\n    parser = argparse.ArgumentParser(description='Stop running dev instances to save money.')\n    parser.add_argument('--env', default='Dev', help='tag value to match (default: Dev)')\n    parser.add_argument('--region', default='us-east-1')\n    parser.add_argument('--dry-run', action='store_true', help='show what would happen, change nothing')\n    args = parser.parse_args()\nids = find_instances(args.env, args.region)\n    if not ids:\n        print('Nothing to do.')\n        return 0\n    if args.dry_run:\n        print(f'Would stop: {ids}')\n        return 0\n    stop_instances(ids, args.region)\n    return 0\nif __name__ == '__main__':\n    sys.exit(main())"
+ },
+ {
+  "id": "python-devops-automation/argparse-cli/1",
+  "unit": "python-devops-automation",
+  "unit_title": "Python for Cloud & DevOps Automation",
+  "section": "argparse-cli",
+  "title": "Building a Command-Line Tool with argparse",
+  "kind": "learn",
+  "text": "Using it\npython cleanup.py --help\npython cleanup.py --env Dev --dry-run\npython cleanup.py --env Dev --region ap-south-1\nSubcommands for bigger tools\nTools like `git` and `docker` have subcommands (`git commit`, `docker run`). In `argparse` you add them with `parser.add_subparsers()`, giving each its own options. Reach for this when one script grows several related actions.\ntip\nReturn a number from `main()` and pass it to `sys.exit()`. Exit code `0` means success; anything else tells CI and cron that the script failed."
+ },
+ {
+  "id": "python-devops-automation/reliable-scripts/0",
+  "unit": "python-devops-automation",
+  "unit_title": "Python for Cloud & DevOps Automation",
+  "section": "reliable-scripts",
+  "title": "Making Scripts Production-Ready: Logging, Retries and subprocess",
+  "kind": "learn",
+  "text": "A script that works on your laptop can still fail at 3 a.m. on a server: the network drops, an API is slow, a command fails. Production scripts **log what they do, retry what can be retried, and fail loudly** when they cannot continue.\nLogging instead of print()\nimport logging\nlogging.basicConfig(\n    level=logging.INFO,\n    format='%(asctime)s %(levelname)s %(message)s',\n)\nlog = logging.getLogger('backup')\nlog.info('starting backup of %s', bucket)\nlog.warning('retrying (attempt %d)', attempt)\nlog.error('backup failed: %s', err)\nRetry with exponential backoff\nimport time, requests"
+ },
+ {
+  "id": "python-devops-automation/reliable-scripts/1",
+  "unit": "python-devops-automation",
+  "unit_title": "Python for Cloud & DevOps Automation",
+  "section": "reliable-scripts",
+  "title": "Making Scripts Production-Ready: Logging, Retries and subprocess",
+  "kind": "learn",
+  "text": "def get_with_retry(url, attempts=4):\n    delay = 1\n    for attempt in range(1, attempts + 1):\n        try:\n            r = requests.get(url, timeout=10)\n            r.raise_for_status()\n            return r.json()\n        except requests.RequestException as err:\n            if attempt == attempts:\n                raise                      # give up and let the caller see the error\n            log.warning('attempt %d failed: %s', attempt, err)\n            time.sleep(delay)\n            delay *= 2                     # wait 1s, 2s, 4s...\nRun a shell command safely\nimport subprocess\nresult = subprocess.run(\n    ['df', '-h', '/'],            # a list, not a string: no shell injection\n    capture_output=True, text=True, check=True, timeout=30,\n)\nprint(result.stdout)\nwarning\nAvoid `shell=True` with any input that came from a user or an API. A value like `; rm -rf /` becomes part of the command."
+ },
+ {
+  "id": "python-devops-automation/reliable-scripts/2",
+  "unit": "python-devops-automation",
+  "unit_title": "Python for Cloud & DevOps Automation",
+  "section": "reliable-scripts",
+  "title": "Making Scripts Production-Ready: Logging, Retries and subprocess",
+  "kind": "learn",
+  "text": "Log start, progress and the outcome of every important step.\nRetry only operations that are safe to repeat (idempotent).\nSet timeouts on every network call and every subprocess.\nExit non-zero on failure and keep the traceback in the log."
+ },
+ {
   "id": "python-devops-automation/flashcard/fc-py1",
   "unit": "python-devops-automation",
   "unit_title": "Python for Cloud & DevOps Automation",
@@ -2196,6 +2520,42 @@
   "text": "- **Master Node**: Control plane components.\n- **Worker Nodes**: Workload execution (apps, DBs, ingress, monitoring)."
  },
  {
+  "id": "realworld-internship-case-study/module-5/0",
+  "unit": "realworld-internship-case-study",
+  "unit_title": "Enterprise DevOps: GitOps, Change-Aware CI/CD & K8s Incident Post-Mortem",
+  "section": "module-5",
+  "title": "5. Debugging a Pod Stuck in Init:1/2 (NetworkPolicy Label Mismatch)",
+  "kind": "learn",
+  "text": "A real incident from this setup: after a deployment, an application Pod stayed at `Init:1/2` for ever. Nothing was obviously broken, and the manifests were in Git and synced. Walking through how it was found is a good model for any \"stuck Pod\" problem.\nStep 1: what is it waiting for?\nRead the Pod\nkubectl get pod api-7c9d -n app\n# NAME       READY   STATUS     RESTARTS\n# api-7c9d   0/1     Init:1/2   0\nkubectl describe pod api-7c9d -n app\n# Init Containers:\n#   wait-for-db:   State: Running   (still looping)\nkubectl logs api-7c9d -n app -c wait-for-db\n# waiting for postgres:5432 ... connection timed out"
+ },
+ {
+  "id": "realworld-internship-case-study/module-5/1",
+  "unit": "realworld-internship-case-study",
+  "unit_title": "Enterprise DevOps: GitOps, Change-Aware CI/CD & K8s Incident Post-Mortem",
+  "section": "module-5",
+  "title": "5. Debugging a Pod Stuck in Init:1/2 (NetworkPolicy Label Mismatch)",
+  "kind": "learn",
+  "text": "`Init:1/2` means the first init container finished and the second is still running. Its log shows it cannot reach the database: a **network** problem, not an application one.\nStep 2: is the database itself fine?\nCheck the target\nkubectl get pods -n data --show-labels\n# postgres-0   1/1   Running   app=postgres,tier=db\nkubectl get svc postgres -n data\nStep 3: what do the NetworkPolicies allow?\nCompare labels\nkubectl get networkpolicy -n data -o yaml\n#   podSelector:        matchLabels: { app: postgres }\n#   ingress:\n#     - from:\n#         - podSelector:  matchLabels: { app.kubernetes.io/name: api }   # <- policy expects this label\nkubectl get pod api-7c9d -n app --show-labels"
+ },
+ {
+  "id": "realworld-internship-case-study/module-5/2",
+  "unit": "realworld-internship-case-study",
+  "unit_title": "Enterprise DevOps: GitOps, Change-Aware CI/CD & K8s Incident Post-Mortem",
+  "section": "module-5",
+  "title": "5. Debugging a Pod Stuck in Init:1/2 (NetworkPolicy Label Mismatch)",
+  "kind": "learn",
+  "text": "#   app=api        # <- the Pod actually has THIS label\nwarning\nThe policy allowed traffic from Pods labelled `app.kubernetes.io/name=api`, but the Pods carried `app=api`. Nothing matched, so the database dropped the traffic. (A policy across namespaces also needs a matching `namespaceSelector`.)\nStep 4: fix it in Git\nFollowing GitOps, the fix is a change to the manifests: make the policy and the Pod labels agree, commit, and let Argo CD sync. Then confirm with `kubectl get pod` that the Pod reaches `Running`.\nRead the status (`Init:1/2`) and find which init container is waiting.\nRead that container's logs to learn what it needs."
+ },
+ {
+  "id": "realworld-internship-case-study/module-5/3",
+  "unit": "realworld-internship-case-study",
+  "unit_title": "Enterprise DevOps: GitOps, Change-Aware CI/CD & K8s Incident Post-Mortem",
+  "section": "module-5",
+  "title": "5. Debugging a Pod Stuck in Init:1/2 (NetworkPolicy Label Mismatch)",
+  "kind": "learn",
+  "text": "Check the target is healthy, then check what policies select and allow.\nCompare labels and namespaces character by character.\nFix it in Git and verify."
+ },
+ {
   "id": "sre-incident-response/sre-foundations/0",
   "unit": "sre-incident-response",
   "unit_title": "SRE Incident Response & Chaos Engineering",
@@ -2230,6 +2590,78 @@
   "title": "CoreDNS Failures & The ndots:5 Bottleneck",
   "kind": "learn",
   "text": "### Debugging DNS Outages in Cloud Workloads\nBy default, `/etc/resolv.conf` in Kubernetes pods sets `options ndots:5`. For external domains like `api.stripe.com`, Linux performs up to 4 sequential DNS queries inside cluster search domains (`default.svc.cluster.local`, `svc.cluster.local`, `cluster.local`) before querying the public root.\n```text\nClient Request: api.stripe.com\n1. api.stripe.com.default.svc.cluster.local  -> NXDOMAIN (Latency penalty)\n2. api.stripe.com.svc.cluster.local          -> NXDOMAIN\n3. api.stripe.com.cluster.local              -> NXDOMAIN\n4. api.stripe.com                            -> SUCCESS (Resolved)\n```\n**Fix**: Append a trailing dot (`api.stripe.com.`) in application configs to bypass search domain penalties and reduce DNS lookups by 75%."
+ },
+ {
+  "id": "sre-incident-response/incident-roles-communication/0",
+  "unit": "sre-incident-response",
+  "unit_title": "SRE Incident Response & Chaos Engineering",
+  "section": "incident-roles-communication",
+  "title": "Running an Incident: Roles and Communication",
+  "kind": "learn",
+  "text": "Most incident chaos is not technical: too many people, nobody in charge, no one telling the customers anything. A simple structure fixes this.\nRole\nJob\n**Incident Commander (IC)**\nOwns the response. Makes decisions, assigns tasks, does **not** debug personally.\n**Operations / responders**\nInvestigate and apply fixes as the IC directs.\n**Communications lead**\nPosts regular updates to stakeholders and customers.\n**Scribe**\nWrites a timeline of what was seen and done, with times.\nSeverity\nMeaning\nExample\nResponse\nSEV-1\nMajor outage or data loss\nCheckout is down for everyone\nPage immediately, all hands, updates every 15-30 minutes\nSEV-2\nSerious degradation\nSlow responses for many users\nPage on-call, regular updates\nSEV-3\nMinor impact"
+ },
+ {
+  "id": "sre-incident-response/incident-roles-communication/1",
+  "unit": "sre-incident-response",
+  "unit_title": "SRE Incident Response & Chaos Engineering",
+  "section": "incident-roles-communication",
+  "title": "Running an Incident: Roles and Communication",
+  "kind": "learn",
+  "text": "One feature broken for few users\nFix in working hours\nA status update template\n[14:20 UTC] INVESTIGATING  Checkout errors for about 30% of users since 14:05.\nImpact: payments fail with an error page. Orders already placed are safe.\nNext: engineers are checking the latest release. Next update at 14:45 or sooner.\ntip\nUpdates should say what is **known**, the **impact**, and **when the next update is**. Silence is worse than \"we are still working on it\"."
+ },
+ {
+  "id": "sre-incident-response/mitigate-cascading-failures/0",
+  "unit": "sre-incident-response",
+  "unit_title": "SRE Incident Response & Chaos Engineering",
+  "section": "mitigate-cascading-failures",
+  "title": "Stopping a Cascading Failure (Connection Pool Exhaustion)",
+  "kind": "learn",
+  "text": "A cascading failure is when a small problem in one place makes everything fail. A classic case: the database slows down, requests wait longer, each request holds a **database connection** longer, the **pool runs out**, and now even healthy requests cannot get a connection. Retries from clients add more load and make it worse.\nHow a slow database becomes an outage\ngraph TD\n    A[Database gets slow] --> B[Requests hold connections longer]\n    B --> C[Connection pool exhausted]\n    C --> D[New requests wait or time out]\n    D --> E[Clients retry]\n    E --> B\n    D --> F[Whole service appears down]\nWhat you see\nLatency climbs, then error rates jump (timeouts, \"too many connections\")."
+ },
+ {
+  "id": "sre-incident-response/mitigate-cascading-failures/1",
+  "unit": "sre-incident-response",
+  "unit_title": "SRE Incident Response & Chaos Engineering",
+  "section": "mitigate-cascading-failures",
+  "title": "Stopping a Cascading Failure (Connection Pool Exhaustion)",
+  "kind": "learn",
+  "text": "Database connections sit at the maximum while CPU may look fine.\nRestarting the app helps for a minute, then it returns.\nMitigate first, in this order\n**Reduce the load.** Roll back the recent release; turn off the expensive feature; shed or rate-limit traffic.\n**Protect the database.** Stop non-essential jobs; kill long-running queries; avoid restarting everything at once (a thundering herd).\n**Make failure cheaper.** Lower timeouts so connections free up; use a circuit breaker so callers stop hammering a failing dependency.\n**Add capacity carefully.** Raising the pool size only moves the problem if the database is the bottleneck.\nSpotting it (PostgreSQL)"
+ },
+ {
+  "id": "sre-incident-response/mitigate-cascading-failures/2",
+  "unit": "sre-incident-response",
+  "unit_title": "SRE Incident Response & Chaos Engineering",
+  "section": "mitigate-cascading-failures",
+  "title": "Stopping a Cascading Failure (Connection Pool Exhaustion)",
+  "kind": "learn",
+  "text": "-- how many connections, and what are they doing?\nSELECT state, count(*) FROM pg_stat_activity GROUP BY state;\n-- the longest running queries\nSELECT pid, now() - query_start AS runtime, left(query, 80)\nFROM pg_stat_activity\nWHERE state <> 'idle'\nORDER BY runtime DESC LIMIT 5;\nwarning\nRetries without a limit and without waiting (backoff) are a common cause of cascading failures. Add jitter so that all clients do not retry at the same moment."
+ },
+ {
+  "id": "sre-incident-response/blameless-postmortem/0",
+  "unit": "sre-incident-response",
+  "unit_title": "SRE Incident Response & Chaos Engineering",
+  "section": "blameless-postmortem",
+  "title": "Learning from Incidents: The Blameless Post-Mortem",
+  "kind": "learn",
+  "text": "A post-mortem turns an incident into improvement. **Blameless** means the question is \"how did our system allow this?\" and not \"who made a mistake?\". People who fear blame hide facts, and then the same incident returns.\nA post-mortem template\nTitle:            Checkout errors on 6 Nov 2026\nSeverity:         SEV-1, 55 minutes\nImpact:           ~30% of checkouts failed; no data lost\nTimeline (UTC):\n  14:05  Error rate rises (alert fires at 14:08)\n  14:12  On-call acknowledges; IC named\n  14:31  Release 2.14 identified as the trigger\n  14:38  Rolled back; errors fall\n  15:00  Resolved"
+ },
+ {
+  "id": "sre-incident-response/blameless-postmortem/1",
+  "unit": "sre-incident-response",
+  "unit_title": "SRE Incident Response & Chaos Engineering",
+  "section": "blameless-postmortem",
+  "title": "Learning from Incidents: The Blameless Post-Mortem",
+  "kind": "learn",
+  "text": "Root cause:       A new query without an index overloaded the database,\n                  exhausting the connection pool.\nWhy it was not caught: Staging data is 1% of production size.\nWhat went well:   Fast alert, clear roles, quick rollback.\nWhat went badly:  No load test; alert fired 3 minutes late.\nAction items (owner, due):\n  - Add index and a query-plan check in CI       (Priya, 13 Nov)\n  - Load-test big queries before release         (Ravi, 27 Nov)\n  - Alert on pool saturation above 80%           (Meera, 20 Nov)\nFinding causes: the five whys\nWhy did checkout fail? Requests timed out.\nWhy? The connection pool was exhausted.\nWhy? One query became very slow."
+ },
+ {
+  "id": "sre-incident-response/blameless-postmortem/2",
+  "unit": "sre-incident-response",
+  "unit_title": "SRE Incident Response & Chaos Engineering",
+  "section": "blameless-postmortem",
+  "title": "Learning from Incidents: The Blameless Post-Mortem",
+  "kind": "learn",
+  "text": "Why? It had no index and the table is large.\nWhy did it reach production? Staging data is too small to show the problem.\ntip\nGood action items are **specific, owned and dated**. \"Be more careful\" is not an action item; \"add a query-plan check to CI by 13 Nov\" is."
  },
  {
   "id": "sre-incident-response/flashcard/fc-sre1",

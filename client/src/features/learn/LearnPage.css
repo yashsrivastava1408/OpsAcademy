@@ -402,3 +402,33 @@
 .learn-table tr:hover td {
   background: #F8FAFC;
 }
+
+
+/* ── Unit overview, section takeaways, cheat sheet ───────────── */
+.learn-overview { padding: 24px 26px; margin-bottom: 28px; display: flex; flex-direction: column; gap: 18px; }
+.learn-overview-facts { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.78rem; font-weight: 700; color: var(--text-slate); }
+.learn-overview-facts span { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 9999px; background: #f1f5f9; }
+.overview-level.level-beginner { background: #dcfce7; color: #15803d; }
+.overview-level.level-intermediate { background: #fef3c7; color: #b45309; }
+.overview-level.level-advanced { background: #fee2e2; color: #b91c1c; }
+.learn-overview-why h3, .learn-overview-grid h4 { margin: 0 0 8px; font-size: 0.95rem; color: #0f172a; display: flex; align-items: center; gap: 8px; }
+.learn-overview-why p { margin: 0; color: var(--text-slate); line-height: 1.7; }
+.learn-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 22px; }
+.learn-overview-grid ul { margin: 0; padding-left: 20px; color: var(--text-slate); line-height: 1.65; font-size: 0.92rem; }
+.learn-overview-grid h4 svg { color: var(--primary-blue); }
+.learn-overview-tip { margin: 0; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; font-size: 0.9rem; line-height: 1.55; }
+.learn-overview-tip svg { flex-shrink: 0; margin-top: 2px; color: #d97706; }
+
+.learn-takeaways { margin: 22px 0 6px; padding: 16px 20px; border-radius: 14px; background: var(--primary-blue-light); border: 1px solid var(--primary-blue-border); }
+.learn-takeaways h4 { margin: 0 0 8px; display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--primary-blue); text-transform: uppercase; letter-spacing: 0.05em; }
+.learn-takeaways ul { margin: 0; padding-left: 20px; color: #1e3a8a; line-height: 1.65; font-size: 0.93rem; }
+.learn-takeaways li + li { margin-top: 4px; }
+
+.learn-numbered-list { margin: 0 0 16px; padding-left: 22px; color: var(--text-slate); line-height: 1.7; }
+.learn-numbered-list li + li { margin-top: 6px; }
+.learn-cheatsheet .learn-table td:first-child { white-space: nowrap; }
+.learn-cheatsheet .learn-table code { font-size: 0.85rem; }
+
+.inline-code { padding: 1px 6px; border-radius: 6px; background: #eef2f7; color: #0f172a; font-family: var(--font-mono); font-size: 0.88em; }
+.learn-takeaways .inline-code { background: rgba(255, 255, 255, 0.7); color: #1e3a8a; }
+.toc-item svg { flex-shrink: 0; }

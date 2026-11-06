@@ -1,4 +1,19 @@
 {
+  "overview": {
+    "why": "Shipping software by hand is slow and risky. CI/CD turns \"I think it works\" into \"the machine proved it works\": every change is built, tested and deployed the same way, every time. It is the backbone of DevOps, and being able to read and write a pipeline file is expected in almost every cloud and DevOps role.",
+    "prerequisites": [
+      "Git basics (branches and pull requests).",
+      "Docker basics are helpful for the build and deploy stages."
+    ],
+    "outcomes": [
+      "Explain Continuous Integration, Continuous Delivery and Continuous Deployment, and how they differ",
+      "Write a GitHub Actions workflow that builds, tests and deploys",
+      "Design pipeline stages as quality gates and keep them fast",
+      "Store secrets safely and deploy to different environments",
+      "Choose between rolling, blue-green and canary deployments"
+    ],
+    "placementTip": "Describe a pipeline you would build for a small web app: lint, unit tests, build the image, scan it, deploy to staging, approve, deploy to production. Having a concrete answer is impressive."
+  },
   "sections": [
     {
       "id": "what-is-cicd",
@@ -22,6 +37,11 @@
           "style": "info",
           "value": "Without CI/CD, a team might deploy once a month with a scary 'big bang' release. With CI/CD, teams deploy multiple times per day with confidence — each change is small, tested, and easy to roll back."
         }
+      ],
+      "keyPoints": [
+        "CI merges and tests every change automatically; CD gets that change to users.",
+        "Delivery stops at a manual approval; Deployment releases automatically.",
+        "Small, frequent releases are safer than big, rare ones."
       ],
       "quiz": {
         "question": "What is the difference between Continuous Delivery and Continuous Deployment?",
@@ -60,6 +80,11 @@
           "value": "Use 'actions/checkout@v4' to clone your repo, 'actions/setup-node@v4' to install Node.js with caching. The 'cache: npm' option caches node_modules between runs, speeding up builds significantly."
         }
       ],
+      "keyPoints": [
+        "A workflow is a YAML file in `.github/workflows` triggered by events such as `push` or `pull_request`.",
+        "Jobs run on runners; steps are commands or reusable **actions**.",
+        "Pin third-party actions to a version or commit, not `latest`."
+      ],
       "quiz": {
         "question": "Where do GitHub Actions workflow files live in a repository?",
         "options": [
@@ -96,6 +121,11 @@
           "style": "info",
           "value": "The 'needs' keyword creates dependencies between jobs. 'deploy needs: build' means deploy only runs after build succeeds. The 'if' condition ensures deploy only runs on the main branch, not on PRs."
         }
+      ],
+      "keyPoints": [
+        "Order stages from fastest and cheapest to slowest: lint, test, build, scan, deploy.",
+        "A failed stage stops the pipeline, so broken code never reaches production.",
+        "Cache dependencies to keep pipelines fast."
       ],
       "quiz": {
         "question": "What does 'needs: test' mean in a GitHub Actions job?",
@@ -138,6 +168,11 @@
           "value": "Strategy matrix runs the same job with different configurations in parallel. Testing against Node 16, 18, and 20 simultaneously ensures your app works across all supported versions."
         }
       ],
+      "keyPoints": [
+        "Many fast unit tests, fewer integration tests, very few end-to-end tests (the test pyramid).",
+        "Flaky tests destroy trust: fix or quarantine them.",
+        "Report coverage, but do not chase the number."
+      ],
       "quiz": {
         "question": "According to the testing pyramid, which type of test should you have the most of?",
         "options": [
@@ -175,6 +210,11 @@
           "value": "Never echo, print, or log secrets in your pipeline! GitHub masks known secrets in logs, but custom formatting can accidentally expose them. Always use the ${{ secrets.NAME }} syntax — never hardcode."
         }
       ],
+      "keyPoints": [
+        "Never commit secrets; keep them in the platform's secret store and inject them at run time.",
+        "Use separate environments (dev, staging, production) with their own secrets and approvals.",
+        "Prefer short-lived credentials (OIDC) over long-lived keys."
+      ],
       "quiz": {
         "question": "Where should production API keys be stored in a CI/CD pipeline?",
         "options": [
@@ -210,6 +250,11 @@
           "value": "Interview answer: 'For critical production services, I use canary deployments — deploy to 5% of traffic, monitor error rates and latency for 15 minutes, then gradually promote to 100%. If metrics degrade, I automatically roll back. This limits the blast radius of any bad deployment.'"
         }
       ],
+      "keyPoints": [
+        "Rolling replaces instances gradually; blue-green switches all traffic between two full copies.",
+        "Canary sends a small share of users to the new version first and watches the metrics.",
+        "Always have a rollback plan that takes minutes, not hours."
+      ],
       "quiz": {
         "question": "What is a canary deployment?",
         "options": [
@@ -222,5 +267,58 @@
         "explanation": "Canary deployment routes a small percentage of traffic (e.g., 5%) to the new version. If errors spike, you roll back before most users are affected. It's named after canaries in coal mines — early warning signals."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "CI/CD cheat sheet",
+    "rows": [
+      [
+        "on: [push, pull_request]",
+        "Run the workflow when code is pushed or a PR is opened"
+      ],
+      [
+        "runs-on: ubuntu-latest",
+        "Which machine runs the job"
+      ],
+      [
+        "uses: actions/checkout@v4",
+        "Check out the repository code"
+      ],
+      [
+        "needs: [build]",
+        "Wait for another job to succeed first"
+      ],
+      [
+        "if: github.ref == 'refs/heads/main'",
+        "Only run on the main branch"
+      ],
+      [
+        "${{ secrets.NAME }}",
+        "Read an encrypted secret"
+      ],
+      [
+        "environment: production",
+        "Use environment rules and approvals"
+      ],
+      [
+        "actions/cache@v4",
+        "Reuse downloaded dependencies between runs"
+      ],
+      [
+        "strategy: matrix:",
+        "Run the same job across versions or systems"
+      ],
+      [
+        "Blue-green",
+        "Two full copies, switch traffic at once, instant rollback"
+      ],
+      [
+        "Canary",
+        "Release to a few users first and watch"
+      ],
+      [
+        "Rolling",
+        "Replace instances a few at a time"
+      ]
+    ]
+  }
 }

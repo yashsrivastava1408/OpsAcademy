@@ -1,4 +1,19 @@
 {
+  "overview": {
+    "why": "Clicking through a cloud console does not scale and cannot be reviewed, repeated or rolled back. Infrastructure as Code lets you describe servers, networks and databases in files, review them like code, and build the same environment again in minutes. Terraform is the most widely used tool for this, and it works across AWS, Azure and Google Cloud.",
+    "prerequisites": [
+      "AWS cloud basics (EC2, S3, VPC) so the resources make sense.",
+      "Git basics: your Terraform files live in a repository."
+    ],
+    "outcomes": [
+      "Explain declarative versus imperative infrastructure and why Terraform is declarative",
+      "Write resources, variables, outputs and data sources in HCL",
+      "Run the core loop: `init`, `plan`, `apply`, `destroy`, and read a plan carefully",
+      "Explain what the state file is and why it must be stored remotely and locked",
+      "Build a reusable module and detect drift between code and reality"
+    ],
+    "placementTip": "Always say you **read the plan before applying**. Interviewers listen for it: a plan that wants to destroy a database is a very different thing from one that adds a tag."
+  },
   "sections": [
     {
       "id": "what-is-iac",
@@ -22,6 +37,11 @@
           "style": "info",
           "value": "Declarative vs Imperative: Declarative (Terraform) means 'Tell me WHAT you want, and I will figure out how to build it.' Imperative (Bash/Python) means 'Tell me STEP-BY-STEP how to build it.' Declarative is much safer for cloud infrastructure!"
         }
+      ],
+      "keyPoints": [
+        "You describe the end result; the tool works out the steps (declarative).",
+        "Code in Git gives you review, history, repeatability and rollback.",
+        "Treat infrastructure changes like application changes: pull request, review, pipeline."
       ],
       "quiz": {
         "question": "What is the primary advantage of Declarative IaC (Terraform) over imperative scripts?",
@@ -66,9 +86,19 @@
           "value": "Interview Tip: Always mention running 'terraform plan' before 'terraform apply'. It shows production discipline by checking exactly what will be added (+), changed (~), or destroyed (-) before touching real infrastructure."
         }
       ],
+      "keyPoints": [
+        "Blocks are the building units: `resource`, `variable`, `output`, `data`, `provider`.",
+        "References such as `aws_instance.web.id` link resources and tell Terraform the order.",
+        "Variables make code reusable; use `terraform.tfvars` for values and mark secrets `sensitive`."
+      ],
       "quiz": {
         "question": "Which command previews infrastructure changes without modifying live cloud resources?",
-        "options": ["terraform init", "terraform apply", "terraform plan", "terraform destroy"],
+        "options": [
+          "terraform init",
+          "terraform apply",
+          "terraform plan",
+          "terraform destroy"
+        ],
         "correctIndex": 2,
         "explanation": "'terraform plan' creates an execution plan, comparing your current code with live cloud state to show a detailed preview of additions, modifications, and deletions."
       }
@@ -97,6 +127,11 @@
           "style": "warning",
           "value": "Never commit `terraform.tfstate` to Git! It contains raw unencrypted resource details and secrets. Always use a remote backend like AWS S3 with DynamoDB state locking."
         }
+      ],
+      "keyPoints": [
+        "State maps your code to real resources. Lose it and Terraform no longer knows what it owns.",
+        "Keep state in a remote backend (S3 + locking) so a team shares one source of truth.",
+        "State can contain secrets: protect it, never commit it."
       ],
       "quiz": {
         "question": "Why should you store Terraform state in a remote backend like AWS S3 with DynamoDB?",
@@ -129,6 +164,11 @@
           "value": "**Drift** occurs when someone manually changes a cloud setting in the AWS Console (e.g. manually opening port 22). When you run `terraform plan`, Terraform detects the difference between live cloud settings and code, alerting you to fix or revert the manual change."
         }
       ],
+      "keyPoints": [
+        "A module is a folder of Terraform you can call with different inputs: write once, reuse everywhere.",
+        "Drift is when someone changes things by hand and the real world no longer matches the code.",
+        "`terraform plan` on a schedule shows drift; fix it in code, not in the console."
+      ],
       "quiz": {
         "question": "What is 'Infrastructure Drift' in Terraform?",
         "options": [
@@ -141,5 +181,58 @@
         "explanation": "Drift happens when someone changes live infrastructure out-of-band (e.g., via the AWS Web UI). Terraform detects drift during 'plan' or 'refresh' and offers to restore the state defined in code."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Terraform cheat sheet",
+    "rows": [
+      [
+        "terraform init",
+        "Download providers and set up the backend (run first)"
+      ],
+      [
+        "terraform fmt  /  terraform validate",
+        "Tidy the files / check they are valid"
+      ],
+      [
+        "terraform plan -out=tfplan",
+        "Show what would change and save the plan"
+      ],
+      [
+        "terraform apply tfplan",
+        "Make exactly the changes in that plan"
+      ],
+      [
+        "terraform destroy",
+        "Remove everything this configuration manages"
+      ],
+      [
+        "terraform state list",
+        "What does the state currently track"
+      ],
+      [
+        "terraform output",
+        "Show the output values"
+      ],
+      [
+        "terraform import TYPE.NAME ID",
+        "Bring an existing resource under Terraform"
+      ],
+      [
+        "terraform workspace list",
+        "Separate state for environments"
+      ],
+      [
+        "variable \"name\" {}",
+        "Declare an input"
+      ],
+      [
+        "output \"ip\" { value = ... }",
+        "Expose a value after apply"
+      ],
+      [
+        "module \"vpc\" { source = \"./vpc\" }",
+        "Use a module"
+      ]
+    ]
+  }
 }

@@ -1,4 +1,19 @@
 {
+  "overview": {
+    "why": "Every software team on earth uses Git, and every DevOps pipeline starts from a Git push. Interviewers expect you to be comfortable with branches, merge conflicts and pull requests, because that is how real teams work. It is also the safety net that lets you experiment without fear: anything you commit can be undone.",
+    "prerequisites": [
+      "Basic comfort with a terminal (the Linux unit covers this).",
+      "A free GitHub account helps if you want to try pull requests on your own repositories."
+    ],
+    "outcomes": [
+      "Create a repository, stage changes and write commits that others can understand",
+      "Work on a branch and merge it back, then explain how merge differs from rebase",
+      "Resolve a merge conflict calmly by reading the conflict markers",
+      "Park half-finished work with `git stash` and mark releases with tags",
+      "Open a pull request and review someone else's code"
+    ],
+    "placementTip": "Be ready to explain \"merge vs rebase\" in two sentences, and to describe what you do when you committed to the wrong branch. Both come up often."
+  },
   "sections": [
     {
       "id": "what-is-git",
@@ -28,6 +43,11 @@
           "title": "First Time Setup",
           "value": "git config --global user.name \"Your Name\"\ngit config --global user.email \"your.email@example.com\"\ngit init                     # Turn current folder into a Git repository\ngit status                   # Check what files have changed"
         }
+      ],
+      "keyPoints": [
+        "Git saves snapshots of your project (commits) so you can travel back to any of them.",
+        "It is **distributed**: every developer has the whole history on their own machine.",
+        "Git is the tool on your computer; GitHub is a website that hosts Git repositories."
       ],
       "quiz": {
         "question": "What is the primary difference between Git and GitHub?",
@@ -66,6 +86,11 @@
           "value": "Good commit messages follow this pattern: 'verb + what changed'. Examples: 'Add user login page', 'Fix database connection timeout', 'Remove deprecated API endpoint'. Bad example: 'fixed stuff'."
         }
       ],
+      "keyPoints": [
+        "Changes go in two steps: `git add` stages them, `git commit` saves them.",
+        "A good commit is small and has a message that says **why**, not just what.",
+        "`git status` and `git diff` before every commit save a lot of embarrassment."
+      ],
       "quiz": {
         "question": "What does 'git add' do?",
         "options": [
@@ -102,6 +127,11 @@
           "style": "info",
           "value": "Naming convention: Use descriptive branch names with prefixes. Examples: feature/user-auth, bugfix/login-crash, hotfix/security-patch, chore/update-deps. This makes branches self-documenting."
         }
+      ],
+      "keyPoints": [
+        "A branch is a cheap, separate line of work, so `main` stays safe while you try things.",
+        "`git switch -c name` makes and enters a branch; `git merge name` brings it back.",
+        "Delete finished branches to keep the list readable."
       ],
       "quiz": {
         "question": "Why do developers create feature branches instead of committing directly to main?",
@@ -145,6 +175,11 @@
           "style": "tip",
           "value": "Interview pro tip: 'I minimize conflicts by keeping feature branches short-lived (merge within 1-2 days), frequently pulling from main to stay updated, and communicating with teammates when we're working on the same files.'"
         }
+      ],
+      "keyPoints": [
+        "A conflict means two branches changed the same lines. Git asks you to choose.",
+        "Look for `<<<<<<<`, `=======` and `>>>>>>>`, keep what is right, delete the markers, then `git add` and commit.",
+        "Small, frequent merges mean small, easy conflicts."
       ],
       "quiz": {
         "question": "What causes a Git merge conflict?",
@@ -190,6 +225,11 @@
           "style": "warning",
           "value": "Golden Rule: NEVER rebase commits that have been pushed to a shared branch that others are working on. Rebase rewrites commit history, which will cause chaos for teammates who already have the old commits. Only rebase your own local, unpushed work."
         }
+      ],
+      "keyPoints": [
+        "Merge keeps history exactly as it happened and adds a merge commit.",
+        "Rebase replays your commits on top of the latest `main` for a straight, tidy history.",
+        "Golden rule: never rebase commits other people already have."
       ],
       "quiz": {
         "question": "When is it safe to use git rebase?",
@@ -239,6 +279,11 @@
           "value": "git blame is incredibly useful for debugging: 'Who changed this line, when, and in which commit?' It helps you find the context behind a change before you modify it."
         }
       ],
+      "keyPoints": [
+        "`git stash` shelves unfinished work so you can switch tasks; `git stash pop` brings it back.",
+        "Tags (`v1.0.0`) give a fixed name to a release commit.",
+        "`git log --oneline --graph` shows history at a glance."
+      ],
       "quiz": {
         "question": "When would you use git stash?",
         "options": [
@@ -282,6 +327,11 @@
           "value": "# While working on a feature, main may get new commits\n# Keep your branch updated to avoid conflicts:\ngit checkout feature/user-profile\ngit fetch origin\ngit rebase origin/main           # Replay your commits on latest main\n\n# Or merge main into your branch:\ngit merge origin/main            # Merge latest main into your branch"
         }
       ],
+      "keyPoints": [
+        "A pull request proposes your branch for merging and is where code review happens.",
+        "Keep PRs small and describe what changed and how to test it.",
+        "Review the code, not the person: ask questions, suggest, and explain why."
+      ],
       "quiz": {
         "question": "Why do teams use Pull Requests instead of pushing directly to main?",
         "options": [
@@ -294,5 +344,70 @@
         "explanation": "Pull Requests enable peer code review, which catches bugs, improves code quality, shares knowledge across the team, and creates a documented discussion trail for each change."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Git cheat sheet",
+    "rows": [
+      [
+        "git init  /  git clone URL",
+        "Start a repository / copy an existing one"
+      ],
+      [
+        "git status",
+        "What changed, and what is staged"
+      ],
+      [
+        "git add file  /  git add .",
+        "Stage one file / everything"
+      ],
+      [
+        "git commit -m \"message\"",
+        "Save the staged changes"
+      ],
+      [
+        "git switch -c feature/login",
+        "Create and move to a new branch"
+      ],
+      [
+        "git merge feature/login",
+        "Bring a branch into the one you are on"
+      ],
+      [
+        "git rebase main",
+        "Replay your commits on top of main"
+      ],
+      [
+        "git log --oneline --graph",
+        "Compact history with branches drawn"
+      ],
+      [
+        "git diff  /  git diff --staged",
+        "See unstaged / staged changes"
+      ],
+      [
+        "git stash  /  git stash pop",
+        "Shelve work / bring it back"
+      ],
+      [
+        "git restore file",
+        "Throw away uncommitted changes to a file"
+      ],
+      [
+        "git reset --soft HEAD~1",
+        "Undo the last commit but keep the changes"
+      ],
+      [
+        "git tag -a v1.0.0 -m \"First release\"",
+        "Name a release"
+      ],
+      [
+        "git push -u origin branch",
+        "Publish a branch to GitHub"
+      ],
+      [
+        "git pull --rebase",
+        "Fetch and replay your work on the latest"
+      ]
+    ]
+  }
 }

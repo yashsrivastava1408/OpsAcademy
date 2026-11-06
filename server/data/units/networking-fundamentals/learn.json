@@ -1,4 +1,19 @@
 {
+  "overview": {
+    "why": "When something breaks in production, it is often the network: a name that does not resolve, a port that is blocked, a certificate that expired. Knowing how a request travels from a browser to a server lets you find the broken link instead of guessing. \"What happens when you type a URL?\" is one of the most common interview questions in infrastructure roles.",
+    "prerequisites": [
+      "Linux basics (you will run `ping`, `curl` and `dig` in a terminal)."
+    ],
+    "outcomes": [
+      "Explain the OSI and TCP/IP layers using one real example for each",
+      "Say when to use TCP and when UDP, and describe the three-way handshake",
+      "Read an IP address with a subnet mask (for example `10.0.1.0/24`) and say how many hosts fit",
+      "Trace how a domain name becomes an IP address, and name the common DNS record types",
+      "Read HTTP status codes and explain what TLS adds to HTTP",
+      "Describe what a firewall and a load balancer each do"
+    ],
+    "placementTip": "Practise telling the full story of a web request out loud: DNS lookup, TCP handshake, TLS handshake, HTTP request, response. If you can do that, you can answer most networking questions."
+  },
   "sections": [
     {
       "id": "osi-model",
@@ -23,9 +38,19 @@
           "value": "In practice, most DevOps work happens at **Layer 4 (Transport — TCP/UDP)** and **Layer 7 (Application — HTTP/HTTPS)**. Load balancers can operate at either layer: L4 (fast, protocol-agnostic) or L7 (smart, can inspect HTTP headers and paths)."
         }
       ],
+      "keyPoints": [
+        "Seven layers is a **map for troubleshooting**: work up from cables to the application.",
+        "In daily life you meet layer 3 (IP), layer 4 (TCP/UDP), and layer 7 (HTTP, DNS).",
+        "\"It is a layer 7 problem\" means the network is fine and the application is the issue."
+      ],
       "quiz": {
         "question": "At which OSI layer does HTTP operate?",
-        "options": ["Layer 1 (Physical)", "Layer 3 (Network)", "Layer 4 (Transport)", "Layer 7 (Application)"],
+        "options": [
+          "Layer 1 (Physical)",
+          "Layer 3 (Network)",
+          "Layer 4 (Transport)",
+          "Layer 7 (Application)"
+        ],
         "correctIndex": 3,
         "explanation": "HTTP is an Application Layer (Layer 7) protocol. It defines how web browsers and servers communicate using methods like GET, POST, PUT, DELETE."
       }
@@ -54,6 +79,11 @@
           "style": "info",
           "value": "Real-world examples: When you load a webpage, TCP ensures every byte arrives correctly. When you watch a YouTube live stream, UDP is used because dropping a few frames is better than pausing to retransmit."
         }
+      ],
+      "keyPoints": [
+        "TCP is reliable and ordered: it does a handshake (SYN, SYN-ACK, ACK) and resends lost data.",
+        "UDP is fast and fire-and-forget: used for DNS, video calls and games.",
+        "A port identifies the program on a machine (80 web, 443 secure web, 22 SSH, 53 DNS)."
       ],
       "quiz": {
         "question": "Why would you choose UDP over TCP?",
@@ -98,9 +128,19 @@
           "value": "IPv4 (e.g., 192.168.1.100) has ~4.3 billion addresses — not enough for every device on Earth. IPv6 (e.g., 2001:0db8::1) has 340 undecillion addresses — enough for every grain of sand on Earth to have its own IP!"
         }
       ],
+      "keyPoints": [
+        "An IPv4 address has 32 bits; the mask (`/24`) says how many belong to the network.",
+        "`/24` gives 254 usable hosts; every bit you add to the mask halves that number.",
+        "Private ranges (`10.x`, `172.16-31.x`, `192.168.x`) are not reachable from the internet directly."
+      ],
       "quiz": {
         "question": "What port does HTTPS use by default?",
-        "options": ["22", "80", "443", "8080"],
+        "options": [
+          "22",
+          "80",
+          "443",
+          "8080"
+        ],
         "correctIndex": 2,
         "explanation": "HTTPS (HTTP Secure) uses port 443 by default. HTTP (unencrypted) uses port 80. SSH uses port 22."
       }
@@ -129,6 +169,11 @@
           "style": "tip",
           "value": "Interview question: 'When you type google.com in a browser, what happens?' Start with DNS resolution → TCP connection → TLS handshake → HTTP request → Server response → Browser renders HTML. This end-to-end understanding impresses interviewers."
         }
+      ],
+      "keyPoints": [
+        "DNS turns names into IP addresses; it is the first thing to check when a site \"is down\".",
+        "A = IPv4, AAAA = IPv6, CNAME = alias, MX = mail, TXT = text and verification.",
+        "TTL says how long an answer may be cached, so DNS changes take time to spread."
       ],
       "quiz": {
         "question": "What does DNS do?",
@@ -173,6 +218,11 @@
           "value": "Quick status code groups: 2xx = Success, 3xx = Redirect, 4xx = Client Error (your fault), 5xx = Server Error (server's fault). If you see 5xx in production, check your application logs immediately!"
         }
       ],
+      "keyPoints": [
+        "HTTP is request and response: a method (GET, POST), a path, headers and a status code.",
+        "2xx worked, 3xx redirect, 4xx you made a mistake, 5xx the server did.",
+        "HTTPS is HTTP inside TLS, which encrypts the traffic and proves the server's identity."
+      ],
       "quiz": {
         "question": "What does HTTP status code 502 mean?",
         "options": [
@@ -214,6 +264,11 @@
           "value": "Interview question: 'What is the difference between L4 and L7 load balancing?' L4 (Transport Layer) routes based on IP and port — fast but can't inspect content. L7 (Application Layer) routes based on HTTP headers, paths, and cookies — smarter but slightly slower."
         }
       ],
+      "keyPoints": [
+        "A firewall allows or blocks traffic by rules (source, destination, port).",
+        "A load balancer spreads requests over several servers and stops sending to unhealthy ones.",
+        "Layer 4 balancers route by IP and port; layer 7 balancers can route by URL or header."
+      ],
       "quiz": {
         "question": "What does a load balancer do?",
         "options": [
@@ -226,5 +281,54 @@
         "explanation": "A load balancer distributes incoming network traffic across multiple backend servers, preventing any single server from being overloaded and improving reliability."
       }
     }
-  ]
+  ],
+  "cheatsheet": {
+    "title": "Networking cheat sheet",
+    "rows": [
+      [
+        "ping host",
+        "Is the machine reachable, and how long does it take"
+      ],
+      [
+        "curl -I https://site",
+        "Fetch only the response headers (status, redirects)"
+      ],
+      [
+        "curl -v https://site",
+        "Watch the whole conversation, including TLS"
+      ],
+      [
+        "dig site.com  /  dig MX site.com",
+        "Look up a DNS record"
+      ],
+      [
+        "nslookup site.com",
+        "A simpler DNS lookup"
+      ],
+      [
+        "ss -tlnp",
+        "Which programs are listening on which ports"
+      ],
+      [
+        "traceroute host",
+        "Show each hop between you and the server"
+      ],
+      [
+        "ip addr  /  ip route",
+        "Your addresses / where traffic goes"
+      ],
+      [
+        "nc -zv host 443",
+        "Can I open a connection to this port?"
+      ],
+      [
+        "Ports: 22 / 53 / 80 / 443",
+        "SSH / DNS / HTTP / HTTPS"
+      ],
+      [
+        "Ports: 3306 / 5432 / 6379",
+        "MySQL / PostgreSQL / Redis"
+      ]
+    ]
+  }
 }
