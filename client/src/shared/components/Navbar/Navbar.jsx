@@ -33,6 +33,8 @@ export default function Navbar() {
 
           {isRegistered ? (
             <div className="nav-user">
+              {user.roles?.includes('platform_admin') && <Link to="/admin" className="btn btn-ghost btn-sm">Admin</Link>}
+              {user.roles?.some((r) => r !== 'platform_admin') && <Link to="/college" className="btn btn-ghost btn-sm hide-mobile">Schedule</Link>}
               <span className="nav-user-name" title={user.email}>{user.name}</span>
               <button className="btn btn-ghost btn-icon" onClick={logout} title="Log out" aria-label="Log out">
                 <LogOut size={16} />

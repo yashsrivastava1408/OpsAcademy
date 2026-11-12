@@ -465,3 +465,14 @@
     gap: 10px;
   }
 }
+
+/* ── Admin dashboard tabs ─────────────────────────────────── */
+.admin-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid #E2E8F0; overflow-x: auto; }
+.admin-tab {
+  background: none; border: 0; padding: 10px 14px; cursor: pointer; white-space: nowrap;
+  font: inherit; font-weight: 600; color: #64748B; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.admin-tab:hover { color: #0F172A; }
+.admin-tab.active { color: #0F172A; border-bottom-color: #2563EB; }
+.admin-tab-actions { margin-bottom: 12px; }
+.admin-hint { color: #64748B; font-size: 0.85rem; margin-top: 8px; }
