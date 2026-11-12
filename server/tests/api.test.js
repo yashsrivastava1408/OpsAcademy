@@ -105,8 +105,17 @@ describe('auth', () => {
 
   test('a signed-in learner gets a record with a public shape and nothing secret', async () => {
     const user = await registered();
-    expect(user.user).toEqual({ id: expect.any(String), name: 'Asha Rao', email: user.email, guest: false, emailVerified: true, profileSlug: null, username: null, labAccess: false });
+    expect(user.user).toEqual({ id: expect.any(String), name: 'Asha Rao', email: user.email, guest: false, emailVerified: true, profileSlug: null, username: null, labAccess: false, roles: [] });
     expect(JSON.stringify(user.user)).not.toMatch(/password|hash/i);
+  });
+
+  test('the session says which roles the user has, so the app can offer the Admin or Schedule link', async () => {
+    const who = await registered();
+    expect(who.user.roles).toEqual([]);
+    await ctx.repos.memberships.add({ userId: who.user.id, collegeId: null, role: 'platform_admin' });
+    const again = await signIn(app, { sub: who.sub, name: who.name, email: who.email, anonymous: false });
+    expect(again.user.roles).toEqual(['platform_admin']);
+    expect((await request(app).get('/api/auth/me').set(again.auth)).body.user.roles).toEqual(['platform_admin']);
   });
 
   test('a guest who signs up keeps the same account and its progress', async () => {

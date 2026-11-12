@@ -8,12 +8,26 @@ const { requireAuth, requireRegistered } = require('../middleware/auth');
 const asyncHandler = require('../middleware/asyncHandler');
 const rateLimit = require('../middleware/rateLimit');
 const config = require('../config');
+const { loadAccess, forgetAccess } = require('../middleware/rbac');
 const userService = require('../services/userService');
 const { readCookie, serializeCookie } = require('../lib/cookies');
 const supabaseApi = require('../lib/supabaseApi');
 
 const router = express.Router();
 const authLimiter = rateLimit.auth();
+
+/**
+ * The learner as the app shows them, plus their roles so the top bar knows whether to offer the Admin or the
+ * college Schedule link. Roles only decide what to show: every admin route checks the role again on the server.
+ */
+async function withRoles(user, identity) {
+  // Read fresh (the record may have just changed, for instance an email just confirmed) and leave nothing cached,
+  // so this lookup never changes how the roles cache behaves for the rest of the API.
+  forgetAccess(user.id);
+  const access = await loadAccess(identity);
+  forgetAccess(user.id);
+  return { ...userService.publicUser(user), roles: access.roles };
+}
 
 // ── Cookie session for Supabase sign-in ─────────────────────────
 // The browser holds the access token in memory only. The long-lived refresh token is kept in an
@@ -80,7 +94,7 @@ router.post('/session', authLimiter, requireAuth, asyncHandler(async (req, res) 
   if (!user) {
     return res.status(401).json({ success: false, error: 'Unauthorized: account no longer exists' });
   }
-  res.json({ success: true, user: userService.publicUser(user) });
+  res.json({ success: true, user: await withRoles(user, req.user) });
 }));
 
 /**
@@ -91,7 +105,7 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   if (!user) {
     return res.status(401).json({ success: false, error: 'Unauthorized: account no longer exists' });
   }
-  res.json({ success: true, user: userService.publicUser(user) });
+  res.json({ success: true, user: await withRoles(user, req.user) });
 }));
 
 /**
